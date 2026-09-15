@@ -2,7 +2,7 @@
 // @id              tech-stack-launcher
 // @name            Tech Stack Launcher
 // @description     A taskbar button that starts and stops your whole working set - apps, folders, editors, URLs and terminal commands - with per-item toggles, groups and profiles
-// @version         2.1.0
+// @version         2.2.0
 // @author          Amr
 // @license         MIT
 // @github          https://github.com/AmrMsCLL
@@ -87,9 +87,24 @@ and the state is remembered. The word on the right of a heading toggles every it
 in that group at once: if any of them is off it turns them all on, otherwise it
 turns them all off.
 
-List a group's items together in the settings. A heading is drawn whenever the
-group changes from one item to the next, so a group split across the list shows up
-as two headings.
+Items with the same group name are always listed together under one heading, no
+matter where they sit in the settings, so the list stays tidy however you add to it.
+
+---
+
+## Reordering
+
+Drag an item to move it within its group, or drag a group heading to move the whole
+group. The same moves are on the right click menu of any item or heading, and
+`Alt+Up` / `Alt+Down` move the highlighted item.
+
+**Launch order follows the panel**, so dragging changes what starts first.
+
+A mod cannot write to its own Windhawk settings, so the order you drag is stored
+separately and the settings page keeps listing items as you typed them. The two
+disagreeing is harmless - the panel wins for display and for launching. **Reset
+order to settings**, on either right click menu, throws the override away and goes
+back to the settings order.
 
 ---
 
@@ -2369,6 +2384,11 @@ static HitResult g_hover;
 static HitResult g_pressed;
 static bool g_draggingScrollbar = false;
 static int g_dragOffset = 0;
+static bool g_dragActive = false;
+static HitResult g_dragCandidate;
+static POINT g_dragOrigin{};
+static int g_dragItemIndex = -1;
+static std::wstring g_dragGroup;
 static Surface g_panelSurface;
 
 static double g_revealAmount = 0.0;
@@ -2421,6 +2441,139 @@ static void SetGroupCollapsed(const std::wstring& group, bool collapsed) {
     Wh_SetIntValue(GroupStorageKey(group).c_str(), collapsed ? 1 : 0);
 }
 
+static std::vector<std::wstring> g_itemOrder;
+
+static void LoadItemOrder() {
+    std::vector<wchar_t> stored(8192, L'\0');
+    Wh_GetStringValue(L"itemOrder", stored.data(), stored.size());
+    g_itemOrder = SplitList(stored.data(), L'|');
+}
+
+static void SaveItemOrder() {
+    std::wstring joined;
+    for (const auto& key : g_itemOrder) {
+        if (!joined.empty()) {
+            joined += L'|';
+        }
+        joined += key;
+    }
+    Wh_SetStringValue(L"itemOrder", joined.c_str());
+}
+
+static std::vector<int> OrderedIndices() {
+    std::vector<int> order;
+    std::vector<bool> placed(g_settings.items.size(), false);
+    for (const auto& key : g_itemOrder) {
+        for (size_t i = 0; i < g_settings.items.size(); i++) {
+            if (!placed[i] && g_settings.items[i].storageKey == key) {
+                order.push_back((int)i);
+                placed[i] = true;
+                break;
+            }
+        }
+    }
+    for (size_t i = 0; i < g_settings.items.size(); i++) {
+        if (!placed[i]) {
+            order.push_back((int)i);
+        }
+    }
+    return order;
+}
+
+static void AdoptOrder(const std::vector<int>& order) {
+    g_itemOrder.clear();
+    for (int index : order) {
+        g_itemOrder.push_back(g_settings.items[index].storageKey);
+    }
+}
+
+static void NormalizeItemOrder() {
+    std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
+    AdoptOrder(OrderedIndices());
+}
+
+static std::vector<std::wstring> GroupSequence(const std::vector<int>& order) {
+    std::vector<std::wstring> sequence;
+    for (int index : order) {
+        const std::wstring& name = g_settings.items[index].group;
+        if (std::find(sequence.begin(), sequence.end(), name) == sequence.end()) {
+            sequence.push_back(name);
+        }
+    }
+    return sequence;
+}
+
+static bool MoveItemWithinGroup(int itemIndex, int delta) {
+    std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
+    if (itemIndex < 0 || itemIndex >= (int)g_settings.items.size() || delta == 0) {
+        return false;
+    }
+    const std::wstring group = g_settings.items[itemIndex].group;
+    std::vector<int> order = OrderedIndices();
+    std::vector<size_t> slots;
+    for (size_t i = 0; i < order.size(); i++) {
+        if (g_settings.items[order[i]].group == group) {
+            slots.push_back(i);
+        }
+    }
+    size_t position = slots.size();
+    for (size_t i = 0; i < slots.size(); i++) {
+        if (order[slots[i]] == itemIndex) {
+            position = i;
+            break;
+        }
+    }
+    if (position == slots.size()) {
+        return false;
+    }
+    if (delta < 0 ? position == 0 : position + 1 >= slots.size()) {
+        return false;
+    }
+    std::swap(order[slots[position]], order[slots[position + delta]]);
+    AdoptOrder(order);
+    return true;
+}
+
+static bool MoveGroupBlock(const std::wstring& group, int delta) {
+    std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
+    if (delta == 0) {
+        return false;
+    }
+    std::vector<int> order = OrderedIndices();
+    std::vector<std::wstring> sequence = GroupSequence(order);
+    size_t position = sequence.size();
+    for (size_t i = 0; i < sequence.size(); i++) {
+        if (sequence[i] == group) {
+            position = i;
+            break;
+        }
+    }
+    if (position == sequence.size()) {
+        return false;
+    }
+    if (delta < 0 ? position == 0 : position + 1 >= sequence.size()) {
+        return false;
+    }
+    std::swap(sequence[position], sequence[position + delta]);
+
+    std::vector<int> rebuilt;
+    for (const auto& name : sequence) {
+        for (int index : order) {
+            if (g_settings.items[index].group == name) {
+                rebuilt.push_back(index);
+            }
+        }
+    }
+    AdoptOrder(rebuilt);
+    return true;
+}
+
+static void ResetItemOrder() {
+    g_itemOrder.clear();
+    Wh_SetStringValue(L"itemOrder", L"");
+    NormalizeItemOrder();
+}
+
 static bool ItemMatchesFilter(const StackItem& item) {
     if (g_filter.empty()) {
         return true;
@@ -2452,24 +2605,27 @@ static void RebuildRows() {
     const int groupHeight = Scale(32);
     int y = Scale(6);
 
-    size_t index = 0;
-    while (index < g_settings.items.size()) {
-        const StackItem& item = g_settings.items[index];
+    std::vector<int> order = OrderedIndices();
+    std::vector<std::wstring> emitted;
+    for (int first : order) {
+        const StackItem& item = g_settings.items[first];
         if (!ItemMatchesFilter(item)) {
-            index++;
             continue;
         }
 
         const std::wstring group = item.group;
-        std::vector<size_t> members;
-        size_t scan = index;
-        while (scan < g_settings.items.size() && g_settings.items[scan].group == group) {
-            if (ItemMatchesFilter(g_settings.items[scan])) {
-                members.push_back(scan);
-            }
-            scan++;
+        if (std::find(emitted.begin(), emitted.end(), group) != emitted.end()) {
+            continue;
         }
-        index = scan;
+        emitted.push_back(group);
+
+        std::vector<size_t> members;
+        for (int candidate : order) {
+            if (g_settings.items[candidate].group == group &&
+                ItemMatchesFilter(g_settings.items[candidate])) {
+                members.push_back((size_t)candidate);
+            }
+        }
         if (members.empty()) {
             continue;
         }
@@ -3423,11 +3579,18 @@ static void PaintPanel() {
         } else if (g_hoverFading.index == (int)rowIndex) {
             hoverWeight = g_hoverFadeAmount;
         }
+        bool dragged = g_dragActive && (row.isGroup ? row.text == g_dragGroup
+                                                    : row.itemIndex == g_dragItemIndex);
 
         if (row.isGroup) {
             gp::Rect headerBox(g_layout.list.X + Scale(6), rowTop,
                                g_layout.list.Width - Scale(12), row.height - Scale(2));
-            if (hoverWeight > 0.01) {
+            if (dragged) {
+                FillRoundRect(graphics, ToRectF(headerBox), (gp::REAL)Scale(4),
+                              palette.selection);
+                StrokeRoundRect(graphics, ToRectF(headerBox), (gp::REAL)Scale(4),
+                                palette.accent, 1.0f);
+            } else if (hoverWeight > 0.01) {
                 FillRoundRect(graphics, ToRectF(headerBox), (gp::REAL)Scale(4),
                               Fade(palette.hover, hoverWeight));
             }
@@ -3459,7 +3622,12 @@ static void PaintPanel() {
         gp::Rect rowBox(g_layout.list.X + Scale(6), rowTop,
                         g_layout.list.Width - Scale(12), row.height - Scale(2));
 
-        if (focused) {
+        if (dragged) {
+            FillRoundRect(graphics, ToRectF(rowBox), (gp::REAL)Scale(4),
+                          palette.selection);
+            StrokeRoundRect(graphics, ToRectF(rowBox), (gp::REAL)Scale(4),
+                            palette.accent, 1.0f);
+        } else if (focused) {
             FillRoundRect(graphics, ToRectF(rowBox), (gp::REAL)Scale(4),
                           palette.selection);
         } else if (hoverWeight > 0.01) {
@@ -3600,6 +3768,38 @@ static void PaintPanel() {
     g_panelSurface.Present(g_panelWnd, (BYTE)(255 * max(0.0, min(1.0, reveal))));
 }
 
+static int DraggedRowIndex() {
+    for (size_t i = 0; i < g_rows.size(); i++) {
+        const PanelRow& row = g_rows[i];
+        bool match = g_dragItemIndex >= 0
+                         ? !row.isGroup && row.itemIndex == g_dragItemIndex
+                         : row.isGroup && row.text == g_dragGroup;
+        if (match) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+static bool RowHit(const HitResult& hit) {
+    return hit.kind == HitKind::Item || hit.kind == HitKind::ItemToggle ||
+           hit.kind == HitKind::GroupHeader || hit.kind == HitKind::GroupToggleAll;
+}
+
+static void EndDrag(bool persist) {
+    if (!g_dragActive) {
+        return;
+    }
+    g_dragActive = false;
+    g_dragItemIndex = -1;
+    g_dragGroup.clear();
+    g_dragCandidate = HitResult{};
+    ReleaseCapture();
+    if (persist) {
+        SaveItemOrder();
+    }
+}
+
 static void RefreshPanel() {
     if (g_panelWnd && IsWindowVisible(g_panelWnd)) {
         PaintPanel();
@@ -3690,6 +3890,7 @@ static void OpenPanel() {
     }
     RefreshPalette();
     LoadCollapsedGroups();
+    NormalizeItemOrder();
     g_filter.clear();
     g_focusRow = -1;
     g_scrollOffset = 0;
@@ -3862,6 +4063,68 @@ static void CloseSelected() {
     }
 }
 
+static void FocusItemRow(int itemIndex) {
+    for (size_t i = 0; i < g_rows.size(); i++) {
+        if (!g_rows[i].isGroup && g_rows[i].itemIndex == itemIndex) {
+            g_focusRow = (int)i;
+            ScrollRowIntoView(g_focusRow);
+            return;
+        }
+    }
+}
+
+static void ShowGroupMenu(int rowIndex, POINT screenPoint) {
+    if (rowIndex < 0 || rowIndex >= (int)g_rows.size() || !g_rows[rowIndex].isGroup) {
+        return;
+    }
+    std::wstring group = g_rows[rowIndex].text;
+
+    HMENU menu = CreatePopupMenu();
+    if (!menu) {
+        return;
+    }
+    AppendMenuW(menu, MF_STRING, 1,
+                IsGroupCollapsed(group) ? L"Expand" : L"Collapse");
+    AppendMenuW(menu, MF_STRING, 2, L"Toggle every item");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, 3, L"Move group up");
+    AppendMenuW(menu, MF_STRING, 4, L"Move group down");
+    AppendMenuW(menu, MF_STRING, 5, L"Reset order to settings");
+
+    g_suppressDeactivate = true;
+    SetForegroundWindow(g_panelWnd);
+    int command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screenPoint.x,
+                                 screenPoint.y, 0, g_panelWnd, nullptr);
+    DestroyMenu(menu);
+    g_suppressDeactivate = false;
+
+    switch (command) {
+        case 1:
+            SetGroupCollapsed(group, !IsGroupCollapsed(group));
+            EnsureAnimationTimer();
+            break;
+        case 2:
+            SetGroupEnabled(group);
+            EnsureAnimationTimer();
+            break;
+        case 3:
+            if (MoveGroupBlock(group, -1)) {
+                SaveItemOrder();
+            }
+            break;
+        case 4:
+            if (MoveGroupBlock(group, 1)) {
+                SaveItemOrder();
+            }
+            break;
+        case 5:
+            ResetItemOrder();
+            break;
+        default:
+            break;
+    }
+}
+
 static void ShowItemMenu(int rowIndex, POINT screenPoint) {
     if (rowIndex < 0 || rowIndex >= (int)g_rows.size() || g_rows[rowIndex].isGroup) {
         return;
@@ -3885,6 +4148,10 @@ static void ShowItemMenu(int rowIndex, POINT screenPoint) {
         AppendMenuW(menu, MF_STRING, 5, L"Close now");
     }
     AppendMenuW(menu, MF_STRING, 2, item.enabled ? L"Turn off" : L"Turn on");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, 6, L"Move up");
+    AppendMenuW(menu, MF_STRING, 7, L"Move down");
+    AppendMenuW(menu, MF_STRING, 8, L"Reset order to settings");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, 3, L"Show in File Explorer");
     AppendMenuW(menu, MF_STRING, 4, L"Copy target");
@@ -3912,6 +4179,19 @@ static void ShowItemMenu(int rowIndex, POINT screenPoint) {
             break;
         case 5:
             StartShutdown({itemIndex});
+            break;
+        case 6:
+            if (MoveItemWithinGroup(itemIndex, -1)) {
+                SaveItemOrder();
+            }
+            break;
+        case 7:
+            if (MoveItemWithinGroup(itemIndex, 1)) {
+                SaveItemOrder();
+            }
+            break;
+        case 8:
+            ResetItemOrder();
             break;
         default:
             break;
@@ -4010,6 +4290,37 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
     switch (message) {
         case WM_MOUSEMOVE: {
             POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            if (!g_dragActive && RowHit(g_dragCandidate) &&
+                (GetKeyState(VK_LBUTTON) & 0x8000) &&
+                abs(point.y - g_dragOrigin.y) > Scale(6) &&
+                g_dragCandidate.index >= 0 &&
+                g_dragCandidate.index < (int)g_rows.size()) {
+                const PanelRow& row = g_rows[g_dragCandidate.index];
+                if (row.isGroup) {
+                    g_dragGroup = row.text;
+                } else {
+                    g_dragItemIndex = row.itemIndex;
+                }
+                g_dragActive = true;
+                g_pressed = HitResult{};
+                SetCapture(window);
+            }
+            if (g_dragActive) {
+                HitResult over = HitTest(point);
+                int from = DraggedRowIndex();
+                if (RowHit(over) && from >= 0 && over.index != from) {
+                    bool moved =
+                        g_dragItemIndex >= 0
+                            ? MoveItemWithinGroup(g_dragItemIndex,
+                                                  over.index > from ? 1 : -1)
+                            : MoveGroupBlock(g_dragGroup, over.index > from ? 1 : -1);
+                    if (moved) {
+                        RebuildRows();
+                        PaintPanel();
+                    }
+                }
+                return 0;
+            }
             if (g_draggingScrollbar) {
                 int travel =
                     g_layout.scrollTrack.Height - g_layout.scrollThumb.Height;
@@ -4043,6 +4354,10 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
                 SetCapture(window);
                 return 0;
             }
+            if (hit.kind == HitKind::Item || hit.kind == HitKind::GroupHeader) {
+                g_dragCandidate = hit;
+                g_dragOrigin = point;
+            }
             g_pressed = hit;
             PaintPanel();
             return 0;
@@ -4050,9 +4365,16 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
 
         case WM_CAPTURECHANGED:
             g_draggingScrollbar = false;
+            EndDrag(true);
             return 0;
 
         case WM_LBUTTONUP: {
+            if (g_dragActive) {
+                EndDrag(true);
+                RefreshPanel();
+                return 0;
+            }
+            g_dragCandidate = HitResult{};
             if (g_draggingScrollbar) {
                 g_draggingScrollbar = false;
                 ReleaseCapture();
@@ -4072,10 +4394,14 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
         case WM_RBUTTONUP: {
             POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
             HitResult hit = HitTest(point);
+            POINT screenPoint = point;
+            ClientToScreen(window, &screenPoint);
             if (hit.kind == HitKind::Item || hit.kind == HitKind::ItemToggle) {
-                POINT screenPoint = point;
-                ClientToScreen(window, &screenPoint);
                 ShowItemMenu(hit.index, screenPoint);
+                RefreshPanel();
+            } else if (hit.kind == HitKind::GroupHeader ||
+                       hit.kind == HitKind::GroupToggleAll) {
+                ShowGroupMenu(hit.index, screenPoint);
                 RefreshPanel();
             }
             return 0;
@@ -4110,6 +4436,21 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
             }
             return 0;
         }
+
+        case WM_SYSKEYDOWN:
+            if ((wParam == VK_UP || wParam == VK_DOWN) &&
+                (GetKeyState(VK_MENU) & 0x8000) && g_focusRow >= 0 &&
+                g_focusRow < (int)g_rows.size() && !g_rows[g_focusRow].isGroup) {
+                int itemIndex = g_rows[g_focusRow].itemIndex;
+                if (MoveItemWithinGroup(itemIndex, wParam == VK_UP ? -1 : 1)) {
+                    SaveItemOrder();
+                    RebuildRows();
+                    FocusItemRow(itemIndex);
+                }
+                PaintPanel();
+                return 0;
+            }
+            break;
 
         case WM_KEYDOWN: {
             bool control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
@@ -4939,6 +5280,7 @@ static LRESULT CALLBACK MessageWndProc(HWND window,
             ClearFontCache();
             ClearIconCache();
             LoadCollapsedGroups();
+            NormalizeItemOrder();
             g_toggleAmount.clear();
             CreateTaskbarButtons();
             UpdateTrayIcon();
@@ -5028,6 +5370,8 @@ static void UiThreadMain() {
 
     RefreshPalette();
     LoadCollapsedGroups();
+    LoadItemOrder();
+    NormalizeItemOrder();
 
     wchar_t storedProfile[64] = {};
     Wh_GetStringValue(L"activeProfile", storedProfile, ARRAYSIZE(storedProfile));
