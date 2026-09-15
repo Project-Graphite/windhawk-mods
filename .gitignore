@@ -1,0 +1,4 @@
+.claude/
+*.dll
+*.obj
+*.o
