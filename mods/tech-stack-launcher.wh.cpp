@@ -4,7 +4,7 @@
 // @description     A taskbar button that starts and stops your whole working set - apps, folders, editors, URLs and terminal commands - with per-item toggles, groups and profiles
 // @version         2.0.1
 // @author          Amr
-// @github          https://github.com/Project-Graphite
+// @github          https://github.com/AmrMsCLL
 // @homepage        https://github.com/Project-Graphite/windhawk-mods
 // @include         explorer.exe
 // @architecture    x86-64
