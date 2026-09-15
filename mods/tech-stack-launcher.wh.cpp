@@ -2,7 +2,7 @@
 // @id              tech-stack-launcher
 // @name            Tech Stack Launcher
 // @description     A taskbar button that starts and stops your whole working set - apps, folders, editors, URLs and terminal commands - with per-item toggles, groups and profiles
-// @version         2.0.1
+// @version         2.1.0
 // @author          Amr
 // @license         MIT
 // @github          https://github.com/AmrMsCLL
@@ -63,6 +63,12 @@ top.
 
 **Target** is read according to the type. For `terminal` and `command` it is the
 command line itself, run through the shell picked in **Shell**.
+
+A PowerShell or pwsh command is handed over base64-encoded, so semicolons, pipes,
+quotes and braces all survive exactly as written - a one-liner like
+`Get-ChildItem | ForEach-Object { Write-Host $_.Name; $_ }` needs no escaping. For
+`cmd`, Git Bash and WSL the command is passed as text, so a double quote inside a
+Git Bash or WSL command is escaped for you, but the shell's own rules still apply.
 
 ---
 
@@ -213,6 +219,27 @@ percentage anchor always works.
 
 **Button alignment** and **Button vertical offset** control the height within the
 taskbar.
+
+---
+
+## Window state, and where it does not apply
+
+**Window state** works as written for `app`, `vscode`, `folder` and `url` items.
+
+For a `terminal` item it is not that simple. Windows hands every new console to
+whichever terminal is set as the default - Windows Terminal, unless you changed it -
+and that host ignores the requested state entirely. So **Minimized** and
+**Maximized** on a terminal item are applied after the window appears, which has
+two consequences:
+
+* the item gets its **own** Windows Terminal window rather than joining the shared
+  one, because minimizing a shared window would take every other tab with it
+* the state is applied a moment after launch, so the window may flicker into view
+  first
+
+**Wait for it to exit** also forces a terminal item out of Windows Terminal. `wt.exe`
+exits the instant it hands the tab over, so waiting on it would return immediately;
+the item is launched in the shell's own console instead, where the wait is real.
 
 ---
 
@@ -1202,17 +1229,57 @@ struct ShellInvocation {
     std::wstring args;
 };
 
+static std::wstring EncodeUtf16Base64(const std::wstring& text) {
+    static constexpr wchar_t kAlphabet[] =
+        L"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const BYTE* bytes = reinterpret_cast<const BYTE*>(text.data());
+    size_t length = text.size() * sizeof(wchar_t);
+    std::wstring encoded;
+    encoded.reserve((length + 2) / 3 * 4);
+    for (size_t i = 0; i < length; i += 3) {
+        unsigned value = (unsigned)bytes[i] << 16;
+        if (i + 1 < length) {
+            value |= (unsigned)bytes[i + 1] << 8;
+        }
+        if (i + 2 < length) {
+            value |= (unsigned)bytes[i + 2];
+        }
+        encoded += kAlphabet[(value >> 18) & 0x3F];
+        encoded += kAlphabet[(value >> 12) & 0x3F];
+        encoded += i + 1 < length ? kAlphabet[(value >> 6) & 0x3F] : L'=';
+        encoded += i + 2 < length ? kAlphabet[value & 0x3F] : L'=';
+    }
+    return encoded;
+}
+
+static std::wstring EscapeDoubleQuotes(const std::wstring& text) {
+    std::wstring escaped;
+    for (wchar_t character : text) {
+        if (character == L'"') {
+            escaped += L'\\';
+        }
+        escaped += character;
+    }
+    return escaped;
+}
+
+static std::wstring EscapeSemicolons(const std::wstring& text) {
+    std::wstring escaped;
+    for (wchar_t character : text) {
+        if (character == L';') {
+            escaped += L'\\';
+        }
+        escaped += character;
+    }
+    return escaped;
+}
+
 static bool BuildShellInvocation(const StackItem& item,
                                  const std::wstring& command,
                                  bool visible,
                                  ShellInvocation& out) {
     bool keepOpen = visible && item.keepOpen;
     switch (item.shell) {
-        case ShellKind::Pwsh:
-            out.file = L"pwsh.exe";
-            out.args = keepOpen ? L"-NoLogo -NoExit -Command " : L"-NoLogo -Command ";
-            out.args += command;
-            return true;
         case ShellKind::Cmd:
             out.file = L"cmd.exe";
             out.args = (keepOpen ? L"/k " : L"/c ") + command;
@@ -1222,17 +1289,21 @@ static bool BuildShellInvocation(const StackItem& item,
             if (out.file.empty()) {
                 return false;
             }
-            out.args = L"-l -c \"" + command + (keepOpen ? L"; exec bash\"" : L"\"");
+            out.args = L"-l -c \"" + EscapeDoubleQuotes(command) +
+                       (keepOpen ? L"; exec bash\"" : L"\"");
             return true;
         }
         case ShellKind::Wsl:
             out.file = L"wsl.exe";
-            out.args = L"-- bash -lc \"" + command + (keepOpen ? L"; exec bash\"" : L"\"");
+            out.args = L"-- bash -lc \"" + EscapeDoubleQuotes(command) +
+                       (keepOpen ? L"; exec bash\"" : L"\"");
             return true;
+        case ShellKind::Pwsh:
         default:
-            out.file = L"powershell.exe";
-            out.args = keepOpen ? L"-NoLogo -NoExit -Command " : L"-NoLogo -Command ";
-            out.args += command;
+            out.file = item.shell == ShellKind::Pwsh ? L"pwsh.exe" : L"powershell.exe";
+            out.args = keepOpen ? L"-NoLogo -NoExit -EncodedCommand "
+                                : L"-NoLogo -EncodedCommand ";
+            out.args += EncodeUtf16Base64(command);
             return true;
     }
 }
@@ -1254,24 +1325,81 @@ static bool WrapInWindowsTerminal(const StackItem& item,
     if (terminal.empty()) {
         return false;
     }
+    bool ownWindow = item.windowState == WindowStateOption::Minimized ||
+                     item.windowState == WindowStateOption::Maximized;
+
     std::wstring args;
-    if (!windowId.empty() && ToLower(windowId) != L"new") {
+    if (ownWindow) {
+        args += L"-w new ";
+    } else if (!windowId.empty() && ToLower(windowId) != L"new") {
         args += L"-w " + QuoteIfNeeded(windowId) + L" ";
     }
     args += L"new-tab --title " + QuoteIfNeeded(item.name);
     if (!workingDir.empty()) {
         args += L" -d " + QuoteIfNeeded(workingDir);
     }
-    args += L" " + QuoteIfNeeded(invocation.file) + L" " + invocation.args;
+    args += L" " + QuoteIfNeeded(invocation.file) + L" " +
+            EscapeSemicolons(invocation.args);
     invocation.file = terminal;
     invocation.args = std::move(args);
     return true;
+}
+
+static bool WindowBelongsToProcess(HWND window, PCWSTR exeName) {
+    DWORD pid = 0;
+    GetWindowThreadProcessId(window, &pid);
+    if (!pid) {
+        return false;
+    }
+    HANDLE process =
+        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!process) {
+        return false;
+    }
+    wchar_t path[MAX_PATH] = {};
+    DWORD size = ARRAYSIZE(path);
+    bool matches = QueryFullProcessImageNameW(process, 0, path, &size) &&
+                   _wcsicmp(FileNameOf(path).c_str(), exeName) == 0;
+    CloseHandle(process);
+    return matches;
+}
+
+static void ApplyTerminalWindowState(const std::wstring& title, int showCommand) {
+    struct EnumContext {
+        const std::wstring* title;
+        HWND found;
+    };
+    for (int attempt = 0; attempt < 24 && !g_unloading; attempt++) {
+        EnumContext context{&title, nullptr};
+        EnumWindows(
+            [](HWND window, LPARAM param) CALLBACK -> BOOL {
+                auto* context = reinterpret_cast<EnumContext*>(param);
+                if (!IsWindowVisible(window) || GetWindow(window, GW_OWNER) ||
+                    !WindowBelongsToProcess(window, L"WindowsTerminal.exe")) {
+                    return TRUE;
+                }
+                wchar_t text[512] = {};
+                GetWindowTextW(window, text, ARRAYSIZE(text));
+                if (wcsstr(text, context->title->c_str())) {
+                    context->found = window;
+                    return FALSE;
+                }
+                return TRUE;
+            },
+            reinterpret_cast<LPARAM>(&context));
+        if (context.found) {
+            ShowWindow(context.found, showCommand);
+            return;
+        }
+        Sleep(250);
+    }
 }
 
 struct LaunchPlan {
     std::wstring file;
     std::wstring args;
     std::wstring workingDir;
+    std::wstring adjustWindowTitle;
     int showCommand = SW_SHOWNORMAL;
     bool elevated = false;
     bool hidden = false;
@@ -1343,8 +1471,11 @@ static bool BuildLaunchPlan(const StackItem& item, LaunchPlan& plan) {
             if (!BuildShellInvocation(item, command, visible, invocation)) {
                 return false;
             }
-            if (visible) {
-                WrapInWindowsTerminal(item, plan.workingDir, invocation);
+            if (visible && !item.waitForExit &&
+                WrapInWindowsTerminal(item, plan.workingDir, invocation) &&
+                (item.windowState == WindowStateOption::Minimized ||
+                 item.windowState == WindowStateOption::Maximized)) {
+                plan.adjustWindowTitle = item.name;
             }
             plan.file = invocation.file;
             plan.args = invocation.args;
@@ -2744,6 +2875,12 @@ static void RunLaunchSequence(std::vector<int> indices) {
             SetStatusText(L"Failed to start " + item.name);
             ReportProgress();
             continue;
+        }
+        if (!plan.adjustWindowTitle.empty()) {
+            ApplyTerminalWindowState(plan.adjustWindowTitle,
+                                     item.windowState == WindowStateOption::Minimized
+                                         ? SW_MINIMIZE
+                                         : SW_MAXIMIZE);
         }
         if (!process.empty()) {
             running[process];
