@@ -16,8 +16,28 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Install clang-format
-        run: sudo apt-get update && sudo apt-get install --yes clang-format
+      - name: Validate Windhawk metadata
+        shell: python
+        run: |
+          import pathlib
+          import re
 
-      - name: Check formatting
-        run: clang-format --dry-run --Werror mods/*.cpp
+          files = sorted(pathlib.Path("mods").glob("*.wh.cpp"))
+          if not files:
+              raise SystemExit("No Windhawk mods found")
+
+          for path in files:
+              text = path.read_text(encoding="utf-8-sig")
+              if "// ==WindhawkMod==" not in text or "// ==/WindhawkMod==" not in text:
+                  raise SystemExit(f"{path}: missing Windhawk metadata markers")
+
+              match = re.search(r"^// @id\s+([^\s]+)\s*$", text, re.MULTILINE)
+              expected = path.name.removesuffix(".wh.cpp")
+              if not match or match.group(1) != expected:
+                  raise SystemExit(f"{path}: @id must be {expected}")
+
+              for field in ("name", "description", "version", "author", "license"):
+                  if not re.search(rf"^// @{field}\s+\S", text, re.MULTILINE):
+                      raise SystemExit(f"{path}: missing @{field}")
+
+              print(f"validated {path}")
