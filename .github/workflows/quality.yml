@@ -22,11 +22,18 @@ jobs:
           import pathlib
           import re
 
-          files = sorted(pathlib.Path("mods").glob("*.wh.cpp"))
+          files = sorted(pathlib.Path("mods").glob("*/*.wh.cpp"))
           if not files:
               raise SystemExit("No Windhawk mods found")
 
           for path in files:
+              if path.name != f"{path.parent.name}.wh.cpp":
+                  raise SystemExit(f"{path}: source filename must match its folder")
+              if not (path.parent / "README.md").is_file():
+                  raise SystemExit(f"{path.parent}: missing README.md")
+              if len(list(path.parent.glob("*.wh.cpp"))) != 1:
+                  raise SystemExit(f"{path.parent}: expected exactly one Windhawk source file")
+
               text = path.read_text(encoding="utf-8-sig")
               if "// ==WindhawkMod==" not in text or "// ==/WindhawkMod==" not in text:
                   raise SystemExit(f"{path}: missing Windhawk metadata markers")

@@ -1,6 +1,6 @@
 // ==WindhawkMod==
-// @id              tech-stack-launcher
-// @name            Tech Stack Launcher
+// @id              stack-switch
+// @name            StackSwitch
 // @description     A taskbar button that starts and stops your whole working set - apps, folders, editors, URLs and terminal commands - with per-item toggles, groups and profiles
 // @version         2.2.0
 // @author          Amr
@@ -14,7 +14,7 @@
 
 // ==WindhawkModReadme==
 /*
-# Tech Stack Launcher
+# StackSwitch
 
 A button on the taskbar that opens a launcher panel. Tick what you want, press
 **Launch**, and it all comes up in order. Press **Close** and it goes back down.
@@ -562,9 +562,9 @@ using std::min;
 
 namespace gp = Gdiplus;
 
-constexpr PCWSTR kButtonClass = L"WhTechStackLauncherButton";
-constexpr PCWSTR kPanelClass = L"WhTechStackLauncherPanel";
-constexpr PCWSTR kMessageClass = L"WhTechStackLauncherMessages";
+constexpr PCWSTR kButtonClass = L"WhStackSwitchButton";
+constexpr PCWSTR kPanelClass = L"WhStackSwitchPanel";
+constexpr PCWSTR kMessageClass = L"WhStackSwitchMessages";
 
 constexpr UINT kMsgTogglePanel = WM_APP + 1;
 constexpr UINT kMsgLaunchProgress = WM_APP + 2;
@@ -3012,7 +3012,7 @@ static void RunLaunchSequence(std::vector<int> indices) {
 
         if (item.confirm) {
             if (MessageBoxW(nullptr, (L"Launch " + item.name + L"?").c_str(),
-                            L"Tech Stack Launcher",
+                            L"StackSwitch",
                             MB_OKCANCEL | MB_ICONQUESTION | MB_TOPMOST |
                                 MB_SETFOREGROUND) != IDOK) {
                 continue;
@@ -4018,7 +4018,7 @@ static void LaunchSelected() {
         wchar_t message[128];
         swprintf_s(message, L"Launch %d items?", (int)indices.size());
         g_suppressDeactivate = true;
-        int answer = MessageBoxW(g_panelWnd, message, L"Tech Stack Launcher",
+        int answer = MessageBoxW(g_panelWnd, message, L"StackSwitch",
                                  MB_OKCANCEL | MB_ICONQUESTION);
         g_suppressDeactivate = false;
         if (answer != IDOK) {
@@ -4050,7 +4050,7 @@ static void CloseSelected() {
         wchar_t message[128];
         swprintf_s(message, L"Close %d items?", (int)indices.size());
         g_suppressDeactivate = true;
-        int answer = MessageBoxW(g_panelWnd, message, L"Tech Stack Launcher",
+        int answer = MessageBoxW(g_panelWnd, message, L"StackSwitch",
                                  MB_OKCANCEL | MB_ICONWARNING);
         g_suppressDeactivate = false;
         if (answer != IDOK) {
@@ -4900,7 +4900,7 @@ using WindowThreadProc = void (*)(void*);
 
 static bool RunFromWindowThread(HWND window, WindowThreadProc proc, void* parameter) {
     static const UINT message =
-        RegisterWindowMessageW(L"WhTechStackLauncher_RunFromWindowThread_" WH_MOD_ID);
+        RegisterWindowMessageW(L"WhStackSwitch_RunFromWindowThread_" WH_MOD_ID);
     struct Payload {
         WindowThreadProc proc;
         void* parameter;
@@ -4919,7 +4919,7 @@ static bool RunFromWindowThread(HWND window, WindowThreadProc proc, void* parame
             if (code == HC_ACTION) {
                 auto* call = reinterpret_cast<const CWPSTRUCT*>(lParam);
                 static const UINT inner = RegisterWindowMessageW(
-                    L"WhTechStackLauncher_RunFromWindowThread_" WH_MOD_ID);
+                    L"WhStackSwitch_RunFromWindowThread_" WH_MOD_ID);
                 if (call->message == inner) {
                     auto* payload = reinterpret_cast<Payload*>(call->lParam);
                     payload->proc(payload->parameter);
@@ -5143,7 +5143,7 @@ static void UpdateTrayIcon() {
     data.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     data.uCallbackMessage = kMsgTrayCallback;
     data.hIcon = g_trayIcon;
-    wcscpy_s(data.szTip, L"Tech Stack Launcher");
+    wcscpy_s(data.szTip, L"StackSwitch");
     Shell_NotifyIconW(g_trayIconAdded ? NIM_MODIFY : NIM_ADD, &data);
     g_trayIconAdded = true;
 }
@@ -5351,7 +5351,7 @@ static void UiThreadMain() {
     g_taskbarCreatedMessage = RegisterWindowMessageW(L"TaskbarCreated");
 
     g_messageWnd =
-        CreateWindowExW(WS_EX_TOOLWINDOW, kMessageClass, L"Tech Stack Launcher",
+        CreateWindowExW(WS_EX_TOOLWINDOW, kMessageClass, L"StackSwitch",
                         WS_POPUP, 0, 0, 0, 0, nullptr, nullptr,
                         GetModuleHandleW(nullptr), nullptr);
     if (!g_messageWnd) {
@@ -5359,7 +5359,7 @@ static void UiThreadMain() {
     }
 
     g_panelWnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
-                                 kPanelClass, L"Tech Stack Launcher", WS_POPUP, 0, 0,
+                                 kPanelClass, L"StackSwitch", WS_POPUP, 0, 0,
                                  Scale(440), Scale(600), nullptr, nullptr,
                                  GetModuleHandleW(nullptr), nullptr);
     if (!g_panelWnd) {
