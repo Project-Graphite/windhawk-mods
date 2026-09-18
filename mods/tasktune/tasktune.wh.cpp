@@ -2,7 +2,7 @@
 // @id              tasktune
 // @name            TaskTune
 // @description     Customizable media controls, per-app volume, audio-only app support, and a spectrum visualizer for the Windows 11 taskbar.
-// @version         2.2.0
+// @version         2.2.3
 // @author          AmrMsCLL
 // @github          https://github.com/AmrMsCLL
 // @license         MIT
@@ -94,12 +94,12 @@ Licensed under the MIT License.
       $description: Selects one taskbar by monitor number.
     - playerWidth: "0 0"
       $name: Media player width (min max)
-      $description: Two values: minimum and maximum. Use 0 for no limit.
+      $description: "Two values: minimum and maximum. Use 0 for no limit."
     - playerHeight: "40 40"
       $name: Media player height (min max)
     - playerMargin: "4 4"
       $name: Media player margin (left right)
-      $description: Two values: left and right.
+      $description: "Two values: left and right."
     - autoSwitchSession: true
       $name: Auto-switch to active media session
       $description: Follows whichever media session is playing.
@@ -234,13 +234,13 @@ Licensed under the MIT License.
       - "bottom": Bottom
     - vizBarCountGap: "7 5"
       $name: Bars (count gap)
-      $description: Two values: bar count and gap in pixels.
+      $description: "Two values: bar count and gap in pixels."
     - vizBarSize: "5 3"
       $name: Bar size (width height)
-      $description: Two values: bar width and idle height. Width 0 hides bars.
+      $description: "Two values: bar width and idle height. Width 0 hides bars."
     - vizPadding: "0 0"
       $name: Padding (left right)
-      $description: Two values: left and right pixels.
+      $description: "Two values: left and right pixels."
     - vizSensitivity: 150
       $name: Sensitivity (0-300)
     $name: Visualizer
@@ -581,7 +581,7 @@ Licensed under the MIT License.
     $description: Removes the cover area while idle.
   - launchAppCommand: "spotify:"
     $name: App opened by double-click
-    $description: Use a URI, executable, full path, or shell:AppsFolder ID. The default opens Spotify.
+    $description: "Use a URI, executable, full path, or shell:AppsFolder ID. The default opens Spotify."
   - ClickActionSettings:
       - - object: player
           $name: Object
@@ -992,7 +992,6 @@ static void ParseTwoInts(const std::wstring& s, int& a, int& b) {
         b = std::stoi(s.substr(sp + 1));
     } catch (...) {}
 }
-// Commands beyond the transport ones, acting on the app's own mixer channel.
 static constexpr int kCmdToggleMute = 20;
 static constexpr int kCmdVolumeUp   = 21;
 static constexpr int kCmdVolumeDown = 22;
@@ -1062,7 +1061,7 @@ static void LoadSettings() {
         Wh_FreeStringSetting(p);
         return r;
     };
-    auto Int = [](const wchar_t* key, int lo, int hi, int /*def*/) -> int {
+    auto Int = [](const wchar_t* key, int lo, int hi, int) -> int {
         return std::clamp(Wh_GetIntSetting(key), lo, hi);
     };
     auto ParseMargin = [&Str](const wchar_t* key, const wchar_t* def, int& left, int& right) {
@@ -1275,7 +1274,7 @@ static void LoadSettings() {
     g_settings.playerLeftClick           = L"none";
     g_settings.playerRightClick          = L"none";
     g_settings.playerMiddleClick         = L"none";
-    g_settings.playerLeftDoubleClick     = L"none";
+    g_settings.playerLeftDoubleClick     = L"open_configured_app";
     g_settings.playerRightDoubleClick    = L"none";
     g_settings.playerMiddleDoubleClick   = L"none";
     for (int i = 0; i < 20; i++) {
@@ -1511,14 +1510,8 @@ static void ApplySettings();
 static std::atomic<bool> g_unloading{false};
 static std::atomic<bool> g_applyingSettings{false};
 static HWND g_taskbarWnd = nullptr;
-// Taskbar window of the player instance currently being worked on. Equals
-// g_taskbarWnd unless "Show on all monitors" put a player on a secondary
-// taskbar. Only read from the taskbar UI thread; background threads keep
-// using g_taskbarWnd, which always points at the primary taskbar.
 static HWND g_curTaskbarWnd = nullptr;
 
-// Runs fn once per injected player instance, with that instance's state
-// swapped into the globals. Defined further down, next to the instance list.
 static void ForEachPlayerInstance(void (*fn)());
 static int  PlayerInstanceCount();
 
@@ -1942,18 +1935,6 @@ static void SetupCommonStates(
         root.BorderBrush(normalBorderBrush);
     } catch (...) {}
 }
-// ---------------------------------------------------------------------------
-// Animation helpers
-//
-// Shared storyboard builders so every transition in the mod — the player
-// appearing, album art swapping, a button being pressed — uses the same Fluent
-// timing instead of snapping between states.
-//
-// All of them pre-set the destination as the element's local value and use
-// FillBehavior::Stop. A storyboard left holding its end value takes precedence
-// over later direct assignments, which would quietly break code that sets e.g.
-// Opacity by hand; stopping at the end hands control back.
-// ---------------------------------------------------------------------------
 static constexpr int kPlayerShowAnimMs = 220;
 static constexpr int kPlayerHideAnimMs = 160;
 static constexpr int kArtCrossfadeMs   = 280;
@@ -1980,7 +1961,6 @@ static EasingFunctionBase MakeEase(bool easeOut, double exponent = 4.5) {
     return ease;
 }
 
-// Appends a From/To animation for `property` on `target` to `sb`.
 static void AppendAnim(Storyboard const& sb, DependencyObject const& target,
                        PCWSTR property, double from, double to, int durationMs,
                        bool easeOut, int beginMs = 0) {
@@ -1998,8 +1978,6 @@ static void AppendAnim(Storyboard const& sb, DependencyObject const& target,
     sb.Children().Append(anim);
 }
 
-// Fades an element to `to`, optionally scaling at the same time. The element is
-// left owning the final values, so callers can keep reading/writing Opacity.
 static void AnimateFade(UIElement const& el, double from, double to, int durationMs,
                         bool easeOut = true, double scaleFrom = 1.0,
                         double scaleTo = 1.0) {
@@ -2029,8 +2007,6 @@ static void AnimateFade(UIElement const& el, double from, double to, int duratio
     }
 }
 
-// Undoes any scale left behind by an earlier animation, so an element cannot
-// stay shrunk if animations get switched off mid-transition.
 static void ResetElementScale(UIElement const& el) {
     if (!el) return;
     try {
@@ -2041,8 +2017,6 @@ static void ResetElementScale(UIElement const& el) {
     } catch (...) {}
 }
 
-// Fade-in used when content is replaced in place (album art, track text).
-// Text is faded without any scale, which would read as a wobble at small sizes.
 static void AnimateContentSwap(UIElement const& el, int durationMs,
                                double scaleFrom = 0.97) {
     if (!el) return;
@@ -2073,7 +2047,6 @@ static void AnimatePlayerHide(FrameworkElement const& el) {
     AnimateFade(el, 1.0, 0.0, kPlayerHideAnimMs, false, 1.0, 0.92);
 }
 
-// Collapses an element once its fade-out has finished playing.
 static void CollapseAfterHideAnim(FrameworkElement const& el) {
     if (!el) return;
     if (!g_settings.enableSmoothPositionAnimation) {
@@ -2090,7 +2063,6 @@ static void CollapseAfterHideAnim(FrameworkElement const& el) {
             winrt::Windows::Foundation::IInspectable const&) mutable {
             try { timer.Stop(); timer.Tick(*token); } catch (...) {}
             try {
-                // A later update may have brought the player back meanwhile.
                 if (el.Opacity() <= 0.01) el.Visibility(Visibility::Collapsed);
             } catch (...) {}
         });
@@ -2100,7 +2072,6 @@ static void CollapseAfterHideAnim(FrameworkElement const& el) {
     }
 }
 
-// Quick squeeze on press / release, so the media buttons feel physical.
 static void AnimateButtonPress(UIElement const& el, bool pressed) {
     if (!el) return;
     if (!g_settings.enableHoverAnimation) {
@@ -2112,8 +2083,6 @@ static void AnimateButtonPress(UIElement const& el, bool pressed) {
         if (!transform) return;
         double from = pressed ? 1.0 : 0.90;
         double to   = pressed ? 0.90 : 1.0;
-        // Hover changes also route through here; only a real press/release
-        // transition should animate, otherwise buttons pop on mouse-over.
         if (std::abs(transform.ScaleX() - to) < 0.001) return;
         transform.ScaleX(to);
         transform.ScaleY(to);
@@ -2232,7 +2201,7 @@ static void SetupPlayerCommonStates(Button const& btn, Brush const& normalBg) {
         elevBorderPressed,
         transparent);
 }
-static void ApplyPlayerButtonState(Button const& btn, Brush const& /*normalBg*/, bool hovered, bool pressed) {
+static void ApplyPlayerButtonState(Button const& btn, Brush const&, bool hovered, bool pressed) {
     if (!btn) return;
     try {
         GoToCommonState(btn, IsHoverEffectEnabled(g_settings.playerHoverEffectMode), pressed, hovered);
@@ -2659,21 +2628,13 @@ static int  g_idleTicks    = 0;
 static std::atomic<bool> g_hiddenByIdle{false};
 static std::chrono::steady_clock::time_point g_lastMediaTime = std::chrono::steady_clock::now();
 static void SwitchMediaSession();
-// Implemented with the audio session layer further down; declared here so the
-// command dispatcher and the click actions above it can reach the app's own
-// mixer channel.
 static bool AudioAppIsCurrentSource();
 static bool AppAudioGetState(float* outVolume, bool* outMuted);
 static bool AppAudioSetVolume(float value);
 static bool AppAudioAdjustVolume(float delta);
 static bool AppAudioToggleMute();
-// Volume and mute of the app the player is showing, refreshed off the UI thread
-// so the buttons can render their state without touching COM.
 static std::atomic<int>  g_targetVolumePercent{-1};
 static std::atomic<bool> g_targetMuted{false};
-// Dragging a slider fires a change event per pixel. Rather than starting a
-// worker for each one, the latest value is parked here and a single worker
-// drains it, so the mixer sees a steady trickle instead of a flood.
 static std::atomic<int>       g_pendingVolumePercent{-1};
 static std::atomic<bool>      g_volumeWriterActive{false};
 static std::atomic<ULONGLONG> g_volumeUserActionTick{0};
@@ -2683,8 +2644,6 @@ static void SendMediaCommandAsync(int cmd) {
         if (g_unloading) return;
         winrt::init_apartment(winrt::apartment_type::multi_threaded);
         try {
-            // Volume acts on the app's own mixer channel, so it works whether
-            // the player is showing a media session or an audio-only app.
             if (cmd == kCmdToggleMute || cmd == kCmdVolumeUp || cmd == kCmdVolumeDown) {
                 float step = (float)g_settings.volumeStep / 100.0f;
                 if (cmd == kCmdToggleMute)      AppAudioToggleMute();
@@ -2694,8 +2653,6 @@ static void SendMediaCommandAsync(int cmd) {
                 winrt::uninit_apartment();
                 return;
             }
-            // With an audio-only app on screen there is no transport to drive,
-            // so the Play button becomes the app's mute switch.
             if (cmd == 2 && AudioAppIsCurrentSource()) {
                 AppAudioToggleMute();
                 DispatchMediaUpdate();
@@ -3102,6 +3059,66 @@ static void ExecuteMediaAction(const std::wstring& action, FrameworkElement cons
         });
     }
 }
+struct PendingPointerAction {
+    winrt::Windows::UI::Xaml::DispatcherTimer timer{nullptr};
+    std::wstring action;
+    FrameworkElement source{nullptr};
+};
+static std::shared_ptr<PendingPointerAction> MakePendingPointerAction() {
+    auto pending = std::make_shared<PendingPointerAction>();
+    pending->timer = winrt::Windows::UI::Xaml::DispatcherTimer();
+    std::weak_ptr<PendingPointerAction> weakPending = pending;
+    pending->timer.Tick([weakPending](auto const&, auto const&) {
+        auto current = weakPending.lock();
+        if (!current) return;
+        current->timer.Stop();
+        auto action = std::move(current->action);
+        auto source = current->source;
+        current->source = nullptr;
+        if (!g_unloading && !action.empty()) {
+            ExecuteMediaAction(action, source);
+        }
+    });
+    return pending;
+}
+static void CancelPendingPointerAction(const std::shared_ptr<PendingPointerAction>& pending) {
+    pending->timer.Stop();
+    pending->action.clear();
+    pending->source = nullptr;
+}
+static void RunPointerAction(const std::shared_ptr<PendingPointerAction>& pending,
+                             const FrameworkElement& source,
+                             const std::wstring& singleAction,
+                             const std::wstring& doubleAction,
+                             bool isDouble,
+                             bool allowSingle) {
+    if (isDouble) {
+        CancelPendingPointerAction(pending);
+        ExecuteMediaAction(doubleAction, source);
+    } else if (allowSingle && singleAction != L"none") {
+        CancelPendingPointerAction(pending);
+        pending->action = singleAction;
+        pending->source = source;
+        pending->timer.Interval(winrt::Windows::Foundation::TimeSpan{
+            std::chrono::milliseconds(GetDoubleClickTime())});
+        pending->timer.Start();
+    }
+}
+static bool HasNamedVisualAncestor(const winrt::Windows::Foundation::IInspectable& source,
+                                   const wchar_t* name) {
+    auto current = source.try_as<DependencyObject>();
+    while (current) {
+        if (auto element = current.try_as<FrameworkElement>()) {
+            if (element.Name() == name) return true;
+        }
+        try {
+            current = VisualTreeHelper::GetParent(current);
+        } catch (...) {
+            return false;
+        }
+    }
+    return false;
+}
 static std::wstring ToLowerCopy(std::wstring value) {
     for (auto& c : value) c = towlower(c);
     return value;
@@ -3468,23 +3485,6 @@ static std::vector<BYTE> FetchAppIconBytes(const std::wstring& appUserModelId, i
     }
     return result;
 }
-// ---------------------------------------------------------------------------
-// Audio apps
-//
-// Discord, Zoom, Microsoft Teams, a Google Meet tab, a game — none of them
-// publish a system media session, so from the media player's point of view they
-// do not exist. They do own a WASAPI session on the render endpoint, which
-// carries a process id, a volume, a mute flag and a peak meter. That is enough
-// to name the app, draw its icon, tell whether it is actually making sound, and
-// control its own mixer channel independently of the desktop volume.
-//
-// The audio session layer never writes into g_media. It is merged in at read
-// time, only where the media session has nothing to show, so the two sources
-// cannot race or overwrite each other.
-// ---------------------------------------------------------------------------
-// The SDK headers only forward-declare the peak meter, so it is spelled out
-// here. It is what tells a Discord that is genuinely in a call apart from one
-// that has merely been left open.
 struct IWhAudioMeter : public IUnknown {
     virtual HRESULT STDMETHODCALLTYPE GetPeakValue(float* peak) = 0;
     virtual HRESULT STDMETHODCALLTYPE GetMeteringChannelCount(UINT* channelCount) = 0;
@@ -3496,7 +3496,7 @@ static const GUID kIID_AudioMeterInformation = {
 };
 struct AudioAppEntry {
     DWORD        pid     = 0;
-    std::wstring exeStem;      // lowercase, no extension
+    std::wstring exeStem;
     std::wstring exePath;
     std::wstring displayName;
     std::wstring detail;
@@ -3512,9 +3512,6 @@ static std::vector<BYTE>          g_audioAppIconPng;
 static uint64_t                   g_audioAppIconHash = 0;
 static std::wstring               g_audioAppIconKey;
 static std::map<std::wstring, ULONGLONG> g_audioAppLastAudible;
-// Audio keeps flowing through short silences — a pause between words, a gap
-// between two clips — so an app stays "the one making sound" for a while after
-// its last audible frame instead of dropping out and back in.
 static constexpr ULONGLONG kAudioAppHoldMs      = 6000;
 static constexpr float     kAudioAppPeakFloor   = 0.0008f;
 static std::wstring GetProcessImagePath(DWORD pid) {
@@ -3527,8 +3524,6 @@ static std::wstring GetProcessImagePath(DWORD pid) {
     CloseHandle(hProc);
     return path;
 }
-// The "Discord" in Discord.exe's version resource, rather than the file name,
-// so apps whose executable is named nothing like the product still read right.
 static std::wstring GetExecutableDescription(const std::wstring& exePath) {
     if (exePath.empty()) return {};
     DWORD dummy = 0;
@@ -3622,9 +3617,6 @@ static bool IsBrowserExeStem(const std::wstring& exeStemLower) {
     }
     return false;
 }
-// Web apps are the whole point of browser support: a Google Meet call and a
-// YouTube video are both "Chrome" as far as the mixer is concerned, so the tab
-// title is what tells them apart.
 static std::wstring WebAppNameFromTitle(const std::wstring& titleLower) {
     struct WebApp { const wchar_t* needle; const wchar_t* name; };
     static const WebApp kWebApps[] = {
@@ -3665,8 +3657,6 @@ static std::wstring WebAppNameFromTitle(const std::wstring& titleLower) {
     }
     return {};
 }
-// Window titles carry the browser's own name and its tab counter; neither of
-// them belongs on a one-line taskbar player.
 static std::wstring CleanBrowserWindowTitle(const std::wstring& title) {
     std::wstring text = TrimCopy(title);
     static const wchar_t* kSuffixes[] = {
@@ -3683,12 +3673,10 @@ static std::wstring CleanBrowserWindowTitle(const std::wstring& title) {
             break;
         }
     }
-    // "Title and 3 more pages" — Edge appends this when tabs are grouped.
     size_t andPos = text.rfind(L" and ");
     if (andPos != std::wstring::npos && text.find(L" more page", andPos) != std::wstring::npos) {
         text.erase(andPos);
     }
-    // Unread/notification counters in front of a chat app's title.
     if (!text.empty() && (text[0] == L'(' || text[0] == L'[')) {
         wchar_t close = (text[0] == L'(') ? L')' : L']';
         size_t end = text.find(close);
@@ -3702,10 +3690,6 @@ struct ProcessWindowTitles {
     std::vector<std::wstring> titles;
     std::wstring              foreground;
 };
-// One sweep over the desktop that collects every visible top-level title owned
-// by any process running the same executable. Browsers spread their tabs over
-// several processes and render audio from yet another one, so matching on the
-// image path rather than the process id is what makes a Meet tab findable.
 static ProcessWindowTitles CollectWindowTitlesForExe(const std::wstring& exeStemLower) {
     struct EnumCtx {
         const std::wstring*  stem;
@@ -3736,9 +3720,6 @@ static ProcessWindowTitles CollectWindowTitlesForExe(const std::wstring& exeStem
     }, reinterpret_cast<LPARAM>(&ctx));
     return result;
 }
-// Draws the icon twice, over black and over white, and recovers the true alpha
-// from the difference. Icons that carry no alpha channel of their own would
-// otherwise come out as a solid black tile in the album art slot.
 static bool RenderIconToStraightBGRA(HICON hIcon, int size, std::vector<BYTE>& out) {
     if (!hIcon || size <= 0) return false;
     HDC screenDC = GetDC(nullptr);
@@ -3846,9 +3827,6 @@ static HICON LoadLargestExecutableIcon(const std::wstring& exePath, int& outSize
     SHFILEINFOW sfi{};
     if (SHGetFileInfoW(exePath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_SYSICONINDEX)) {
         IImageList* imageList = nullptr;
-        // Extra large (48px) rather than jumbo: an app without a 256px icon
-        // comes back from the jumbo list as a small icon marooned in the corner
-        // of a mostly empty bitmap, which is not what belongs in the art slot.
         for (int listId : {SHIL_EXTRALARGE, SHIL_LARGE}) {
             if (SUCCEEDED(SHGetImageList(listId, IID_PPV_ARGS(&imageList))) && imageList) {
                 HICON icon = nullptr;
@@ -3890,9 +3868,6 @@ static bool IsIgnoredAudioApp(const std::wstring& exeStemLower) {
     if (IsIgnoredMediaApp(exeStemLower)) return true;
     return g_settings.audioAppIgnoredStems.contains(exeStemLower);
 }
-// Collects one entry per executable that currently owns a render session. A
-// browser or a chat app spreads its audio over several processes, so sessions
-// are folded together by image path and the loudest one speaks for the app.
 static std::vector<AudioAppEntry> EnumerateAudioAppSessions() {
     std::vector<AudioAppEntry> entries;
     InitAudioDeviceEnumerator();
@@ -3975,9 +3950,6 @@ static void ResolveAudioAppNames(AudioAppEntry& entry) {
         }
     }
     if (IsBrowserExeStem(entry.exeStem)) {
-        // Sweeping every window on the desktop is not something to repeat on
-        // each poll. Tab switches still land within a few seconds, which is as
-        // fast as the rest of the player updates anyway.
         static std::wstring cachedStem, cachedName, cachedDetail;
         static ULONGLONG    cachedTick = 0;
         ULONGLONG now = GetTickCount64();
@@ -4008,8 +3980,6 @@ static void ResolveAudioAppNames(AudioAppEntry& entry) {
     }
     if (entry.detail == entry.displayName) entry.detail.clear();
 }
-// True while the media player is showing an audio-only app, i.e. the media
-// session had nothing to display and an app was making sound instead.
 static bool AudioAppIsCurrentSource() {
     if (!g_settings.enableAudioApps) return false;
     { std::lock_guard<std::mutex> lk(g_mediaMtx); if (g_media.hasMedia) return false; }
@@ -4025,8 +3995,6 @@ static bool GetCurrentAudioApp(AudioAppEntry& out, std::vector<BYTE>* outIconPng
     if (outIconHash) *outIconHash = g_audioAppIconHash;
     return true;
 }
-// The set of mixer channels the player's volume controls act on: the audio-only
-// app it is showing, or the process behind the current media session.
 struct AppVolumeTarget {
     std::set<DWORD> pids;
     std::wstring    exeStem;
@@ -4057,9 +4025,6 @@ static AppVolumeTarget ResolveAppVolumeTarget() {
         }
     }
     if (aumid.empty()) return target;
-    // Walking every window to find the process behind a media session is far
-    // too much work to repeat on each volume tick, and the answer only changes
-    // when the app is restarted.
     ULONGLONG now = GetTickCount64();
     {
         std::lock_guard<std::mutex> lk(g_volumeTargetMtx);
@@ -4096,10 +4061,6 @@ static AppVolumeTarget ResolveAppVolumeTarget() {
     }
     return target;
 }
-// Applies fn to every mixer channel that belongs to the target app. Matching on
-// the image name as well as the process id is what makes this work for browsers
-// and for apps like Discord, whose audio is rendered by a helper process that
-// has no window and no media session of its own.
 static bool ForEachTargetAudioSession(
     const AppVolumeTarget& target,
     const std::function<void(IAudioSessionControl*, ISimpleAudioVolume*)>& fn)
@@ -4183,8 +4144,6 @@ static bool AppAudioSetVolume(float value) {
     bool changed = false;
     ForEachTargetAudioSession(target, [&](IAudioSessionControl*, ISimpleAudioVolume* vol) {
         if (SUCCEEDED(vol->SetMasterVolume(clamped, nullptr))) {
-            // Raising the volume of a muted app should let it be heard again,
-            // which is what every other volume control on Windows does.
             if (clamped > 0.0f) vol->SetMute(FALSE, nullptr);
             changed = true;
         }
@@ -4219,9 +4178,6 @@ static void QueueAppVolume(int percent) {
             int value = g_pendingVolumePercent.exchange(-1);
             if (value < 0) {
                 g_volumeWriterActive.store(false);
-                // A value parked between the exchange above and clearing the
-                // flag would otherwise be dropped, leaving the slider and the
-                // mixer disagreeing about where the drag ended.
                 if (g_pendingVolumePercent.load() < 0 ||
                     g_volumeWriterActive.exchange(true)) {
                     break;
@@ -4238,8 +4194,6 @@ static void QueueAppVolume(int percent) {
 static void PollAudioAppSelection(bool& changed);
 static void PollAudioApps() {
     bool changed = false;
-    // Per-app volume works for media sessions too, so the volume state below is
-    // refreshed whether or not audio-only apps are being shown.
     if (g_settings.enableAudioApps) {
         PollAudioAppSelection(changed);
     } else {
@@ -4251,9 +4205,6 @@ static void PollAudioApps() {
         g_audioAppIconPng.clear();
         g_audioAppIconHash = 0;
     }
-    // Whatever the player ends up showing — a media session or one of these
-    // apps — its mixer channel is read here so the menu can render the volume
-    // without doing COM work on the UI thread.
     float volume = 0.0f;
     bool  muted  = false;
     int   percent = -1;
@@ -4291,9 +4242,6 @@ static void PollAudioAppSelection(bool& changed) {
     for (auto const& entry : entries) {
         if (g_settings.audioAppsRequireSound && !entry.audible) continue;
         if (!best) { best = &entry; continue; }
-        // Whoever is louder wins, but the app already on screen keeps its place
-        // through the quiet moments so the player does not flicker between two
-        // apps that are both making noise.
         if (entry.exeStem == previousStem && entry.peak >= kAudioAppPeakFloor) {
             best = &entry;
             continue;
@@ -4394,9 +4342,6 @@ static void StopAudioAppThread() {
     g_audioAppIconHash = 0;
     g_audioAppLastAudible.clear();
 }
-// Fills in what the player should draw when the media session has nothing:
-// the app that is making sound, its icon in place of the album art, and a
-// second line that says what it is doing.
 static bool ApplyAudioAppToDisplay(std::wstring& title, std::wstring& artist,
                                    std::vector<BYTE>& thumbBytes, uint64_t& thumbHash,
                                    bool& isPlaying) {
@@ -4928,8 +4873,6 @@ static void TickScrollState(TextScrollState& s, int stepPx, int pauseMs, const s
     }
 }
 static void UpdateScrollTransforms();
-// Advances the scrolling text of the instance that is currently swapped in, and
-// reports whether it still has anything left to animate.
 static bool g_scrollTickAnyActive = false;
 static void ScrollTickCurrentInstance() {
     if (!(g_titleScroll.active || g_artistScroll.active)) return;
@@ -4945,8 +4888,6 @@ static void ScrollTimerTick(winrt::Windows::Foundation::IInspectable const&,
     if (g_unloading || g_applyingSettings) return;
     g_scrollTickAnyActive = false;
     ForEachPlayerInstance(&ScrollTickCurrentInstance);
-    // The timer is shared by every instance, so it only stops once no player
-    // on any monitor still has text to scroll.
     if (!g_scrollTickAnyActive) {
         if (g_scrollDispatcherTimer) {
             try { g_scrollDispatcherTimer.Stop(); } catch (...) {}
@@ -5627,18 +5568,6 @@ using VizRect = winrt::Windows::UI::Xaml::Shapes::Rectangle;
 [[clang::no_destroy]] static std::optional<std::vector<VizRect>> g_vizBars{std::in_place};
 [[clang::no_destroy]] static std::optional<std::vector<SolidColorBrush>> g_vizBrushes{std::in_place};
 
-// ---------------------------------------------------------------------------
-// Player instances (one per taskbar)
-//
-// With "Show on all monitors" the player is injected into every taskbar:
-// Shell_TrayWnd plus one Shell_SecondaryTrayWnd per additional monitor. All of
-// them live on the same explorer.exe UI thread, so instead of threading an
-// instance handle through the whole mod, each instance owns a copy of the
-// per-taskbar state and that copy is swapped into the existing globals while
-// the instance is being built, refreshed or removed. Everything below keeps
-// reading the same globals it always did and operates on whichever instance is
-// current.
-// ---------------------------------------------------------------------------
 struct PlayerInstanceState {
     HWND                  taskbarWnd = nullptr;
     Grid                  grid{nullptr};
@@ -5664,9 +5593,6 @@ struct PlayerInstanceState {
     std::optional<std::vector<SolidColorBrush>>  vizBrushes{std::in_place};
 };
 
-// Exchanges the instance's state with the globals. Calling it twice restores
-// the original arrangement, which is what makes the swap-in/swap-out pairing
-// below safe even if the instance list changes in between.
 static void SwapPlayerInstanceState(PlayerInstanceState& s) {
     std::swap(s.taskbarWnd,      g_curTaskbarWnd);
     std::swap(s.grid,            g_playerGrid);
@@ -5693,7 +5619,6 @@ static void SwapPlayerInstanceState(PlayerInstanceState& s) {
 }
 
 [[clang::no_destroy]] static std::vector<std::unique_ptr<PlayerInstanceState>> g_playerInstances;
-// The instance whose state currently sits in the globals, if any.
 static PlayerInstanceState* g_currentInstance = nullptr;
 
 static int PlayerInstanceCount() {
@@ -5708,7 +5633,6 @@ static bool IsLivePlayerInstance(PlayerInstanceState* inst) {
     return false;
 }
 
-// Moves `target`'s state into the globals, putting back whatever was there.
 static void SetCurrentPlayerInstance(PlayerInstanceState* target) {
     if (g_currentInstance == target) return;
     if (g_currentInstance) {
@@ -5721,11 +5645,6 @@ static void SetCurrentPlayerInstance(PlayerInstanceState* target) {
     }
 }
 
-// The instance that stays current between refreshes, so interaction handlers
-// that read the globals without going through ForEachPlayerInstance still see a
-// live player. Instances are created primary-taskbar-first, and the fields of
-// whichever instance is current are held in the globals rather than in the
-// struct, so this deliberately goes by list order instead of by taskbar window.
 static PlayerInstanceState* DefaultPlayerInstance() {
     return g_playerInstances.empty() ? nullptr : g_playerInstances.front().get();
 }
@@ -5745,7 +5664,6 @@ static void ForEachPlayerInstance(void (*fn)()) {
     for (auto& owned : g_playerInstances) snapshot.push_back(owned.get());
     PlayerInstanceState* previous = g_currentInstance;
     for (auto* inst : snapshot) {
-        // fn may tear instances down (a failed refresh re-injects), so re-check.
         if (!IsLivePlayerInstance(inst)) continue;
         SetCurrentPlayerInstance(inst);
         try { fn(); } catch (...) {}
@@ -5787,9 +5705,6 @@ static double VizZoneHeight() {
         h = std::min(h, (double)g_settings.playerMaxHeight);
     return h;
 }
-// Height and colour computed for the current frame, shared by every instance:
-// the peak smoothing below must advance exactly once per frame no matter how
-// many monitors are showing a visualizer.
 static double                  g_VizFrameHeight[VIZ_BARS_MAX] = {};
 static winrt::Windows::UI::Color g_VizFrameColor[VIZ_BARS_MAX] = {};
 static int                     g_VizFrameBarCount = 0;
@@ -6151,8 +6066,6 @@ static HWND FindTaskbarWndForMonitor(HMONITOR targetMonitor) {
     return ctx.result;
 }
 static HWND FindCurrentProcessTaskbarWnd() {
-    // With "Show on all monitors" the monitor setting is ignored, and the
-    // primary taskbar is used as the reference window for thread dispatch.
     if (!g_settings.showOnAllMonitors) {
         if (HMONITOR mon = GetMonitorByNumber(g_settings.monitor)) {
             if (HWND hWnd = FindTaskbarWndForMonitor(mon)) {
@@ -6887,11 +6800,6 @@ static bool                                  g_miniPlayerVolumeSuppress = false;
 [[clang::no_destroy]] static Border          g_miniPlayerSessionListSepRef{nullptr};
 [[clang::no_destroy]] static Border          g_miniPlayerBgOverlayRef{nullptr};
 
-// Paints the menu with the same background the taskbar player uses, layered on
-// top of the menu's acrylic surface so text stays readable whatever opacity or
-// colour the player is configured with. Blurred album art is the one type that
-// cannot be produced from settings alone: it needs pixel dimensions, so it is
-// applied once the border has been measured.
 static void ApplyMiniPlayerBackground(Border const& overlay,
                                       const std::vector<BYTE>& thumbBytes) {
     if (!overlay) return;
@@ -7001,8 +6909,6 @@ static void RefreshMiniPlayerFlyoutUI() {
         }
     }
     
-    // As on the taskbar player: an app that is only playing sound fills the
-    // menu in when the media session has nothing to say.
     bool audioAppSource = false;
     if (!hasMedia) {
         uint64_t unusedHash = 0;
@@ -7013,8 +6919,6 @@ static void RefreshMiniPlayerFlyoutUI() {
         }
     }
     try {
-        // Follows the album art, so the menu retints when the track changes
-        // while it is open.
         ApplyMiniPlayerBackground(g_miniPlayerBgOverlayRef, thumbBytes);
         if (g_miniPlayerTitleRef) {
             std::wstring displayTitle;
@@ -7048,8 +6952,6 @@ static void RefreshMiniPlayerFlyoutUI() {
                 icon.Text(winrt::hstring(glyph));
             }
         }
-        // Volume row: acts on the app the menu is showing, so the same slider
-        // covers a media session and a call in Discord alike.
         if (g_miniPlayerVolumeRowRef) {
             int  percent = g_targetVolumePercent.load();
             bool muted   = g_targetMuted.load();
@@ -7057,14 +6959,9 @@ static void RefreshMiniPlayerFlyoutUI() {
             g_miniPlayerVolumeRowRef.Visibility(
                 (g_settings.showVolumeInMenu && haveVolume) ? Visibility::Visible
                                                             : Visibility::Collapsed);
-            // Not while the user is dragging: the poll runs a second behind the
-            // mixer, and snapping the thumb back to a stale reading mid-drag is
-            // exactly the fight this avoids.
             bool userIsDragging =
                 (GetTickCount64() - g_volumeUserActionTick.load()) < 900;
             if (g_miniPlayerVolumeSliderRef && haveVolume && !userIsDragging) {
-                // Set programmatically, so the ValueChanged handler has to know
-                // not to push this straight back into the mixer.
                 g_miniPlayerVolumeSuppress = true;
                 if (std::abs(g_miniPlayerVolumeSliderRef.Value() - (double)percent) > 0.5) {
                     g_miniPlayerVolumeSliderRef.Value((double)percent);
@@ -7188,7 +7085,7 @@ static void RefreshMiniPlayerFlyoutUI() {
                                     auto child = grid.Children().GetAt(j);
                                     if (auto pillRect = child.try_as<winrt::Windows::UI::Xaml::Shapes::Rectangle>()) {
                                         if (wasCurrent != isCurrent) {
-                                            AnimateSessionPill(pillRect, isCurrent, /*animate*/ true);
+                                            AnimateSessionPill(pillRect, isCurrent, true);
                                         }
                                         continue;
                                     }
@@ -7414,10 +7311,10 @@ static Button BuildSessionRowButton(const MiniSessionInfo& info, bool isCurrent,
         pill.VerticalAlignment(VerticalAlignment::Center);
         pill.HorizontalAlignment(HorizontalAlignment::Left);
 
-        AnimateSessionPill(pill, isCurrent, /*animate*/ false);
+        AnimateSessionPill(pill, isCurrent, false);
         if (isCurrent) {
             pill.Loaded([pill](auto const&, auto const&) {
-                AnimateSessionPill(pill, true, /*animate*/ true);
+                AnimateSessionPill(pill, true, true);
             });
         }
 
@@ -7689,7 +7586,6 @@ static Grid BuildMiniPlayerFlyoutContent() {
 
     Border bg;
     bg.CornerRadius({8, 8, 8, 8});
-    // Bottom padding used to be supplied by the (now removed) bottom bar.
     bg.Padding({16, 16, 16, 16});
     bg.Margin({13, 13, 13, 13});
 
@@ -7970,25 +7866,7 @@ static Grid BuildMiniPlayerFlyoutContent() {
     repeatBtn.Click([](auto const&, auto const&) {
         if (g_unloading) return;
         try {
-            RepeatMode cur = g_repeatMode.load();
-            RepeatMode next;
-            int cmd;
-            if (cur == RepeatMode::Off) {
-                next = RepeatMode::All; cmd = 11;
-            } else if (cur == RepeatMode::All) {
-                next = RepeatMode::One; cmd = 12;
-            } else {
-                next = RepeatMode::Off; cmd = 10;
-            }
-            g_repeatMode.store(next);
-            if (g_miniPlayerRepeatBtnRef) {
-                if (auto icon = g_miniPlayerRepeatBtnRef.Content().try_as<TextBlock>()) {
-                    icon.Text(next == RepeatMode::One ? L"\uE8ED" :
-                              next == RepeatMode::All ? L"\uE8EE" : L"\uF5E7");
-                    icon.Opacity(next != RepeatMode::Off ? 1.0 : 0.40);
-                }
-            }
-            SendMediaCommandAsync(cmd);
+            SendMediaCommandAsync(8);
             DispatchMediaUpdate();
         } catch (...) {}
     });
@@ -8010,7 +7888,6 @@ static Grid BuildMiniPlayerFlyoutContent() {
 
     content.Children().Append(wrapDebugBorder(controlsRow, {0xFF, 0x00, 0x00, 0xFF}));
 
-    // Volume row — the app's own mixer channel, not the desktop volume.
     {
         Grid volumeRow;
         volumeRow.Margin({0, 6, 0, 2});
@@ -8072,7 +7949,6 @@ static Grid BuildMiniPlayerFlyoutContent() {
             if (g_unloading || g_miniPlayerVolumeSuppress) return;
             int percent = (int)std::lround(e.NewValue());
             QueueAppVolume(percent);
-            // Follows the thumb rather than the once-a-second poll behind it.
             if (g_miniPlayerVolumeTextRef) {
                 try {
                     g_miniPlayerVolumeTextRef.Text(
@@ -8145,8 +8021,6 @@ static Grid BuildMiniPlayerFlyoutContent() {
     Grid::SetRow(contentBackground, 0);
     innerGrid.Children().Append(contentBackground);
 
-    // Sits between the acrylic surface and the content, so the player's own
-    // background shows through without the text losing its readable backdrop.
     Border playerBackgroundOverlay;
     playerBackgroundOverlay.CornerRadius({8, 8, 8, 8});
     playerBackgroundOverlay.Margin({-16, -16, -16, -16});
@@ -8198,8 +8072,6 @@ static bool GetTaskbarMonitorWorkAreaInfo(FrameworkElement const& rootContent,
                                           RECT& outWorkAreaPx,
                                           POINT& outOriginPx,
                                           double& outScale) {
-    // The instance's own taskbar, so the popup is placed relative to the
-    // monitor the player was clicked on rather than always the primary one.
     HWND hTaskbar = g_curTaskbarWnd ? g_curTaskbarWnd : g_taskbarWnd;
     if (!hTaskbar || !rootContent) return false;
 
@@ -8414,9 +8286,6 @@ static void ShowMiniPlayerFlyout(FrameworkElement const& target) {
                     bool horizontal = (g_miniPlayerAnimAxis == 1);
                     double size = horizontal ? content.ActualWidth() : content.ActualHeight();
                     if (size <= 0) size = 450.0;
-                    // A short travel plus a fade, rather than sliding the whole
-                    // popup in from off-screen: the same direction cue, without
-                    // the heavy full-height sweep.
                     double startOffset = std::min(size, 48.0) * g_miniPlayerAnimSign;
 
                     PCWSTR propertyPath = horizontal
@@ -8513,8 +8382,6 @@ static void ShowMiniPlayerFlyout(FrameworkElement const& target) {
                 bool horizontal = (g_miniPlayerAnimAxis == 1);
                 double size = horizontal ? content.ActualWidth() : content.ActualHeight();
                 if (size <= 0) size = 450.0;
-                // Mirrors the entrance: a short retreat in the same direction,
-                // with the fade doing most of the work.
                 double endOffset = std::min(size, 40.0) * g_miniPlayerAnimSign;
 
                 PCWSTR propertyPath = horizontal
@@ -8919,14 +8786,18 @@ static Grid BuildPlayerGrid() {
                 auto artDblClickLastTime = std::make_shared<ULONGLONG>(0);
                 auto artDblClickLastKind = std::make_shared<winrt::Windows::UI::Input::PointerUpdateKind>(
                     winrt::Windows::UI::Input::PointerUpdateKind::Other);
-                artContainer.PointerReleased([artDblClickLastTime, artDblClickLastKind](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) mutable {
+                auto artDblClickLastPosition = std::make_shared<winrt::Windows::Foundation::Point>();
+                auto pendingAlbumArtClick = MakePendingPointerAction();
+                artContainer.PointerReleased([artDblClickLastTime, artDblClickLastKind, artDblClickLastPosition, pendingAlbumArtClick](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) mutable {
                     bool actuallyHovered = false;
+                    winrt::Windows::Foundation::Point releasePosition{};
                     if (auto elem = sender.template try_as<UIElement>()) {
                         elem.ReleasePointerCapture(e.Pointer());
                         try {
                             auto pointerPoint = e.GetCurrentPoint(elem);
                             auto bounds = elem.RenderSize();
                             auto pos = pointerPoint.Position();
+                            releasePosition = pos;
                             actuallyHovered = (pos.X >= 0 && pos.X <= bounds.Width && pos.Y >= 0 && pos.Y <= bounds.Height);
                         } catch (...) { actuallyHovered = false; }
                     }
@@ -8937,22 +8808,30 @@ static Grid BuildPlayerGrid() {
                         ULONGLONG now = GetTickCount64();
                         UINT dblClickMs = GetDoubleClickTime();
                         bool isDouble = (kind == *artDblClickLastKind) &&
-                                        (now - *artDblClickLastTime) <= dblClickMs;
+                                        (now - *artDblClickLastTime) <= dblClickMs &&
+                                        std::abs(releasePosition.X - artDblClickLastPosition->X) <=
+                                            GetSystemMetrics(SM_CXDOUBLECLK) / 2.0 &&
+                                        std::abs(releasePosition.Y - artDblClickLastPosition->Y) <=
+                                            GetSystemMetrics(SM_CYDOUBLECLK) / 2.0;
                         *artDblClickLastTime = isDouble ? 0 : now;
                         *artDblClickLastKind = kind;
+                        *artDblClickLastPosition = releasePosition;
                         using Kind = winrt::Windows::UI::Input::PointerUpdateKind;
                         if (kind == Kind::LeftButtonReleased) {
-                            if (isDouble) ExecuteMediaAction(g_settings.albumArtLeftDoubleClick, fe);
-                            else          ExecuteMediaAction(g_settings.albumArtLeftClick, fe);
+                            RunPointerAction(pendingAlbumArtClick, fe, g_settings.albumArtLeftClick,
+                                             g_settings.albumArtLeftDoubleClick, isDouble, true);
                         } else if (kind == Kind::RightButtonReleased) {
-                            if (isDouble) ExecuteMediaAction(g_settings.albumArtRightDoubleClick, fe);
-                            else          ExecuteMediaAction(g_settings.albumArtRightClick, fe);
+                            RunPointerAction(pendingAlbumArtClick, fe, g_settings.albumArtRightClick,
+                                             g_settings.albumArtRightDoubleClick, isDouble, true);
                         } else if (kind == Kind::MiddleButtonReleased) {
-                            if (isDouble) ExecuteMediaAction(g_settings.albumArtMiddleDoubleClick, fe);
-                            else          ExecuteMediaAction(g_settings.albumArtMiddleClick, fe);
+                            RunPointerAction(pendingAlbumArtClick, fe, g_settings.albumArtMiddleClick,
+                                             g_settings.albumArtMiddleDoubleClick, isDouble, true);
                         }
                     }
                     e.Handled(true);
+                });
+                artContainer.Unloaded([pendingAlbumArtClick](auto const&, auto const&) {
+                    CancelPendingPointerAction(pendingAlbumArtClick);
                 });
                 artContainer.PointerWheelChanged([](winrt::Windows::Foundation::IInspectable const&, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) {
                     if (g_unloading) return;
@@ -9428,43 +9307,60 @@ static Grid BuildPlayerGrid() {
     auto wrapperDblClickLastTime = std::make_shared<ULONGLONG>(0);
     auto wrapperDblClickLastKind = std::make_shared<winrt::Windows::UI::Input::PointerUpdateKind>(
         winrt::Windows::UI::Input::PointerUpdateKind::Other);
+    auto wrapperDblClickLastPosition = std::make_shared<winrt::Windows::Foundation::Point>();
+    auto pendingPlayerClick = MakePendingPointerAction();
     wrapper.AddHandler(UIElement::PointerReleasedEvent(), winrt::box_value(
         winrt::Windows::UI::Xaml::Input::PointerEventHandler(
-        [isPressed, isHovered, updatePlayerVisualState, wrapperDblClickLastTime, wrapperDblClickLastKind](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) mutable {
+        [isPressed, isHovered, updatePlayerVisualState, wrapperDblClickLastTime, wrapperDblClickLastKind, wrapperDblClickLastPosition, pendingPlayerClick](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) mutable {
         bool wasHandled = e.Handled();
         *isPressed = false;
         bool actuallyHovered = false;
+        winrt::Windows::Foundation::Point releasePosition{};
         if (auto elem = sender.template try_as<UIElement>()) {
             elem.ReleasePointerCapture(e.Pointer());
             try {
                 auto pointerPoint = e.GetCurrentPoint(elem);
                 auto bounds = elem.RenderSize();
                 auto pos = pointerPoint.Position();
+                releasePosition = pos;
                 actuallyHovered = (pos.X >= 0 && pos.X <= bounds.Width && pos.Y >= 0 && pos.Y <= bounds.Height);
             } catch (...) { actuallyHovered = false; }
         }
         *isHovered = actuallyHovered;
         updatePlayerVisualState();
         if (g_unloading) return;
+        bool handledByAlbumArt =
+            wasHandled && HasNamedVisualAncestor(e.OriginalSource(), kArtContainerName);
         if (actuallyHovered) {
             auto kind = e.GetCurrentPoint(nullptr).Properties().PointerUpdateKind();
             auto fe = sender.template try_as<FrameworkElement>();
             ULONGLONG now = GetTickCount64();
             UINT dblClickMs = GetDoubleClickTime();
             bool isDouble = (kind == *wrapperDblClickLastKind) &&
-                            (now - *wrapperDblClickLastTime) <= dblClickMs;
+                            (now - *wrapperDblClickLastTime) <= dblClickMs &&
+                            std::abs(releasePosition.X - wrapperDblClickLastPosition->X) <=
+                                GetSystemMetrics(SM_CXDOUBLECLK) / 2.0 &&
+                            std::abs(releasePosition.Y - wrapperDblClickLastPosition->Y) <=
+                                GetSystemMetrics(SM_CYDOUBLECLK) / 2.0;
             *wrapperDblClickLastTime = isDouble ? 0 : now;
             *wrapperDblClickLastKind = kind;
+            *wrapperDblClickLastPosition = releasePosition;
             using Kind = winrt::Windows::UI::Input::PointerUpdateKind;
             if (kind == Kind::LeftButtonReleased) {
-                if (isDouble) ExecuteMediaAction(g_settings.playerLeftDoubleClick, fe);
-                else if (!wasHandled) ExecuteMediaAction(g_settings.playerLeftClick, fe);
+                if (!handledByAlbumArt || g_settings.albumArtLeftDoubleClick == L"none") {
+                    RunPointerAction(pendingPlayerClick, fe, g_settings.playerLeftClick,
+                                     g_settings.playerLeftDoubleClick, isDouble, !wasHandled);
+                }
             } else if (kind == Kind::RightButtonReleased) {
-                if (isDouble) ExecuteMediaAction(g_settings.playerRightDoubleClick, fe);
-                else if (!wasHandled) ExecuteMediaAction(g_settings.playerRightClick, fe);
+                if (!handledByAlbumArt || g_settings.albumArtRightDoubleClick == L"none") {
+                    RunPointerAction(pendingPlayerClick, fe, g_settings.playerRightClick,
+                                     g_settings.playerRightDoubleClick, isDouble, !wasHandled);
+                }
             } else if (kind == Kind::MiddleButtonReleased) {
-                if (isDouble) ExecuteMediaAction(g_settings.playerMiddleDoubleClick, fe);
-                else if (!wasHandled) ExecuteMediaAction(g_settings.playerMiddleClick, fe);
+                if (!handledByAlbumArt || g_settings.albumArtMiddleDoubleClick == L"none") {
+                    RunPointerAction(pendingPlayerClick, fe, g_settings.playerMiddleClick,
+                                     g_settings.playerMiddleDoubleClick, isDouble, !wasHandled);
+                }
             }
         }
     })), true);
@@ -9472,6 +9368,9 @@ static Grid BuildPlayerGrid() {
         *isPressed = false;
         *isHovered = false;
         updatePlayerVisualState();
+    });
+    wrapper.Unloaded([pendingPlayerClick](auto const&, auto const&) {
+        CancelPendingPointerAction(pendingPlayerClick);
     });
     wrapper.PointerCaptureLost([isPressed, isHovered, updatePlayerVisualState](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) mutable {
         *isPressed = false;
@@ -9863,8 +9762,6 @@ static InjectionTarget ResolveInjectionTarget(
     }
     return {};
 }
-// Injects one player into the given taskbar. The caller has already made a
-// fresh instance current, so the globals below refer to that instance only.
 static bool InjectPlayerGridIntoTaskbar(HWND hWnd) {
     if (!hWnd) {
         Wh_Log(L"InjectPlayerGrid: No taskbar window found");
@@ -10015,8 +9912,6 @@ static bool InjectPlayerGridIntoTaskbar(HWND hWnd) {
                             g_settings.position == L"taskbar_after_taskview_right")) {
                             startButtonOffset = GetStartButtonAdjustment(root);
                         }
-                        // Fires for this taskbar only, so it re-selects its own
-                        // instance before touching the shared globals.
                         PlayerInstanceState* owner = g_currentInstance;
                         g_layoutUpdateToken = targetGrid.LayoutUpdated(
                             [targetGrid, startButtonModActiveMod, startButtonOffset, owner](winrt::Windows::Foundation::IInspectable const&, winrt::Windows::Foundation::IInspectable const&) {
@@ -10120,8 +10015,6 @@ static bool InjectPlayerGridIntoTaskbar(HWND hWnd) {
         }
         g_playerGrid      = playerGrid;
         g_injectionParent = targetParent;
-        // Click, hover and context-menu handlers read the globals, so pointer
-        // input over this player makes its own instance the current one first.
         {
             PlayerInstanceState* owner = g_currentInstance;
             winrt::Windows::UI::Xaml::Input::PointerEventHandler select(
@@ -10162,8 +10055,6 @@ static bool InjectPlayerGridIntoTaskbar(HWND hWnd) {
         return false;
     }
 }
-// Every taskbar the player should be injected into: all of them when "Show on
-// all monitors" is on, otherwise just the one on the configured monitor.
 static std::vector<HWND> CollectTargetTaskbarWnds() {
     std::vector<HWND> result;
     if (!g_settings.showOnAllMonitors) {
@@ -10183,7 +10074,6 @@ static std::vector<HWND> CollectTargetTaskbarWnds() {
         }
         return TRUE;
     }, reinterpret_cast<LPARAM>(&result));
-    // Keep the primary taskbar first so it becomes the default instance.
     auto primary = std::find(result.begin(), result.end(), g_taskbarWnd);
     if (primary != result.end()) {
         std::iter_swap(result.begin(), primary);
@@ -10214,7 +10104,6 @@ static bool InjectPlayerGrid() {
         if (ok) {
             injectedAny = true;
         } else {
-            // Nothing was added to the tree, so the instance can just be dropped.
             auto it = std::find_if(g_playerInstances.begin(), g_playerInstances.end(),
                                    [raw](auto const& o) { return o.get() == raw; });
             if (it != g_playerInstances.end()) {
@@ -10315,7 +10204,6 @@ static void RemovePlayerGridInstance() {
     }
 }
 static void RemovePlayerGrid() {
-    // The popup and its element references are shared by every instance.
     try {
         if (g_miniPlayerFlyoutOpen && g_miniPlayerFlyout) {
             g_miniPlayerExplicitCloseRequested.store(true);
@@ -10365,8 +10253,6 @@ static void RefreshPlayerContentsInstance() {
     }
     bool hasSession = false;
     { std::lock_guard<std::mutex> lk(g_sessionMtx); hasSession = (g_currentSession != nullptr); }
-    // With no track information to show, an app that is merely playing sound —
-    // a call, a meeting tab, a game — takes the player over instead.
     bool audioAppSource = false;
     if (!hasMedia &&
         ApplyAudioAppToDisplay(title, artist, thumbBytes, thumbHash, isPlaying)) {
@@ -10404,8 +10290,6 @@ static void RefreshPlayerContentsInstance() {
     }
     bool titleVisible = false;
     bool artistVisible = false;
-    // Whether the displayed track text actually changed, so the text block can
-    // be faded in rather than swapped mid-sentence.
     bool trackTextChanged = false;
     if (auto fe = FindChildByName(g_playerGrid, kTitleBlockName))
         if (auto tb = fe.try_as<TextBlock>())
@@ -10589,8 +10473,6 @@ static void RefreshPlayerContentsInstance() {
         if (auto stackFe = FindChildByName(g_playerGrid, kTextStackName)) {
             bool anyTextVisible = titleVisible || artistVisible;
             stackFe.Visibility(anyTextVisible ? Visibility::Visible : Visibility::Collapsed);
-            // Faded as one block so the title and artist stay in step, and so a
-            // scrolling clone cannot fade out of sync with its original.
             if (anyTextVisible && trackTextChanged) {
                 AnimateContentSwap(stackFe, kTextFadeMs, 1.0);
             }
@@ -10600,8 +10482,6 @@ static void RefreshPlayerContentsInstance() {
         if (auto btn = fe.try_as<Button>())
             try {
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
-                    // An audio-only app has no transport to drive, so the same
-                    // button mutes it and shows a speaker instead.
                     const wchar_t* glyph = audioAppSource
                         ? (isPlaying ? L"" : L"")
                         : GetGlyph(2, isPlaying);
@@ -10752,11 +10632,6 @@ static void RefreshPlayerContentsInstance() {
                     ct.Foreground(MakeBrush(ButtonColor()));
                 }
             } catch (...) {}
-    // Empty state: with no session carrying track information there is nothing
-    // for the transport buttons to act on and nothing the visualizer belongs to,
-    // so both drop out and the player collapses to album art plus placeholder
-    // text. The individual buttons above stay as they are — collapsing their
-    // container is enough to take them out of the layout.
     const bool emptyStateOwnsAlbumArt =
         !(hasSession && hasMedia) && g_settings.emptyStateHideAlbumArt;
     {
@@ -10780,10 +10655,6 @@ static void RefreshPlayerContentsInstance() {
                         g_settings.emptyStateHideButtons);
         applyEmptyState(FindChildByName(g_playerGrid, kVizContainerName),
                         g_settings.emptyStateHideVisualizer);
-        // The album art area carries a placeholder square, a border ring, the
-        // placeholder glyph and the pause overlay. None of them mean anything
-        // with nothing playing, so the whole area goes rather than leaving an
-        // empty tile behind.
         applyEmptyState(FindChildByName(g_playerGrid, kArtContainerName),
                         g_settings.emptyStateHideAlbumArt);
     }
@@ -10791,9 +10662,6 @@ static void RefreshPlayerContentsInstance() {
         if (auto fe = FindChildByName(g_playerGrid, L"PauseIconOverlay"))
             if (auto overlay = fe.try_as<Border>()) {
                 try {
-                    // Only a real, paused track gets the pause overlay. With
-                    // nothing playing there is no cover to overlay, and a muted
-                    // app is not a paused one.
                     bool showPause = !isPlaying && hasMedia && !audioAppSource;
                     overlay.Visibility(showPause ? Visibility::Visible : Visibility::Collapsed);
                     if (auto pauseIcon = overlay.Child().try_as<TextBlock>()) {
@@ -10868,8 +10736,6 @@ static void RefreshPlayerContentsInstance() {
                                         if (auto panelFe = FindChildByName(g_playerGrid, kPanelGridName)) {
                                             panelFe.UpdateLayout();
                                         }
-                                        // Crossfade the new cover in once it has
-                                        // decoded, instead of swapping abruptly.
                                         AnimateContentSwap(img, kArtCrossfadeMs);
                                         g_needsUiUpdate = true;
                                         if (g_timerUpdateEvent) SetEvent(g_timerUpdateEvent);
@@ -10999,9 +10865,6 @@ static void RefreshPlayerContentsInstance() {
                     } else if (g_settings.albumArtEmptyBehavior == L"show_icon" && thumbBytes.empty()) {
                         if (auto parent = VisualTreeHelper::GetParent(img)) {
                             if (auto artInnerGrid = parent.try_as<Grid>()) {
-                                // Not while the empty state owns the area — it
-                                // would fight the fade-out and flicker the
-                                // placeholder glyph back in on every update.
                                 if (!(emptyStateOwnsAlbumArt)) {
                                     if (auto grandParent = VisualTreeHelper::GetParent(artInnerGrid)) {
                                         if (auto container = grandParent.try_as<FrameworkElement>()) {
@@ -11190,7 +11053,6 @@ static void RefreshPlayerContentsInstance() {
 }
 static void RefreshPlayerContents() {
     ForEachPlayerInstance(&RefreshPlayerContentsInstance);
-    // A single popup is shared by all instances, so it is refreshed once.
     RefreshMiniPlayerFlyoutUI();
 }
 static bool IsFullscreenActive() {
@@ -11206,11 +11068,7 @@ static bool IsFullscreenActive() {
     int s = 0;
     return SUCCEEDED(pfn(&s)) && (s == 2 || s == 3 || s == 4);
 }
-// Set by UpdateVisibilityInstance when at least one player ended up visible;
-// the shared scroll/visualizer timers below are driven off it.
 static bool g_anyPlayerVisible = false;
-// As above, but excluding players whose visualizer is hidden by the empty
-// state — there is no point capturing audio for bars nobody can see.
 static bool g_anyVisualizerVisible = false;
 static void UpdateVisibilityInstance() {
     if (!g_playerGrid || g_unloading || g_applyingSettings) return;
@@ -11246,8 +11104,6 @@ static void UpdateVisibilityInstance() {
     }
     try {
         if (g_playerColumn == -1) {
-            // Overlay positions do not take part in layout, so the player can
-            // simply fade in and out in place.
             bool wasVisible = (g_playerGrid.Visibility() == Visibility::Visible &&
                                g_playerGrid.Opacity() > 0.01);
             if (hide) {
@@ -11273,9 +11129,6 @@ static void UpdateVisibilityInstance() {
                                     g_settings.position == L"taskbar_far_edge_left");
             if (hide && isTrackingPosition && g_settings.enableSmoothPositionAnimation) {
                 AnimatePlayerHide(g_playerGrid);
-                // The collapse is deferred until the fade-out has played, so it
-                // has to come back to this instance rather than whichever one
-                // happens to be current by then.
                 PlayerInstanceState* owner = g_currentInstance;
                 SpawnTrackedWorker([owner]() {
                     std::this_thread::sleep_for(
@@ -11362,8 +11215,6 @@ static void UpdateVisibility() {
     g_anyPlayerVisible = false;
     g_anyVisualizerVisible = false;
     ForEachPlayerInstance(&UpdateVisibilityInstance);
-    // The audio capture, visualizer timer and scroll timer are shared, so they
-    // run as long as any monitor is still showing the player.
     try {
         if (g_settings.vizEnabled) {
             if (g_anyVisualizerVisible && !g_vizCurrentlyVisible) {
@@ -11440,7 +11291,6 @@ static void WINAPI TrayUI_StartTaskbar_Hook(void* pThis) {
         Wh_Log(L"TrayUI_StartTaskbar_Hook: Taskbar window not found");
         return;
     }
-    // The taskbars were rebuilt, so every instance now points at dead XAML.
     SetCurrentPlayerInstance(nullptr);
     g_playerInstances.clear();
     g_playerGrid      = nullptr;
