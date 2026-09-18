@@ -1,12 +1,9 @@
 # StackSwitch
 
 StackSwitch adds a button to the Windows taskbar for starting and stopping an entire working set.
-Select the items you need, choose **Launch**, and StackSwitch opens them in order. Choose **Close**
-to shut down that same selection in reverse order.
+Select the items you need, choose **Launch**, and StackSwitch opens them in order. Choose **Close** to shut down that same selection in reverse order.
 
-It supports applications, folders, URLs, Visual Studio Code workspaces, and commands in a terminal
-or without a visible window. Per-item selections persist across restarts, so optional tools remain
-off until they are needed.
+It supports applications, folders, URLs, Visual Studio Code workspaces, and commands in a terminal or without a visible window. Per-item selections persist across restarts, so optional tools remain off until they are needed.
 
 ## Features
 
@@ -18,9 +15,7 @@ off until they are needed.
 - Eight taskbar placements, a global hotkey and an optional tray icon
 - Dark and light panel themes based on Visual Studio Code
 
-The button uses a layered child window of the taskbar rather than XAML injection, avoiding fragile
-Windows symbol resolution. The complete settings reference is embedded in the source and appears
-on Windhawk's **Details** tab after installation.
+The button uses a layered child window of the taskbar rather than XAML injection, avoiding fragile Windows symbol resolution. The complete settings reference is embedded in the source and appears on Windhawk's **Details** tab after installation.
 
 ## Install
 

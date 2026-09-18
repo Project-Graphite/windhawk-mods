@@ -3,8 +3,7 @@ projects:
     kind: epic
     name: Windhawk Mods
     summary: >
-      A growing collection of native Windows customizations built for Windhawk, the open-source
-      marketplace and framework for modifying programs without replacing system files.
+      A growing collection of native Windows customizations built for Windhawk, the open-source marketplace and framework for modifying programs without replacing system files.
     tags: [cpp, windows, windhawk, win32]
     owner: amr
     authors: [AmrMsCLL]
@@ -12,20 +11,15 @@ projects:
     listed: true
     showcase:
       problem: >
-        Useful Windows customizations are often distributed as opaque executables or broad system
-        replacements, making them difficult to inspect, maintain and trust across Windows updates.
+        Useful Windows customizations are often distributed as opaque executables or broad system replacements, making them difficult to inspect, maintain and trust across Windows updates.
       approach: >
-        Each customization is developed as a focused Windhawk mod with its own folder, documentation
-        and reviewable C++ source. The collection favors native Windows behavior, explicit settings
-        and resilient integration points over standalone background applications.
+        Each customization is developed as a focused Windhawk mod with its own folder, documentation and reviewable C++ source. The collection favors native Windows behavior, explicit settings and resilient integration points over standalone background applications.
       outcome: >
-        Project Graphite has a maintainable home for Windows experiments where every mod can be
-        understood, installed and evolved independently while sharing consistent quality checks.
+        Project Graphite has a maintainable home for Windows experiments where every mod can be understood, installed and evolved independently while sharing consistent quality checks.
       contributions:
         - github: AmrMsCLL
           summary: >
-            Designs and maintains the collection, its native Windows integrations, settings models,
-            project documentation and validation workflow.
+            Designs and maintains the collection, its native Windows integrations, settings models, project documentation and validation workflow.
     deploy:
       kind: none
 
@@ -34,8 +28,7 @@ projects:
     kind: project
     name: StackSwitch
     summary: >
-      A Windhawk taskbar launcher that starts and stops configurable working sets of applications,
-      folders, editor workspaces, URLs and terminal commands with one action.
+      A Windhawk taskbar launcher that starts and stops configurable working sets of applications, folders, editor workspaces, URLs and terminal commands with one action.
     tags: [cpp, windows, windhawk, win32]
     owner: amr
     authors: [AmrMsCLL]
@@ -43,19 +36,40 @@ projects:
     listed: true
     showcase:
       problem: >
-        A development session can mean opening the same mix of applications, workspaces, folders,
-        URLs and terminal commands, then finding and closing them all again in the right order.
+        A development session can mean opening the same mix of applications, workspaces, folders, URLs and terminal commands, then finding and closing them all again in the right order.
       approach: >
-        StackSwitch adds a native taskbar panel with persistent selections, named profiles, grouped
-        items, launch delays and wait-for-exit behavior. It closes the same selection in reverse
-        order and avoids fragile Windows symbol resolution by using a layered child window.
+        StackSwitch adds a native taskbar panel with persistent selections, named profiles, grouped items, launch delays and wait-for-exit behavior. It closes the same selection in reverse order and avoids fragile Windows symbol resolution by using a layered child window.
       outcome: >
-        One taskbar action can start or stop a repeatable working environment while optional tools
-        stay disabled until needed, and the integration remains resilient across Windows updates.
+        One taskbar action can start or stop a repeatable working environment while optional tools stay disabled until needed, and the integration remains resilient across Windows updates.
       contributions:
         - github: AmrMsCLL
           summary: >
-            Designed and implemented the Win32 taskbar integration, configuration model, process
-            orchestration, profiles, persisted selections and user-facing launcher panel.
+            Designed and implemented the Win32 taskbar integration, configuration model, process orchestration, profiles, persisted selections and user-facing launcher panel.
+    deploy:
+      kind: none
+
+  - slug: tasktune
+    parent: windhawk-mods
+    kind: project
+    name: TaskTune
+    summary: >
+      A configurable Windhawk media player embedded in the Windows 11 taskbar, with media-session controls, per-app volume, audio-only application support and an optional spectrum visualizer.
+    tags: [cpp, windows, windhawk, winrt, audio]
+    owner: amr
+    authors: [AmrMsCLL]
+    status: source-only
+    listed: true
+    showcase:
+      problem: >
+        Checking playback details or controlling several media and audio applications usually means opening a player window or a separate volume interface and leaving the current workflow.
+      approach: >
+        The mod injects a configurable Fluent UI player into the Windows 11 taskbar, reads Windows media sessions, falls back to active audio sessions, and exposes playback, session and
+        per-application volume controls beside an optional WASAPI visualizer.
+      outcome: >
+        Media status and the most common playback and volume actions remain available at a glance without adding a separate background application or replacing Windows system files.
+      contributions:
+        - github: AmrMsCLL
+          summary: >
+            Designed and maintains the media-session integration, taskbar player, per-application audio controls, visualizer, customization model and Project Graphite packaging.
     deploy:
       kind: none
