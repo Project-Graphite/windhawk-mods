@@ -5,7 +5,7 @@ projects:
     summary: >
       A growing collection of native Windows customizations built for Windhawk, the open-source marketplace and framework for modifying programs without replacing system files.
     tags: [cpp, windows, windhawk, win32]
-    owner: amr
+    owner: amrmscll
     authors: [AmrMsCLL]
     status: source-only
     listed: true
@@ -19,7 +19,7 @@ projects:
     summary: >
       A Windhawk taskbar launcher that starts and stops configurable working sets of applications, folders, editor workspaces, URLs and terminal commands with one action.
     tags: [cpp, windows, windhawk, win32]
-    owner: amr
+    owner: amrmscll
     authors: [AmrMsCLL]
     status: source-only
     listed: true
@@ -44,7 +44,7 @@ projects:
     summary: >
       A configurable Windhawk media player embedded in the Windows 11 taskbar, with media-session controls, per-app volume, audio-only application support and an optional spectrum visualizer.
     tags: [cpp, windows, windhawk, winrt, audio]
-    owner: amr
+    owner: amrmscll
     authors: [AmrMsCLL]
     status: source-only
     listed: true
