@@ -270,7 +270,7 @@ twice.
 
 ## Appearance
 
-The panel follows VS Code's colours - Dark Modern and Light Modern - and picks
+The dark panel uses the Project Graphite colours, with a light variant, and picks
 between them from your Windows app theme unless **Theme** says otherwise.
 
 * **Accent colour** - empty uses VS Code blue, `system` uses your Windows accent,
@@ -463,7 +463,7 @@ Leave **Icon** empty and the item uses its target's real shell icon. Otherwise:
   $description: Put a button on other monitors' taskbars too.
 - theme: auto
   $name: Theme
-  $description: Panel colours follow VS Code's Dark Modern and Light Modern.
+  $description: Project Graphite dark colours, or a light variant.
   $options:
   - auto: Follow Windows
   - dark: Dark
@@ -1713,18 +1713,18 @@ static Palette BuildPalette() {
                              : gp::Color(255, 0xFF, 0xFF, 0xFF);
 
     if (dark) {
-        palette.background = gp::Color(247, 0x1F, 0x1F, 0x1F);
-        palette.surface = gp::Color(255, 0x31, 0x31, 0x31);
-        palette.border = gp::Color(190, 0x3C, 0x3C, 0x3C);
-        palette.divider = gp::Color(120, 0x3C, 0x3C, 0x3C);
-        palette.text = gp::Color(255, 0xCC, 0xCC, 0xCC);
-        palette.textStrong = gp::Color(255, 0xE7, 0xE7, 0xE7);
-        palette.textDim = gp::Color(255, 0x9D, 0x9D, 0x9D);
+        palette.background = gp::Color(247, 0x0C, 0x0C, 0x0E);
+        palette.surface = gp::Color(255, 0x13, 0x13, 0x16);
+        palette.border = gp::Color(190, 0x26, 0x26, 0x2C);
+        palette.divider = gp::Color(120, 0x1C, 0x1C, 0x21);
+        palette.text = gp::Color(255, 0xE8, 0xE8, 0xEA);
+        palette.textStrong = gp::Color(255, 0xE8, 0xE8, 0xEA);
+        palette.textDim = gp::Color(255, 0x8B, 0x8B, 0x95);
         palette.hover = gp::Color(255, 0x2A, 0x2D, 0x2E);
         palette.press = gp::Color(255, 0x37, 0x3B, 0x3D);
         palette.selection = gp::Color(255, 0x04, 0x39, 0x5E);
-        palette.running = gp::Color(255, 0x73, 0xC9, 0x91);
-        palette.scrollbar = gp::Color(110, 0x79, 0x79, 0x79);
+        palette.running = gp::Color(255, 0x46, 0xB9, 0x7A);
+        palette.scrollbar = gp::Color(110, 0x6A, 0x6A, 0x74);
         palette.toggleOff = gp::Color(255, 0x5A, 0x5A, 0x5A);
     } else {
         palette.background = gp::Color(249, 0xF8, 0xF8, 0xF8);
@@ -1733,7 +1733,7 @@ static Palette BuildPalette() {
         palette.divider = gp::Color(160, 0xE5, 0xE5, 0xE5);
         palette.text = gp::Color(255, 0x3B, 0x3B, 0x3B);
         palette.textStrong = gp::Color(255, 0x1F, 0x1F, 0x1F);
-        palette.textDim = gp::Color(255, 0x76, 0x76, 0x76);
+        palette.textDim = gp::Color(255, 0x61, 0x61, 0x61);
         palette.hover = gp::Color(255, 0xF2, 0xF2, 0xF2);
         palette.press = gp::Color(255, 0xE4, 0xE4, 0xE4);
         palette.selection = gp::Color(255, 0xCF, 0xE3, 0xFA);

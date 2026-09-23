@@ -13,7 +13,7 @@ It supports applications, folders, URLs, Visual Studio Code workspaces, and comm
 - Graceful reverse-order shutdown with a force-close fallback
 - Optional profile launch after signing in
 - Eight taskbar placements, a global hotkey and an optional tray icon
-- Dark and light panel themes based on Visual Studio Code
+- Dark and light panel themes that follow the Windows app theme
 
 The button uses a layered child window of the taskbar rather than XAML injection, avoiding fragile Windows symbol resolution. The complete settings reference is embedded in the source and appears on Windhawk's **Details** tab after installation.
 
