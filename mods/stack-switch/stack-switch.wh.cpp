@@ -687,7 +687,7 @@ static std::atomic<bool> g_launching{false};
 static std::atomic<bool> g_cancelLaunch{false};
 static std::atomic<DWORD> g_launchThreadId{0};
 static ULONGLONG g_panelHiddenTick = 0;
-static std::atomic<UINT> g_dpi{96};
+static thread_local UINT g_dpi = 96;
 static bool g_trayIconAdded = false;
 static HICON g_trayIcon = nullptr;
 static UINT g_taskbarCreatedMessage = 0;
@@ -771,7 +771,14 @@ static std::wstring StatusText() {
 }
 
 static int Scale(int value) {
-    return MulDiv(value, (int)g_dpi.load(), 96);
+    return MulDiv(value, (int)g_dpi, 96);
+}
+
+static void UseDpiOf(HWND window) {
+    UINT dpi = GetDpiForWindow(window);
+    if (dpi >= 72) {
+        g_dpi = dpi;
+    }
 }
 
 static std::atomic<double> g_animationSpeed{1.0};
@@ -3277,6 +3284,7 @@ static int g_panelBaseX = 0;
 static int g_panelBaseY = 0;
 static int g_panelAnchorBottom = 0;
 static bool g_panelGrowsUp = true;
+static HWND g_anchorButton = nullptr;
 
 static void DrawSmallButton(Surface& surface,
                             const gp::Rect& box,
@@ -3822,18 +3830,19 @@ static HWND AnchorWindow() {
 }
 
 static void PositionPanel() {
-    RebuildRows();
-    ComputeLayout();
-
+    HWND anchor = g_anchorButton && IsWindow(g_anchorButton) ? g_anchorButton
+                                                             : AnchorWindow();
     RECT anchorRect{};
-    HWND anchor = AnchorWindow();
     if (anchor) {
+        UseDpiOf(anchor);
         GetWindowRect(anchor, &anchorRect);
     } else {
         POINT cursor{};
         GetCursorPos(&cursor);
         anchorRect = RECT{cursor.x, cursor.y, cursor.x, cursor.y};
     }
+    RebuildRows();
+    ComputeLayout();
 
     MONITORINFO monitorInfo{sizeof(monitorInfo)};
     GetMonitorInfoW(MonitorFromRect(&anchorRect, MONITOR_DEFAULTTONEAREST),
@@ -4673,7 +4682,16 @@ static SIZE MeasureButton() {
     return SIZE{max(Scale(32), width), Scale(30)};
 }
 
+static bool ResolveButtonGlyph(const std::wstring& source, std::wstring& glyph) {
+    if (ParseGlyph(source, glyph)) {
+        return true;
+    }
+    glyph = source.empty() ? std::wstring(L"\uE768") : source;
+    return source.empty();
+}
+
 static void PaintButton(HWND window) {
+    UseDpiOf(window);
     ButtonState& state = StateOf(window);
     RECT rect{};
     GetWindowRect(window, &rect);
@@ -4713,10 +4731,8 @@ static void PaintButton(HWND window) {
     int contentLeft = Scale(10);
     if (style != ButtonStyle::Label) {
         std::wstring glyph;
-        if (!ParseGlyph(glyphSource, glyph)) {
-            glyph = glyphSource.empty() ? std::wstring(L"\uE768") : glyphSource;
-        }
-        state.surface.RenderText(glyph, IconFont(-2), foreground,
+        bool isGlyph = ResolveButtonGlyph(glyphSource, glyph);
+        state.surface.RenderText(glyph, isGlyph ? IconFont(-2) : UiFont(-2), foreground,
                                  gp::Rect(contentLeft, 0, Scale(16), height),
                                  kTextCenter);
         contentLeft += Scale(16) + Scale(4);
@@ -4741,10 +4757,7 @@ static void PositionButton(HWND window) {
         return;
     }
 
-    UINT dpi = GetDpiForWindow(taskbar);
-    if (dpi >= 72) {
-        g_dpi = dpi;
-    }
+    UseDpiOf(taskbar);
 
     SIZE size = MeasureButton();
     size.cy = min((int)size.cy, max(Scale(18), anchors.height - Scale(6)));
@@ -4872,7 +4885,7 @@ static LRESULT CALLBACK ButtonWndProc(HWND window,
             StateOf(window).pressed = false;
             SetTimer(window, kTimerAnimate, kFrameMs, nullptr);
             if (g_messageWnd) {
-                PostMessageW(g_messageWnd, kMsgTogglePanel, 0, 0);
+                PostMessageW(g_messageWnd, kMsgTogglePanel, (WPARAM)window, 0);
             }
             return 0;
 
@@ -5068,6 +5081,20 @@ static bool ParseHotkey(const std::wstring& text, UINT& modifiers, UINT& key) {
     return modifiers != 0 && key != 0;
 }
 
+static void RegisterPanelHotkey() {
+    UnregisterHotKey(g_messageWnd, kHotkeyId);
+    std::wstring hotkey;
+    {
+        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
+        hotkey = g_settings.hotkey;
+    }
+    UINT modifiers = 0;
+    UINT key = 0;
+    if (ParseHotkey(hotkey, modifiers, key)) {
+        RegisterHotKey(g_messageWnd, kHotkeyId, modifiers | MOD_NOREPEAT, key);
+    }
+}
+
 static HICON CreateTrayIcon() {
     int size = GetSystemMetrics(SM_CXSMICON);
     Surface surface;
@@ -5082,16 +5109,13 @@ static HICON CreateTrayIcon() {
         family = g_settings.fontFamily;
     }
     std::wstring glyph;
-    bool isGlyph = ParseGlyph(glyphSource, glyph);
-    if (!isGlyph) {
-        glyph = glyphSource.empty() ? std::wstring(L"\uE768") : glyphSource;
-        isGlyph = glyphSource.empty();
-    }
+    bool isGlyph = ResolveButtonGlyph(glyphSource, glyph);
     surface.RenderText(glyph,
                        GetFont(isGlyph ? IconFontFamily() : family,
                                (int)(size * 0.72), false),
-                       gp::Color(255, 255, 255, 255), gp::Rect(0, 0, size, size),
-                       kTextCenter);
+                       TaskbarUsesLightTheme() ? gp::Color(255, 0, 0, 0)
+                                               : gp::Color(255, 255, 255, 255),
+                       gp::Rect(0, 0, size, size), kTextCenter);
 
     std::vector<BYTE> maskBits((size_t)((size + 15) / 16) * 2 * size, 0);
     HBITMAP mask = CreateBitmap(size, size, 1, 1, maskBits.data());
@@ -5118,6 +5142,14 @@ static HICON CreateTrayIcon() {
     BitBlt(target, 0, 0, size, size, surface.Dc(), 0, 0, SRCCOPY);
     SelectObject(target, previous);
     DeleteDC(target);
+    BYTE* pixels = (BYTE*)bits;
+    for (size_t i = 0; i < (size_t)size * size * 4; i += 4) {
+        if (BYTE alpha = pixels[i + 3]) {
+            pixels[i] = (BYTE)(pixels[i] * 255 / alpha);
+            pixels[i + 1] = (BYTE)(pixels[i + 1] * 255 / alpha);
+            pixels[i + 2] = (BYTE)(pixels[i + 2] * 255 / alpha);
+        }
+    }
 
     ICONINFO iconInfo{};
     iconInfo.fIcon = TRUE;
@@ -5152,15 +5184,17 @@ static void UpdateTrayIcon() {
         return;
     }
 
-    if (!g_trayIcon) {
-        g_trayIcon = CreateTrayIcon();
-    }
+    HICON previous = g_trayIcon;
+    g_trayIcon = CreateTrayIcon();
     data.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     data.uCallbackMessage = kMsgTrayCallback;
     data.hIcon = g_trayIcon;
     wcscpy_s(data.szTip, L"StackSwitch");
     Shell_NotifyIconW(g_trayIconAdded ? NIM_MODIFY : NIM_ADD, &data);
     g_trayIconAdded = true;
+    if (previous) {
+        DestroyIcon(previous);
+    }
 }
 
 static void ShowTrayMenu() {
@@ -5265,7 +5299,9 @@ static LRESULT CALLBACK MessageWndProc(HWND window,
 
     switch (message) {
         case kMsgTogglePanel:
+            g_anchorButton = (HWND)wParam;
             TogglePanel();
+            g_anchorButton = nullptr;
             return 0;
 
         case WM_HOTKEY:
@@ -5286,6 +5322,7 @@ static LRESULT CALLBACK MessageWndProc(HWND window,
         case WM_THEMECHANGED:
             RefreshPalette();
             RefreshTaskbarButtons();
+            UpdateTrayIcon();
             RefreshPanel();
             return 0;
 
@@ -5298,6 +5335,7 @@ static LRESULT CALLBACK MessageWndProc(HWND window,
             NormalizeItemOrder();
             g_toggleAmount.clear();
             CreateTaskbarButtons();
+            RegisterPanelHotkey();
             UpdateTrayIcon();
             RefreshPanel();
             return 0;
@@ -5392,31 +5430,23 @@ static void UiThreadMain() {
     Wh_GetStringValue(L"activeProfile", storedProfile, ARRAYSIZE(storedProfile));
     g_activeProfile = storedProfile;
 
-    if (HWND taskbar = WaitForTaskbar()) {
-        UINT dpi = GetDpiForWindow(taskbar);
-        if (dpi >= 72) {
-            g_dpi = dpi;
-        }
-        CreateTaskbarButtons();
+    HWND taskbar = WaitForTaskbar();
+    if (!taskbar) {
+        DestroyWindow(g_panelWnd);
+        g_panelWnd = nullptr;
+        DestroyWindow(g_messageWnd);
+        g_messageWnd = nullptr;
+        return;
     }
-
-    std::wstring hotkey;
-    {
-        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        hotkey = g_settings.hotkey;
-    }
-    UINT modifiers = 0;
-    UINT key = 0;
-    if (!hotkey.empty() && ParseHotkey(hotkey, modifiers, key)) {
-        RegisterHotKey(g_messageWnd, kHotkeyId, modifiers | MOD_NOREPEAT, key);
-    }
-
+    UseDpiOf(taskbar);
+    CreateTaskbarButtons();
+    RegisterPanelHotkey();
     UpdateTrayIcon();
     ScheduleAutoRun();
     RefreshRunningStatus();
 
     MSG message;
-    while (GetMessageW(&message, nullptr, 0, 0) > 0) {
+    while (!g_unloading && GetMessageW(&message, nullptr, 0, 0) > 0) {
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
