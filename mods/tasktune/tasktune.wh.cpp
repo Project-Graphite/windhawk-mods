@@ -8,7 +8,7 @@
 // @license         MIT
 // @architecture    x86-64
 // @include         explorer.exe
-// @compilerOptions -lole32 -loleaut32 -lruntimeobject -luuid -luser32 -lwindowsapp -lshell32 -lgdi32 -lshlwapi -lwindowscodecs -ldwmapi -lshcore -lksuser -lversion
+// @compilerOptions -lole32 -loleaut32 -lruntimeobject -luuid -luser32 -lwindowsapp -lshell32 -lgdi32 -lshlwapi -lwindowscodecs -lshcore -lksuser -lversion
 // ==/WindhawkMod==
 
 // ==WindhawkModReadme==
@@ -26,7 +26,7 @@ TaskTune puts media information and controls directly in the Windows 11 taskbar.
 - Configurable 1-60 second rewind and forward controls
 - Per-application volume and mute controls
 - Compact mini-player with media-session selection
-- Solid, gradient, Acrylic, Mica, Mica Alt, and blurred-album-art backgrounds
+- Solid, gradient, Acrylic, and blurred-album-art backgrounds
 - WASAPI spectrum visualizer with multiple shapes, color modes, and EQ presets
 - Automatic hiding when no media exists, the taskbar is idle, or an app is full-screen
 - Configurable mouse clicks, double-clicks, middle clicks, and wheel actions
@@ -255,8 +255,6 @@ Licensed under the MIT License.
       - "solid":          "Solid color"
       - "gradient":       "Gradient"
       - "acrylic":        "Acrylic"
-      - "mica":           "Mica"
-      - "mica_alt":       "Mica Alt"
       - "album_art_blur": "Blurred album cover"
     - solidColor: "35 35 35"
       $name: Background color (RGB)
@@ -273,8 +271,6 @@ Licensed under the MIT License.
       $name: Gradient color balance (0-100)
     - acrylicTintOpacity: 50
       $name: Acrylic tint opacity (0-100)
-    - micaOpacity: 50
-      $name: Mica/Mica Alt opacity (0-100)
     - blurOpacity: 65
       $name: Album art blur opacity (0-100)
     - blurRadius: 11
@@ -769,7 +765,6 @@ Licensed under the MIT License.
 #include <commoncontrols.h>
 #include <wincodec.h>
 #include <propsys.h>
-#include <dwmapi.h>
 #include <windhawk_utils.h>
 #include <audiopolicy.h>
 #include <mmdeviceapi.h>
@@ -803,190 +798,178 @@ enum class VizColorMode { Solid, DynamicAlbum, DynamicGradient, CustomGradient, 
 enum class VizEQ { Default, Bass, Rock, Pop, Jazz, Electronic };
 enum class VizAnchor { Top, Middle, Bottom };
 struct ModSettings {
-    int          monitor              = 1;
-    bool         showOnAllMonitors    = false;
-    std::wstring position             = L"tray_left";
-    std::wstring albumArtLeftClick    = L"none";
-    std::wstring albumArtRightClick   = L"none";
-    std::wstring albumArtMiddleClick  = L"none";
-    std::wstring albumArtLeftDoubleClick  = L"none";
-    std::wstring albumArtRightDoubleClick = L"none";
-    std::wstring albumArtMiddleDoubleClick = L"none";
-    std::wstring albumArtWheelAction  = L"none";
-    std::wstring playerLeftClick      = L"none";
-    std::wstring playerRightClick     = L"none";
-    std::wstring playerMiddleClick    = L"none";
-    std::wstring playerLeftDoubleClick  = L"none";
-    std::wstring playerRightDoubleClick = L"none";
-    std::wstring playerMiddleDoubleClick = L"none";
-    std::wstring playerWheelAction    = L"none";
-    bool         mirrorLayout         = false;
-    bool         fullHeightHitArea    = true;
-    bool         autoSwitchSession    = true;
-    bool         showMediaButtons     = true;
-    int          playerMinWidth       = 0;
-    int          playerMaxWidth       = 0;
-    int          playerMinHeight      = 40;
-    int          playerMaxHeight      = 40;
-    bool         showAlbumArt         = true;
-    std::wstring albumArtEmptyBehavior = L"show";
-    std::wstring emptyIconGlyph       = L"E189";
-    int          emptyIconSize        = 16;
-    std::wstring emptyIconFont        = L"segoe_fluent";
-    std::wstring emptyIconColor       = L"255 255 255";
-    int          emptyIconOpacity     = 100;
-    std::wstring albumArtQuality      = L"medium";
-    bool         showPauseOverlay     = true;
-    int          pauseOverlayIconSize = 16;
-    int          pauseOverlayOpacity  = 60;
-    int          albumArtMinWidth     = 32;
-    int          albumArtMaxWidth     = 64;
-    int          albumArtMinHeight    = 32;
-    int          albumArtMaxHeight    = 32;
-    int          albumArtOpacity      = 100;
-    int          albumArtLeftMargin   = 0;
-    int          albumArtRightMargin  = 0;
-    bool         showTrackTitle       = true;
-    bool         showFullTitleOnHover = true;
-    bool         showTrackArtist      = true;
-    bool         swapTitleArtist      = false;
-    std::wstring emptyTitleText       = L"Untitled";
-    std::wstring noMediaTitleText     = L"Not Playing";
-    std::wstring emptyArtistText      = L"";
-    std::wstring noMediaArtistText    = L"";
-    std::wstring iconStyle            = L"fluent_outline";
-    bool         showAppIcon          = false;
-    std::wstring appIconCorner        = L"bottom_right";
-    int          appIconSize          = 12;
-    bool         hideWhenNoMedia      = true;
-    std::wstring playerHoverEffectMode = L"auto";
-    std::wstring mediaButtonsHoverEffectMode = L"auto";
-    bool         enableHoverAnimation = true;
-    bool         enableSmoothPositionAnimation = true;
-    int          playerMarginLeft     = 4;
-    int          playerMarginRight    = 4;
-    int          mediaButtonsLeftMargin  = 2;
-    int          mediaButtonsRightMargin = 2;
-    int          textAreaMinWidth     = 0;
-    int          textAreaMaxWidth     = 120;
-    int          textAreaMinHeight    = 0;
-    int          textAreaMaxHeight    = 0;
-    int          textAreaLeftMargin   = 5;
-    int          textAreaRightMargin  = 5;
-    bool         hideFullscreen       = true;
-    int          idleHideSeconds      = 0;
-    std::wstring backgroundType       = L"none";
-    int          blurOpacity          = 65;
-    int          blurRadius           = 11;
-    double       cornerRadiusTL       = 4;
-    double       cornerRadiusTR       = 4;
-    double       cornerRadiusBR       = 4;
-    double       cornerRadiusBL       = 4;
-    double       albumArtCornerRadiusTL = 4;
-    double       albumArtCornerRadiusTR = 4;
-    double       albumArtCornerRadiusBR = 4;
-    double       albumArtCornerRadiusBL = 4;
-    int          buttonSpacing        = 0;
-    int          buttonSize           = 28;
-    int          seekStepSeconds      = 5;
-    int          buttonIconSize       = 12;
-    double       buttonCornerRadiusTL = 4;
-    double       buttonCornerRadiusTR = 4;
-    double       buttonCornerRadiusBR = 4;
-    double       buttonCornerRadiusBL = 4;
-    int          titleFontSize        = 12;
-    int          artistFontSize       = 11;
-    std::wstring titleFont            = L"segoe_ui_variable";
-    std::wstring artistFont           = L"segoe_ui_variable";
-    std::wstring titleFontFamily      = L"";
-    std::wstring artistFontFamily     = L"";
-    std::wstring titleFontWeight      = L"";
-    std::wstring artistFontWeight     = L"";
-    std::wstring titleFontStyle       = L"";
-    std::wstring artistFontStyle      = L"";
-    int          titleCharacterSpacing  = 0;
-    int          artistCharacterSpacing = 0;
-    int          textSpacing          = -1;
-    bool         enableArtistScrolling = false;
-    bool         enableTitleScrolling = true;
-    int          scrollSpeed          = 1;
-    int          scrollPauseDuration  = 1000;
-    std::wstring scrollMode           = L"bounce";
-    int          loopGap              = 40;
-    std::wstring solidColor           = L"35 35 35";
-    std::wstring solidColor2          = L"35 35 35";
-    std::wstring gradientColor2       = L"128 128 128";
-    int          solidOpacity         = 100;
-    int          gradientAngle        = 50;
-    int          gradientBalance      = 50;
-    int          acrylicTintOpacity   = 50;
-    int          micaOpacity          = 50;
-    std::wstring buttonColor          = L"255 255 255";
-    int          buttonColorOpacity   = 100;
-    std::wstring titleColor           = L"255 255 255";
-    int          titleColorOpacity    = 100;
-    std::wstring artistColor          = L"255 255 255";
-    int          artistColorOpacity   = 80;
-    std::wstring ignoredProcesses     = L"";
+    int          monitor;
+    bool         showOnAllMonitors;
+    std::wstring position;
+    std::wstring albumArtLeftClick;
+    std::wstring albumArtRightClick;
+    std::wstring albumArtMiddleClick;
+    std::wstring albumArtLeftDoubleClick;
+    std::wstring albumArtRightDoubleClick;
+    std::wstring albumArtMiddleDoubleClick;
+    std::wstring albumArtWheelAction;
+    std::wstring playerLeftClick;
+    std::wstring playerRightClick;
+    std::wstring playerMiddleClick;
+    std::wstring playerLeftDoubleClick;
+    std::wstring playerRightDoubleClick;
+    std::wstring playerMiddleDoubleClick;
+    std::wstring playerWheelAction;
+    bool         mirrorLayout;
+    bool         fullHeightHitArea;
+    bool         autoSwitchSession;
+    bool         showMediaButtons;
+    int          playerMinWidth;
+    int          playerMaxWidth;
+    int          playerMinHeight;
+    int          playerMaxHeight;
+    bool         showAlbumArt;
+    std::wstring albumArtEmptyBehavior;
+    std::wstring emptyIconGlyph;
+    int          emptyIconSize;
+    std::wstring emptyIconFont;
+    std::wstring emptyIconColor;
+    int          emptyIconOpacity;
+    std::wstring albumArtQuality;
+    bool         showPauseOverlay;
+    int          pauseOverlayIconSize;
+    int          pauseOverlayOpacity;
+    int          albumArtMinWidth;
+    int          albumArtMaxWidth;
+    int          albumArtMinHeight;
+    int          albumArtMaxHeight;
+    int          albumArtOpacity;
+    int          albumArtLeftMargin;
+    int          albumArtRightMargin;
+    bool         showTrackTitle;
+    bool         showFullTitleOnHover;
+    bool         showTrackArtist;
+    bool         swapTitleArtist;
+    std::wstring emptyTitleText;
+    std::wstring noMediaTitleText;
+    std::wstring emptyArtistText;
+    std::wstring noMediaArtistText;
+    std::wstring iconStyle;
+    bool         showAppIcon;
+    std::wstring appIconCorner;
+    int          appIconSize;
+    bool         hideWhenNoMedia;
+    std::wstring playerHoverEffectMode;
+    std::wstring mediaButtonsHoverEffectMode;
+    bool         enableHoverAnimation;
+    bool         enableSmoothPositionAnimation;
+    int          playerMarginLeft;
+    int          playerMarginRight;
+    int          mediaButtonsLeftMargin;
+    int          mediaButtonsRightMargin;
+    int          textAreaMinWidth;
+    int          textAreaMaxWidth;
+    int          textAreaMinHeight;
+    int          textAreaMaxHeight;
+    int          textAreaLeftMargin;
+    int          textAreaRightMargin;
+    bool         hideFullscreen;
+    int          idleHideSeconds;
+    std::wstring backgroundType;
+    int          blurOpacity;
+    int          blurRadius;
+    double       cornerRadiusTL;
+    double       cornerRadiusTR;
+    double       cornerRadiusBR;
+    double       cornerRadiusBL;
+    double       albumArtCornerRadiusTL;
+    double       albumArtCornerRadiusTR;
+    double       albumArtCornerRadiusBR;
+    double       albumArtCornerRadiusBL;
+    int          buttonSpacing;
+    int          buttonSize;
+    int          seekStepSeconds;
+    int          buttonIconSize;
+    double       buttonCornerRadiusTL;
+    double       buttonCornerRadiusTR;
+    double       buttonCornerRadiusBR;
+    double       buttonCornerRadiusBL;
+    int          titleFontSize;
+    int          artistFontSize;
+    std::wstring titleFont;
+    std::wstring artistFont;
+    std::wstring titleFontFamily;
+    std::wstring artistFontFamily;
+    std::wstring titleFontWeight;
+    std::wstring artistFontWeight;
+    std::wstring titleFontStyle;
+    std::wstring artistFontStyle;
+    int          titleCharacterSpacing;
+    int          artistCharacterSpacing;
+    int          textSpacing;
+    bool         enableArtistScrolling;
+    bool         enableTitleScrolling;
+    int          scrollSpeed;
+    int          scrollPauseDuration;
+    std::wstring scrollMode;
+    int          loopGap;
+    std::wstring solidColor;
+    std::wstring solidColor2;
+    std::wstring gradientColor2;
+    int          solidOpacity;
+    int          gradientAngle;
+    int          gradientBalance;
+    int          acrylicTintOpacity;
+    std::wstring buttonColor;
+    int          buttonColorOpacity;
+    std::wstring titleColor;
+    int          titleColorOpacity;
+    std::wstring artistColor;
+    int          artistColorOpacity;
     std::vector<std::wstring> ignoredProcessMatchers;
-    bool         enableTreeDump       = false;
-    bool         keepMiniPlayerOpen   = false;
-    bool         hideMediaSessionsList = false;
-    bool         miniPlayerMatchPlayerBackground = true;
-    std::wstring miniPlayerPlacementMode = L"screen";
-    int          miniPlayerHorizontalOffsetNear = 0;
-    std::wstring miniPlayerVerticalPlacementNear = L"top";
-    std::wstring miniPlayerHorizontalPlacement = L"right";
-    int          miniPlayerHorizontalDistanceFromScreenEdge = 0;
-    std::wstring miniPlayerVerticalPlacement = L"bottom";
-    int          miniPlayerVerticalDistanceFromScreenEdge = 0;
-    std::wstring miniPlayerAnimation = L"auto";
-    bool         hideUnsupportedButtons  = false;
-    bool         disableAlbumArtClick    = false;
-    bool         emptyStateHideButtons    = true;
-    bool         emptyStateHideVisualizer = true;
-    bool         emptyStateHideAlbumArt   = true;
-    bool         enableAudioApps         = true;
-    bool         audioAppsRequireSound   = true;
-    std::wstring audioAppSubtitle        = L"Playing audio";
-    bool         audioAppShowIcon        = true;
-    std::wstring audioAppIgnore          = L"";
+    bool         keepMiniPlayerOpen;
+    bool         hideMediaSessionsList;
+    bool         miniPlayerMatchPlayerBackground;
+    std::wstring miniPlayerPlacementMode;
+    int          miniPlayerHorizontalOffsetNear;
+    std::wstring miniPlayerVerticalPlacementNear;
+    std::wstring miniPlayerHorizontalPlacement;
+    int          miniPlayerHorizontalDistanceFromScreenEdge;
+    std::wstring miniPlayerVerticalPlacement;
+    int          miniPlayerVerticalDistanceFromScreenEdge;
+    std::wstring miniPlayerAnimation;
+    bool         hideUnsupportedButtons;
+    bool         disableAlbumArtClick;
+    bool         emptyStateHideButtons;
+    bool         emptyStateHideVisualizer;
+    bool         emptyStateHideAlbumArt;
+    bool         enableAudioApps;
+    bool         audioAppsRequireSound;
+    std::wstring audioAppSubtitle;
+    bool         audioAppShowIcon;
     std::set<std::wstring> audioAppIgnoredStems;
-    int          volumeStep              = 4;
-    bool         showVolumeInMenu        = true;
-    std::wstring launchAppCommand        = L"spotify:";
+    int          volumeStep;
+    bool         showVolumeInMenu;
+    std::wstring launchAppCommand;
     std::vector<std::wstring> contextMenuItems;
-    std::wstring contextMenuRepeatStyle   = L"submenu";
-    std::wstring contextMenuShuffleStyle  = L"submenu";
-    std::wstring contextMenuIconStyle     = L"as_media_buttons";
-    std::wstring contextMenuIconColor     = L"255 255 255";
-    int          contextMenuIconOpacity   = 100;
-    bool         vizEnabled      = false;
-    std::wstring vizPosition     = L"right";
-    VizShape     vizShape        = VizShape::Stereo;
-    VizColorMode vizColorMode    = VizColorMode::Solid;
-    VizEQ        vizEq           = VizEQ::Default;
-    VizAnchor    vizAnchor       = VizAnchor::Middle;
-    std::wstring vizColor        = L"255 255 255";
-    std::wstring vizColor1       = L"30 215 96";
-    std::wstring vizColor2       = L"0 180 255";
-    int          vizBars         = 7;
-    int          vizBarWidth     = 5;
-    int          vizBarGap       = 5;
-    int          vizIdleBarSize  = 3;
-    int          vizSensitivity  = 150;
-    int          vizPadLeft      = 0;
-    int          vizPadRight     = 0;
+    std::wstring contextMenuRepeatStyle;
+    std::wstring contextMenuShuffleStyle;
+    std::wstring contextMenuIconStyle;
+    std::wstring contextMenuIconColor;
+    int          contextMenuIconOpacity;
+    bool         vizEnabled;
+    std::wstring vizPosition;
+    VizShape     vizShape;
+    VizColorMode vizColorMode;
+    VizEQ        vizEq;
+    VizAnchor    vizAnchor;
+    std::wstring vizColor;
+    std::wstring vizColor1;
+    std::wstring vizColor2;
+    int          vizBars;
+    int          vizBarWidth;
+    int          vizBarGap;
+    int          vizIdleBarSize;
+    int          vizSensitivity;
+    int          vizPadLeft;
+    int          vizPadRight;
 };
 static ModSettings g_settings;
-static void ParseTwoInts(const std::wstring& s, int& a, int& b) {
-    size_t sp = s.find(L' ');
-    if (sp == std::wstring::npos) return;
-    try {
-        a = std::stoi(s.substr(0, sp));
-        b = std::stoi(s.substr(sp + 1));
-    } catch (...) {}
-}
 static constexpr int kCmdPrevious      = 1;
 static constexpr int kCmdPlayPause     = 2;
 static constexpr int kCmdNext          = 3;
@@ -1002,33 +985,21 @@ static constexpr int kCmdRepeatOne     = 12;
 static constexpr int kCmdToggleMute    = 20;
 static constexpr int kCmdVolumeUp      = 21;
 static constexpr int kCmdVolumeDown    = 22;
-enum class MediaButtonType {
-    Previous = 1,
-    PlayPause = 2,
-    Next = 3,
-    Rewind = 4,
-    Forward = 5,
-    Shuffle = 6,
-    Repeat = 7,
-    SwitchSessions = 8,
-};
 struct MediaButtonDefinition {
     std::wstring keyword;
-    MediaButtonType type;
     int cmd;
 };
 static const std::vector<MediaButtonDefinition> g_mediaButtonDefinitions = {
-    {L"prev", MediaButtonType::Previous, kCmdPrevious},
-    {L"play", MediaButtonType::PlayPause, kCmdPlayPause},
-    {L"next", MediaButtonType::Next, kCmdNext},
-    {L"rewind", MediaButtonType::Rewind, kCmdRewind},
-    {L"forward", MediaButtonType::Forward, kCmdForward},
-    {L"shuffle", MediaButtonType::Shuffle, kCmdToggleShuffle},
-    {L"repeat", MediaButtonType::Repeat, kCmdCycleRepeat},
-    {L"switch_sessions", MediaButtonType::SwitchSessions, kCmdSwitchSession},
+    {L"prev", kCmdPrevious},
+    {L"play", kCmdPlayPause},
+    {L"next", kCmdNext},
+    {L"rewind", kCmdRewind},
+    {L"forward", kCmdForward},
+    {L"shuffle", kCmdToggleShuffle},
+    {L"repeat", kCmdCycleRepeat},
+    {L"switch_sessions", kCmdSwitchSession},
 };
 struct MediaButtonConfig {
-    MediaButtonType type;
     int cmd;
 };
 static std::vector<MediaButtonConfig> g_mediaButtons;
@@ -1037,10 +1008,6 @@ static std::wstring MapFontName(const std::wstring& key) {
     if (key == L"custom") return L"";
     if (key == L"segoe_ui_variable") return L"Segoe UI Variable Display";
     if (key == L"segoe_ui") return L"Segoe UI";
-    if (key == L"segoe_ui_semibold") return L"Segoe UI Semibold";
-    if (key == L"segoe_ui_bold") return L"Segoe UI Bold";
-    if (key == L"segoe_ui_light") return L"Segoe UI Light";
-    if (key == L"segoe_ui_semilight") return L"Segoe UI Semilight";
     if (key == L"aptos") return L"Aptos";
     if (key == L"calibri") return L"Calibri";
     if (key == L"cambria") return L"Cambria";
@@ -1057,41 +1024,30 @@ static std::wstring MapFontName(const std::wstring& key) {
 }
 static void LoadSettings() {
     auto Str = [](const wchar_t* key, const wchar_t* def) -> std::wstring {
-        PCWSTR p = Wh_GetStringSetting(key);
-        std::wstring r = (*p != L'\0') ? p : def;
-        Wh_FreeStringSetting(p);
-        return r;
+        auto s = WindhawkUtils::StringSetting::make(key);
+        return *s.get() ? s.get() : def;
     };
     auto StrAllowEmpty = [](const wchar_t* key) -> std::wstring {
-        PCWSTR p = Wh_GetStringSetting(key);
-        std::wstring r = p ? p : L"";
-        Wh_FreeStringSetting(p);
-        return r;
+        return WindhawkUtils::StringSetting::make(key).get();
     };
-    auto Int = [](const wchar_t* key, int lo, int hi, int) -> int {
+    auto Int = [](const wchar_t* key, int lo, int hi) -> int {
         return std::clamp(Wh_GetIntSetting(key), lo, hi);
     };
-    auto ParseMargin = [&Str](const wchar_t* key, const wchar_t* def, int& left, int& right) {
+    auto ParseIntPair = [&Str](const wchar_t* key, const wchar_t* def, int& left, int& right) {
         std::wstring val = Str(key, def);
         try {
             size_t space = val.find(L' ');
             if (space != std::wstring::npos) {
                 left  = std::stoi(val.substr(0, space));
                 right = std::stoi(val.substr(space + 1));
-            } else if (!val.empty()) {
+            } else {
                 left = right = std::stoi(val);
             }
         } catch (...) {
             std::wstring d(def);
             size_t space = d.find(L' ');
-            try {
-                if (space != std::wstring::npos) {
-                    left  = std::stoi(d.substr(0, space));
-                    right = std::stoi(d.substr(space + 1));
-                } else {
-                    left = right = std::stoi(d);
-                }
-            } catch (...) { left = right = 0; }
+            left  = std::stoi(d.substr(0, space));
+            right = std::stoi(d.substr(space + 1));
         }
     };
     auto ParseCornerRadius = [&Str](const wchar_t* key, const wchar_t* def, double& tl, double& tr, double& br, double& bl) {
@@ -1111,17 +1067,9 @@ static void LoadSettings() {
             }
         } catch (...) {}
         if (values.empty()) {
-            try {
-                std::wstring d(def);
-                double v = std::stod(d);
-                values.push_back(v < 0.0 ? 0.0 : v);
-            } catch (...) {
-                values.push_back(4.0);
-            }
+            values.push_back(std::stod(def));
         }
-        if (values.size() == 1) {
-            tl = tr = br = bl = values[0];
-        } else if (values.size() == 4) {
+        if (values.size() == 4) {
             tl = values[0];
             tr = values[1];
             br = values[2];
@@ -1130,30 +1078,23 @@ static void LoadSettings() {
             tl = tr = br = bl = values[0];
         }
     };
-    auto HoverMode = [&Str](const wchar_t* key) -> std::wstring {
-        std::wstring mode = Str(key, L"auto");
-        if (mode == L"black") return L"black";
-        if (mode == L"white") return L"white";
-        if (mode == L"off")   return L"off";
-        return L"auto";
-    };
     g_settings.monitor               = std::max(1, Wh_GetIntSetting(L"MainSettings.PlayerSetting.monitor"));
     g_settings.showOnAllMonitors     = Wh_GetIntSetting(L"MainSettings.PlayerSetting.showOnAllMonitors") != 0;
     g_settings.position             = Str(L"MainSettings.PlayerSetting.position",    L"tray_left");
-    ParseMargin(L"MainSettings.PlayerSetting.playerMargin", L"4 4", g_settings.playerMarginLeft, g_settings.playerMarginRight);
-    ParseMargin(L"MainSettings.PlayerSetting.playerWidth", L"0 0", g_settings.playerMinWidth, g_settings.playerMaxWidth);
-    ParseMargin(L"MainSettings.PlayerSetting.playerHeight", L"40 40", g_settings.playerMinHeight, g_settings.playerMaxHeight);
-    ParseMargin(L"MainSettings.AlbumArtSetting.albumArtWidth", L"32 64", g_settings.albumArtMinWidth, g_settings.albumArtMaxWidth);
-    ParseMargin(L"MainSettings.AlbumArtSetting.albumArtHeight", L"32 32", g_settings.albumArtMinHeight, g_settings.albumArtMaxHeight);
-    ParseMargin(L"MainSettings.AlbumArtSetting.albumArtMargin", L"0 0", g_settings.albumArtLeftMargin, g_settings.albumArtRightMargin);
-    ParseMargin(L"MainSettings.TextAreaSetting.textAreaWidth", L"0 120", g_settings.textAreaMinWidth, g_settings.textAreaMaxWidth);
-    ParseMargin(L"MainSettings.TextAreaSetting.textAreaHeight", L"0 0", g_settings.textAreaMinHeight, g_settings.textAreaMaxHeight);
-    ParseMargin(L"MainSettings.TextAreaSetting.textAreaMargin", L"5 5", g_settings.textAreaLeftMargin, g_settings.textAreaRightMargin);
+    ParseIntPair(L"MainSettings.PlayerSetting.playerMargin", L"4 4", g_settings.playerMarginLeft, g_settings.playerMarginRight);
+    ParseIntPair(L"MainSettings.PlayerSetting.playerWidth", L"0 0", g_settings.playerMinWidth, g_settings.playerMaxWidth);
+    ParseIntPair(L"MainSettings.PlayerSetting.playerHeight", L"40 40", g_settings.playerMinHeight, g_settings.playerMaxHeight);
+    ParseIntPair(L"MainSettings.AlbumArtSetting.albumArtWidth", L"32 64", g_settings.albumArtMinWidth, g_settings.albumArtMaxWidth);
+    ParseIntPair(L"MainSettings.AlbumArtSetting.albumArtHeight", L"32 32", g_settings.albumArtMinHeight, g_settings.albumArtMaxHeight);
+    ParseIntPair(L"MainSettings.AlbumArtSetting.albumArtMargin", L"0 0", g_settings.albumArtLeftMargin, g_settings.albumArtRightMargin);
+    ParseIntPair(L"MainSettings.TextAreaSetting.textAreaWidth", L"0 120", g_settings.textAreaMinWidth, g_settings.textAreaMaxWidth);
+    ParseIntPair(L"MainSettings.TextAreaSetting.textAreaHeight", L"0 0", g_settings.textAreaMinHeight, g_settings.textAreaMaxHeight);
+    ParseIntPair(L"MainSettings.TextAreaSetting.textAreaMargin", L"5 5", g_settings.textAreaLeftMargin, g_settings.textAreaRightMargin);
     g_settings.mirrorLayout         = Wh_GetIntSetting(L"MainSettings.PlayerSetting.mirrorLayout") != 0;
     g_settings.fullHeightHitArea    = Wh_GetIntSetting(L"MainSettings.PlayerSetting.fullHeightHitArea") != 0;
     g_settings.autoSwitchSession    = Wh_GetIntSetting(L"MainSettings.PlayerSetting.autoSwitchSession") != 0;
     g_settings.showMediaButtons     = Wh_GetIntSetting(L"MainSettings.MediaButtonsSettings.showMediaButtons") != 0;
-    ParseMargin(L"MainSettings.MediaButtonsSettings.mediaButtonsMargin", L"2 2", g_settings.mediaButtonsLeftMargin, g_settings.mediaButtonsRightMargin);
+    ParseIntPair(L"MainSettings.MediaButtonsSettings.mediaButtonsMargin", L"2 2", g_settings.mediaButtonsLeftMargin, g_settings.mediaButtonsRightMargin);
     g_settings.showTrackTitle       = Wh_GetIntSetting(L"MainSettings.TextAreaSetting.showTrackTitle")    != 0;
     g_settings.showFullTitleOnHover = Wh_GetIntSetting(L"BehaviorSettings.showFullTitleOnHover") != 0;
     g_settings.showTrackArtist      = Wh_GetIntSetting(L"MainSettings.TextAreaSetting.showTrackArtist")   != 0;
@@ -1165,42 +1106,42 @@ static void LoadSettings() {
     g_settings.showAlbumArt         = Wh_GetIntSetting(L"MainSettings.AlbumArtSetting.showAlbumArt")      != 0;
     g_settings.albumArtEmptyBehavior = Str(L"AppearanceSettings.AlbumArtDisplaySettings.albumArtEmptyBehavior", L"show");
     g_settings.emptyIconGlyph       = Str(L"AppearanceSettings.AlbumArtDisplaySettings.emptyIconGlyph",       L"E189");
-    g_settings.emptyIconSize        = Int(L"AppearanceSettings.AlbumArtDisplaySettings.emptyIconSize",          1, 256, 16);
+    g_settings.emptyIconSize        = Int(L"AppearanceSettings.AlbumArtDisplaySettings.emptyIconSize",          1, 256);
     g_settings.emptyIconFont        = Str(L"AppearanceSettings.AlbumArtDisplaySettings.emptyIconFont",        L"segoe_fluent");
     g_settings.emptyIconColor       = Str(L"AppearanceSettings.AlbumArtDisplaySettings.emptyIconColor",       L"140 140 140");
-    g_settings.emptyIconOpacity     = Int(L"AppearanceSettings.AlbumArtDisplaySettings.emptyIconOpacity",       0, 100, 100);
+    g_settings.emptyIconOpacity     = Int(L"AppearanceSettings.AlbumArtDisplaySettings.emptyIconOpacity",       0, 100);
     g_settings.albumArtQuality      = Str(L"AppearanceSettings.AlbumArtDisplaySettings.albumArtQuality", L"medium");
     g_settings.showPauseOverlay     = Wh_GetIntSetting(L"AppearanceSettings.AlbumArtDisplaySettings.showPauseOverlay")  != 0;
-    g_settings.pauseOverlayIconSize = Int(L"AppearanceSettings.AlbumArtDisplaySettings.pauseOverlayIconSize",     1, 256, 16);
-    g_settings.pauseOverlayOpacity  = Int(L"AppearanceSettings.AlbumArtDisplaySettings.pauseOverlayOpacity",     0, 100,  60);
+    g_settings.pauseOverlayIconSize = Int(L"AppearanceSettings.AlbumArtDisplaySettings.pauseOverlayIconSize",     1, 256);
+    g_settings.pauseOverlayOpacity  = Int(L"AppearanceSettings.AlbumArtDisplaySettings.pauseOverlayOpacity",     0, 100);
     g_settings.iconStyle            = Str(L"AppearanceSettings.MediaButtonsStyleSettings.iconStyle", L"fluent_outline");
     g_settings.showAppIcon          = Wh_GetIntSetting(L"AppearanceSettings.AlbumArtDisplaySettings.showAppIcon")       != 0;
     g_settings.appIconCorner        = Str(L"AppearanceSettings.AlbumArtDisplaySettings.appIconCorner",  L"bottom_right");
-    g_settings.appIconSize          = Int(L"AppearanceSettings.AlbumArtDisplaySettings.appIconSize",         8,  32,  12);
+    g_settings.appIconSize          = Int(L"AppearanceSettings.AlbumArtDisplaySettings.appIconSize",         8,  32);
     g_settings.backgroundType       = Str(L"AppearanceSettings.BackgroundStyleSettings.backgroundType", L"none");
-    g_settings.blurOpacity          = Int(L"AppearanceSettings.BackgroundStyleSettings.blurOpacity",           0, 100, 65);
-    g_settings.blurRadius           = Int(L"AppearanceSettings.BackgroundStyleSettings.blurRadius",            1,  50,  11);
+    g_settings.blurOpacity          = Int(L"AppearanceSettings.BackgroundStyleSettings.blurOpacity",           0, 100);
+    g_settings.blurRadius           = Int(L"AppearanceSettings.BackgroundStyleSettings.blurRadius",            1,  50);
     ParseCornerRadius(L"AppearanceSettings.BackgroundStyleSettings.cornerRadius", L"4",
                     g_settings.cornerRadiusTL, g_settings.cornerRadiusTR,
                     g_settings.cornerRadiusBR, g_settings.cornerRadiusBL);
-    g_settings.albumArtOpacity      = Int(L"AppearanceSettings.AlbumArtDisplaySettings.albumArtOpacity",       0, 100, 100);
+    g_settings.albumArtOpacity      = Int(L"AppearanceSettings.AlbumArtDisplaySettings.albumArtOpacity",       0, 100);
     ParseCornerRadius(L"AppearanceSettings.AlbumArtDisplaySettings.albumArtCornerRadius", L"4",
                     g_settings.albumArtCornerRadiusTL, g_settings.albumArtCornerRadiusTR,
                     g_settings.albumArtCornerRadiusBR, g_settings.albumArtCornerRadiusBL);
     g_settings.buttonSpacing        = Wh_GetIntSetting(L"AppearanceSettings.MediaButtonsStyleSettings.buttonSpacing");
-    g_settings.buttonSize           = Int(L"MainSettings.MediaButtonsSettings.buttonSize",          16,  48,  28);
-    g_settings.seekStepSeconds      = Int(L"MainSettings.MediaButtonsSettings.seekStepSeconds",       1,  60,   5);
-    g_settings.buttonIconSize       = Int(L"AppearanceSettings.MediaButtonsStyleSettings.buttonIconSize",       8,  32,  12);
+    g_settings.buttonSize           = Int(L"MainSettings.MediaButtonsSettings.buttonSize",          16,  48);
+    g_settings.seekStepSeconds      = Int(L"MainSettings.MediaButtonsSettings.seekStepSeconds",       1,  60);
+    g_settings.buttonIconSize       = Int(L"AppearanceSettings.MediaButtonsStyleSettings.buttonIconSize",       8,  32);
     ParseCornerRadius(L"AppearanceSettings.MediaButtonsStyleSettings.buttonCornerRadius", L"4",
                     g_settings.buttonCornerRadiusTL, g_settings.buttonCornerRadiusTR,
                     g_settings.buttonCornerRadiusBR, g_settings.buttonCornerRadiusBL);
-    g_settings.titleFontSize        = Int(L"AppearanceSettings.TitleTextStyleSettings.titleFontSize",         7,  24,  12);
+    g_settings.titleFontSize        = Int(L"AppearanceSettings.TitleTextStyleSettings.titleFontSize",         7,  24);
     g_settings.titleFont            = MapFontName(Str(L"AppearanceSettings.TitleTextStyleSettings.titleFont", L"segoe_ui_variable"));
     g_settings.titleFontFamily      = Str(L"AppearanceSettings.TitleTextStyleSettings.titleFontFamily", L"");
     g_settings.titleFontWeight      = Str(L"AppearanceSettings.TitleTextStyleSettings.titleFontWeight", L"");
     g_settings.titleFontStyle       = Str(L"AppearanceSettings.TitleTextStyleSettings.titleFontStyle", L"");
     g_settings.titleCharacterSpacing = Wh_GetIntSetting(L"AppearanceSettings.TitleTextStyleSettings.titleCharacterSpacing");
-    g_settings.artistFontSize       = Int(L"AppearanceSettings.ArtistTextStyleSettings.artistFontSize",        7,  24,  11);
+    g_settings.artistFontSize       = Int(L"AppearanceSettings.ArtistTextStyleSettings.artistFontSize",        7,  24);
     g_settings.artistFont           = MapFontName(Str(L"AppearanceSettings.ArtistTextStyleSettings.artistFont", L"segoe_ui_variable"));
     g_settings.artistFontFamily     = Str(L"AppearanceSettings.ArtistTextStyleSettings.artistFontFamily", L"");
     g_settings.artistFontWeight     = Str(L"AppearanceSettings.ArtistTextStyleSettings.artistFontWeight", L"");
@@ -1209,41 +1150,40 @@ static void LoadSettings() {
     g_settings.textSpacing          = Wh_GetIntSetting(L"MainSettings.TextAreaSetting.textSpacing");
     g_settings.enableArtistScrolling = Wh_GetIntSetting(L"MainSettings.TextAreaSetting.enableArtistScrolling") != 0;
     g_settings.enableTitleScrolling = Wh_GetIntSetting(L"MainSettings.TextAreaSetting.enableTitleScrolling") != 0;
-    g_settings.scrollSpeed          = Int(L"MainSettings.TextAreaSetting.scrollSpeed", 1, 10, 1);
-    g_settings.scrollPauseDuration  = Int(L"MainSettings.TextAreaSetting.scrollPauseDuration", 0, 10000, 1000);
+    g_settings.scrollSpeed          = Int(L"MainSettings.TextAreaSetting.scrollSpeed", 1, 10);
+    g_settings.scrollPauseDuration  = Int(L"MainSettings.TextAreaSetting.scrollPauseDuration", 0, 10000);
     g_settings.scrollMode           = Str(L"MainSettings.TextAreaSetting.scrollMode", L"bounce");
-    g_settings.loopGap              = Int(L"MainSettings.TextAreaSetting.loopGap", 0, 500, 40);
+    g_settings.loopGap              = Int(L"MainSettings.TextAreaSetting.loopGap", 0, 500);
     g_settings.solidColor           = Str(L"AppearanceSettings.BackgroundStyleSettings.solidColor", L"35 35 35");
     g_settings.solidColor2          = Str(L"AppearanceSettings.BackgroundStyleSettings.solidColor2", L"35 35 35");
     g_settings.gradientColor2       = Str(L"AppearanceSettings.BackgroundStyleSettings.gradientColor2", L"128 128 128");
-    g_settings.solidOpacity         = Int(L"AppearanceSettings.BackgroundStyleSettings.solidOpacity", 0, 100, 100);
-    g_settings.gradientAngle        = Int(L"AppearanceSettings.BackgroundStyleSettings.gradientAngle", 0, 360, 50);
-    g_settings.gradientBalance      = Int(L"AppearanceSettings.BackgroundStyleSettings.gradientBalance", 0, 100, 50);
-    g_settings.acrylicTintOpacity   = Int(L"AppearanceSettings.BackgroundStyleSettings.acrylicTintOpacity", 0, 100, 50);
-    g_settings.micaOpacity          = Int(L"AppearanceSettings.BackgroundStyleSettings.micaOpacity", 0, 100, 50);
+    g_settings.solidOpacity         = Int(L"AppearanceSettings.BackgroundStyleSettings.solidOpacity", 0, 100);
+    g_settings.gradientAngle        = Int(L"AppearanceSettings.BackgroundStyleSettings.gradientAngle", 0, 360);
+    g_settings.gradientBalance      = Int(L"AppearanceSettings.BackgroundStyleSettings.gradientBalance", 0, 100);
+    g_settings.acrylicTintOpacity   = Int(L"AppearanceSettings.BackgroundStyleSettings.acrylicTintOpacity", 0, 100);
     g_settings.buttonColor          = Str(L"AppearanceSettings.MediaButtonsStyleSettings.buttonColor", L"0 0 0$255 255 255");
-    g_settings.buttonColorOpacity   = Int(L"AppearanceSettings.MediaButtonsStyleSettings.buttonColorOpacity", 0, 100, 100);
+    g_settings.buttonColorOpacity   = Int(L"AppearanceSettings.MediaButtonsStyleSettings.buttonColorOpacity", 0, 100);
     g_settings.titleColor           = Str(L"AppearanceSettings.TitleTextStyleSettings.titleColor", L"0 0 0$255 255 255");
-    g_settings.titleColorOpacity    = Int(L"AppearanceSettings.TitleTextStyleSettings.titleColorOpacity", 0, 100, 100);
+    g_settings.titleColorOpacity    = Int(L"AppearanceSettings.TitleTextStyleSettings.titleColorOpacity", 0, 100);
     g_settings.artistColor          = Str(L"AppearanceSettings.ArtistTextStyleSettings.artistColor", L"0 0 0$255 255 255");
-    g_settings.artistColorOpacity   = Int(L"AppearanceSettings.ArtistTextStyleSettings.artistColorOpacity", 0, 100, 80);
+    g_settings.artistColorOpacity   = Int(L"AppearanceSettings.ArtistTextStyleSettings.artistColorOpacity", 0, 100);
     g_settings.vizEnabled      = Wh_GetIntSetting(L"MainSettings.VisualizerFunctionsSettings.vizEnabled") != 0;
     g_settings.vizPosition     = Str(L"MainSettings.VisualizerFunctionsSettings.vizPosition", L"right");
     g_settings.vizColor        = Str(L"AppearanceSettings.VisualizerStyleSettings.vizColor",  L"0 0 0$255 255 255");
     g_settings.vizColor1       = Str(L"AppearanceSettings.VisualizerStyleSettings.vizColor1", L"30 215 96");
     g_settings.vizColor2       = Str(L"AppearanceSettings.VisualizerStyleSettings.vizColor2", L"0 180 255");
-    g_settings.vizSensitivity  = Int(L"MainSettings.VisualizerFunctionsSettings.vizSensitivity", 0, 300, 150);
+    g_settings.vizSensitivity  = Int(L"MainSettings.VisualizerFunctionsSettings.vizSensitivity", 0, 300);
     {
-        int n = 7, gap = 5;
-        ParseTwoInts(Str(L"MainSettings.VisualizerFunctionsSettings.vizBarCountGap", L"7 5"), n, gap);
+        int n, gap;
+        ParseIntPair(L"MainSettings.VisualizerFunctionsSettings.vizBarCountGap", L"7 5", n, gap);
         g_settings.vizBars   = std::clamp(n, 1, 20);
         g_settings.vizBarGap = std::clamp(gap, 0, 40);
-        int w = 5, h = 3;
-        ParseTwoInts(Str(L"MainSettings.VisualizerFunctionsSettings.vizBarSize", L"5 3"), w, h);
+        int w, h;
+        ParseIntPair(L"MainSettings.VisualizerFunctionsSettings.vizBarSize", L"5 3", w, h);
         g_settings.vizBarWidth    = std::clamp(w, 0, 40);
         g_settings.vizIdleBarSize = std::clamp(h, 0, 15);
-        int l = 0, r = 0;
-        ParseTwoInts(Str(L"MainSettings.VisualizerFunctionsSettings.vizPadding", L"0 0"), l, r);
+        int l, r;
+        ParseIntPair(L"MainSettings.VisualizerFunctionsSettings.vizPadding", L"0 0", l, r);
         g_settings.vizPadLeft  = std::clamp(l, 0, 200);
         g_settings.vizPadRight = std::clamp(r, 0, 200);
     }
@@ -1285,24 +1225,12 @@ static void LoadSettings() {
     g_settings.playerRightDoubleClick    = L"none";
     g_settings.playerMiddleDoubleClick   = L"none";
     for (int i = 0; i < 20; i++) {
-        PCWSTR objectStr = Wh_GetStringSetting(L"BehaviorSettings.ClickActionSettings[%d].object", i);
-        PCWSTR clickStr = Wh_GetStringSetting(L"BehaviorSettings.ClickActionSettings[%d].click", i);
-        PCWSTR actionStr = Wh_GetStringSetting(L"BehaviorSettings.ClickActionSettings[%d].action", i);
-        if (*objectStr == L'\0' || *clickStr == L'\0' || *actionStr == L'\0') {
-            Wh_FreeStringSetting(objectStr);
-            Wh_FreeStringSetting(clickStr);
-            Wh_FreeStringSetting(actionStr);
+        std::wstring object = WindhawkUtils::StringSetting::make(L"BehaviorSettings.ClickActionSettings[%d].object", i).get();
+        std::wstring click = WindhawkUtils::StringSetting::make(L"BehaviorSettings.ClickActionSettings[%d].click", i).get();
+        std::wstring action = WindhawkUtils::StringSetting::make(L"BehaviorSettings.ClickActionSettings[%d].action", i).get();
+        if (object.empty() || click.empty() || action.empty()) {
             break;
         }
-        std::wstring object(objectStr);
-        std::wstring click(clickStr);
-        std::wstring action(actionStr);
-        Wh_FreeStringSetting(objectStr);
-        Wh_FreeStringSetting(clickStr);
-        Wh_FreeStringSetting(actionStr);
-        if (object.empty()) object = L"none";
-        if (click.empty()) click = L"none";
-        if (action.empty()) action = L"none";
         if (object == L"none" || click == L"none") {
             continue;
         }
@@ -1325,24 +1253,12 @@ static void LoadSettings() {
     g_settings.albumArtWheelAction = L"none";
     g_settings.playerWheelAction   = L"none";
     for (int i = 0; i < 20; i++) {
-        PCWSTR objectStr = Wh_GetStringSetting(L"BehaviorSettings.MouseWheelActionSettings[%d].object", i);
-        PCWSTR clickStr = Wh_GetStringSetting(L"BehaviorSettings.MouseWheelActionSettings[%d].click", i);
-        PCWSTR actionStr = Wh_GetStringSetting(L"BehaviorSettings.MouseWheelActionSettings[%d].action", i);
-        if (*objectStr == L'\0' || *clickStr == L'\0' || *actionStr == L'\0') {
-            Wh_FreeStringSetting(objectStr);
-            Wh_FreeStringSetting(clickStr);
-            Wh_FreeStringSetting(actionStr);
+        std::wstring object = WindhawkUtils::StringSetting::make(L"BehaviorSettings.MouseWheelActionSettings[%d].object", i).get();
+        std::wstring click = WindhawkUtils::StringSetting::make(L"BehaviorSettings.MouseWheelActionSettings[%d].click", i).get();
+        std::wstring action = WindhawkUtils::StringSetting::make(L"BehaviorSettings.MouseWheelActionSettings[%d].action", i).get();
+        if (object.empty() || click.empty() || action.empty()) {
             break;
         }
-        std::wstring object(objectStr);
-        std::wstring click(clickStr);
-        std::wstring action(actionStr);
-        Wh_FreeStringSetting(objectStr);
-        Wh_FreeStringSetting(clickStr);
-        Wh_FreeStringSetting(actionStr);
-        if (object.empty()) object = L"none";
-        if (click.empty()) click = L"none";
-        if (action.empty()) action = L"none";
         if (object == L"none" || click == L"none") {
             continue;
         }
@@ -1355,8 +1271,8 @@ static void LoadSettings() {
     g_settings.hideWhenNoMedia      = Wh_GetIntSetting(L"BehaviorSettings.hideWhenNoMedia")   != 0;
     g_settings.hideFullscreen       = Wh_GetIntSetting(L"BehaviorSettings.hideFullscreen")    != 0;
     g_settings.idleHideSeconds      = std::max(Wh_GetIntSetting(L"BehaviorSettings.idleHideSeconds"), 0);
-    g_settings.playerHoverEffectMode = HoverMode(L"AppearanceSettings.BackgroundStyleSettings.enablePlayerHoverEffect");
-    g_settings.mediaButtonsHoverEffectMode = HoverMode(L"AppearanceSettings.BackgroundStyleSettings.enableMediaButtonsHoverEffect");
+    g_settings.playerHoverEffectMode = Str(L"AppearanceSettings.BackgroundStyleSettings.enablePlayerHoverEffect", L"auto");
+    g_settings.mediaButtonsHoverEffectMode = Str(L"AppearanceSettings.BackgroundStyleSettings.enableMediaButtonsHoverEffect", L"auto");
     g_settings.enableHoverAnimation = Wh_GetIntSetting(L"AppearanceSettings.BackgroundStyleSettings.enableHoverAnimation") != 0;
     g_settings.enableSmoothPositionAnimation = Wh_GetIntSetting(L"AnimationSettings.enableSmoothPositionAnimation") != 0;
     g_settings.hideUnsupportedButtons  = Wh_GetIntSetting(L"MainSettings.MediaButtonsSettings.hideUnsupportedButtons") != 0;
@@ -1368,11 +1284,9 @@ static void LoadSettings() {
     g_settings.audioAppsRequireSound = Wh_GetIntSetting(L"AudioAppSettings.audioAppsRequireSound") != 0;
     g_settings.audioAppSubtitle      = StrAllowEmpty(L"AudioAppSettings.audioAppSubtitle");
     g_settings.audioAppShowIcon      = Wh_GetIntSetting(L"AudioAppSettings.audioAppShowIcon") != 0;
-    g_settings.audioAppIgnore        = StrAllowEmpty(L"AudioAppSettings.audioAppIgnore");
-    g_settings.volumeStep            = Int(L"AudioAppSettings.volumeStep", 1, 50, 4);
+    g_settings.volumeStep            = Int(L"AudioAppSettings.volumeStep", 1, 50);
     g_settings.showVolumeInMenu      = Wh_GetIntSetting(L"AudioAppSettings.showVolumeInMenu") != 0;
     g_settings.launchAppCommand         = Str(L"BehaviorSettings.launchAppCommand", L"spotify:");
-    g_settings.ignoredProcesses     = Str(L"BehaviorSettings.ignoredProcesses", L"");
     g_settings.ignoredProcessMatchers.clear();
     g_settings.audioAppIgnoredStems.clear();
     auto ParseProcessList = [](const std::wstring& list, auto&& fn) {
@@ -1403,11 +1317,11 @@ static void LoadSettings() {
             start = end + 1;
         }
     };
-    ParseProcessList(g_settings.ignoredProcesses,
+    ParseProcessList(StrAllowEmpty(L"BehaviorSettings.ignoredProcesses"),
         [](std::wstring stem) {
             g_settings.ignoredProcessMatchers.push_back(std::move(stem));
         });
-    ParseProcessList(g_settings.audioAppIgnore,
+    ParseProcessList(StrAllowEmpty(L"AudioAppSettings.audioAppIgnore"),
         [](std::wstring stem) {
             g_settings.audioAppIgnoredStems.insert(std::move(stem));
         });
@@ -1434,18 +1348,16 @@ static void LoadSettings() {
     g_settings.contextMenuShuffleStyle = Str(L"ContextMenuSettings.shuffleStyle", L"toggle");
     g_settings.contextMenuIconStyle    = Str(L"ContextMenuSettings.contextMenuIconStyle", L"as_media_buttons");
     g_settings.contextMenuIconColor    = StrAllowEmpty(L"ContextMenuSettings.contextMenuIconColor");
-    g_settings.contextMenuIconOpacity  = Int(L"ContextMenuSettings.contextMenuIconOpacity", 0, 100, 100);
+    g_settings.contextMenuIconOpacity  = Int(L"ContextMenuSettings.contextMenuIconOpacity", 0, 100);
     {
         g_settings.contextMenuItems.clear();
         const wchar_t* defaultItems[] = { L"switch_sessions", L"open_app" };
         std::set<std::wstring> seen;
         for (int i = 0; i < 20; i++) {
-            PCWSTR p = Wh_GetStringSetting(L"ContextMenuSettings.contextMenuItems[%d]", i);
-            if (!p || !*p) { Wh_FreeStringSetting(p); break; }
-            std::wstring s(p);
-            Wh_FreeStringSetting(p);
-            if (seen.insert(s).second) {
-                g_settings.contextMenuItems.push_back(s);
+            std::wstring item = WindhawkUtils::StringSetting::make(L"ContextMenuSettings.contextMenuItems[%d]", i).get();
+            if (item.empty()) break;
+            if (seen.insert(item).second) {
+                g_settings.contextMenuItems.push_back(item);
             }
         }
         if (g_settings.contextMenuItems.empty()) {
@@ -1453,39 +1365,20 @@ static void LoadSettings() {
                 g_settings.contextMenuItems.push_back(d);
         }
     }
-    try {
+    {
         std::lock_guard<std::mutex> lock(g_mediaButtonsMutex);
         g_mediaButtons.clear();
-        std::set<MediaButtonType> seen;
+        std::set<int> seen;
         for (int i = 0; i < 10; i++) {
-            try {
-                PCWSTR itemStr = Wh_GetStringSetting(L"MainSettings.MediaButtonsSettings.mediaButtons[%d]", i);
-                if (!itemStr || !*itemStr) {
-                    Wh_FreeStringSetting(itemStr);
+            std::wstring keyword = WindhawkUtils::StringSetting::make(L"MainSettings.MediaButtonsSettings.mediaButtons[%d]", i).get();
+            if (keyword.empty()) break;
+            for (const auto& def : g_mediaButtonDefinitions) {
+                if (def.keyword == keyword && seen.insert(def.cmd).second) {
+                    g_mediaButtons.push_back({def.cmd});
                     break;
                 }
-                std::wstring keyword(itemStr);
-                Wh_FreeStringSetting(itemStr);
-                for (const auto& def : g_mediaButtonDefinitions) {
-                    if (def.keyword == keyword && seen.insert(def.type).second) {
-                        g_mediaButtons.push_back({def.type, def.cmd});
-                        break;
-                    }
-                }
-            } catch (...) {
-                Wh_Log(L"LoadSettings: Exception parsing media button at index %d", i);
             }
         }
-    } catch (...) {
-        Wh_Log(L"LoadSettings: Critical exception in media buttons parsing, using defaults");
-        try {
-            std::lock_guard<std::mutex> lock(g_mediaButtonsMutex);
-            g_mediaButtons = {
-                {MediaButtonType::Previous, kCmdPrevious},
-                {MediaButtonType::PlayPause, kCmdPlayPause},
-                {MediaButtonType::Next, kCmdNext}
-            };
-        } catch (...) {}
     }
     if (g_settings.position == L"taskbar_left")
         g_settings.position = L"taskbar_left_start";
@@ -1499,6 +1392,8 @@ static void LoadSettings() {
         g_settings.position = L"tray_before_omni_right";
     else if (g_settings.position == L"tray_after_showdesktop")
         g_settings.position = L"tray_after_showdesktop_right";
+    if (g_settings.backgroundType == L"mica" || g_settings.backgroundType == L"mica_alt")
+        g_settings.backgroundType = L"solid";
 }
 static HWND FindCurrentProcessTaskbarWnd();
 static void DispatchMediaUpdate();
@@ -1508,7 +1403,6 @@ struct MiniSessionInfo;
 static void AnimateSessionPill(winrt::Windows::UI::Xaml::Shapes::Rectangle const& pill, bool isCurrent, bool animate);
 static winrt::Windows::UI::Xaml::Controls::Button BuildSessionRowButton(const MiniSessionInfo& info, bool isCurrent, int rowIndex);
 
-static void ApplySettings();
 static std::atomic<bool> g_unloading{false};
 static std::atomic<bool> g_applyingSettings{false};
 static HWND g_taskbarWnd = nullptr;
@@ -1572,9 +1466,6 @@ static std::atomic<bool> g_miniPlayerClosingAnimInProgress{false};
 static std::atomic<bool> g_miniPlayerClosingAnimStarted{false};
 static std::atomic<bool> g_miniPlayerExplicitCloseRequested{false};
 static IMMDeviceEnumerator* g_pDeviceEnumerator = nullptr;
-static const CLSID XIID_MMDeviceEnumerator = __uuidof(MMDeviceEnumerator);
-static const IID XIID_IMMDeviceEnumerator = __uuidof(IMMDeviceEnumerator);
-static const IID XIID_IAudioSessionManager2 = __uuidof(IAudioSessionManager2);
 [[clang::no_destroy]] static Grid             g_playerGrid      = nullptr;
 [[clang::no_destroy]] static FrameworkElement g_injectionParent = nullptr;
 static int              g_playerColumn    = -1;
@@ -1609,8 +1500,7 @@ static bool RunFromWindowThread(HWND hWnd, WindowThreadProc proc, void* param) {
         [](int code, WPARAM w, LPARAM l) CALLBACK -> LRESULT {
             if (code == HC_ACTION) {
                 auto* cwp = reinterpret_cast<const CWPSTRUCT*>(l);
-                static const UINT kM = RegisterWindowMessage(L"Windhawk_RunFromWindowThread_" WH_MOD_ID);
-                if (cwp->message == kM) {
+                if (cwp->message == kMsg) {
                     auto* p = reinterpret_cast<Payload*>(cwp->lParam);
                     p->proc(p->param);
                 }
@@ -1673,10 +1563,8 @@ struct AlbumPalette {
     winrt::Windows::UI::Color primary;
     winrt::Windows::UI::Color secondary;
 };
-static AlbumPalette g_cachedAlbumPalette = {
-    winrt::Windows::UI::Color{255, 18, 18, 18},
-    winrt::Windows::UI::Color{255, 45, 45, 45}
-};
+static constexpr AlbumPalette kFallbackAlbumPalette{{255, 18, 18, 18}, {255, 45, 45, 45}};
+static AlbumPalette g_cachedAlbumPalette = kFallbackAlbumPalette;
 static size_t g_cachedPaletteHash = 0;
 static winrt::Windows::UI::Color g_cachedVizBaseColor{255, 255, 255, 255};
 static bool g_vizBaseColorDirty = true;
@@ -1735,12 +1623,6 @@ static winrt::Windows::UI::Color GetSystemButtonPressedColor(std::wstring const&
     }
     return winrt::Windows::UI::Color{0x0A, 0xFF, 0xFF, 0xFF};
 }
-static winrt::Windows::UI::Color GetSystemButtonBorderColor(std::wstring const& mode) {
-    if (IsHoverLightTheme(mode)) {
-        return winrt::Windows::UI::Color{0x08, 0x00, 0x00, 0x00};
-    }
-    return winrt::Windows::UI::Color{0x14, 0xFF, 0xFF, 0xFF};
-}
 static winrt::Windows::UI::Color GetSystemButtonBorderPressedColor(std::wstring const& mode) {
     if (IsHoverLightTheme(mode)) {
         return winrt::Windows::UI::Color{0x05, 0x00, 0x00, 0x00};
@@ -1751,8 +1633,6 @@ static winrt::Windows::UI::Color GetSystemButtonBorderPressedColor(std::wstring 
 [[clang::no_destroy]] static SolidColorBrush g_mediaPressedBrush = nullptr;
 [[clang::no_destroy]] static SolidColorBrush g_playerHoverBrush   = nullptr;
 [[clang::no_destroy]] static SolidColorBrush g_playerPressedBrush = nullptr;
-[[clang::no_destroy]] static SolidColorBrush g_playerBorderBrush  = nullptr;
-[[clang::no_destroy]] static SolidColorBrush g_playerBorderPressedBrush = nullptr;
 static void EnsureHoverBrushes() {
     if (!g_mediaHoverBrush) {
         g_mediaHoverBrush   = SolidColorBrush(GetSystemButtonHoverColor(g_settings.mediaButtonsHoverEffectMode));
@@ -1761,40 +1641,16 @@ static void EnsureHoverBrushes() {
     if (!g_playerHoverBrush) {
         g_playerHoverBrush   = SolidColorBrush(GetSystemButtonHoverColor(g_settings.playerHoverEffectMode));
         g_playerPressedBrush = SolidColorBrush(GetSystemButtonPressedColor(g_settings.playerHoverEffectMode));
-        g_playerBorderBrush  = SolidColorBrush(GetSystemButtonBorderColor(g_settings.playerHoverEffectMode));
-        g_playerBorderPressedBrush = SolidColorBrush(GetSystemButtonBorderPressedColor(g_settings.playerHoverEffectMode));
     }
 }
 static void UpdateHoverBrushColors() {
     if (g_mediaHoverBrush) {
-        try { g_mediaHoverBrush.Color(GetSystemButtonHoverColor(g_settings.mediaButtonsHoverEffectMode)); } catch (...) {}
-    } else {
-        try { g_mediaHoverBrush = SolidColorBrush(GetSystemButtonHoverColor(g_settings.mediaButtonsHoverEffectMode)); } catch (...) {}
-    }
-    if (g_mediaPressedBrush) {
-        try { g_mediaPressedBrush.Color(GetSystemButtonPressedColor(g_settings.mediaButtonsHoverEffectMode)); } catch (...) {}
-    } else {
-        try { g_mediaPressedBrush = SolidColorBrush(GetSystemButtonPressedColor(g_settings.mediaButtonsHoverEffectMode)); } catch (...) {}
+        g_mediaHoverBrush.Color(GetSystemButtonHoverColor(g_settings.mediaButtonsHoverEffectMode));
+        g_mediaPressedBrush.Color(GetSystemButtonPressedColor(g_settings.mediaButtonsHoverEffectMode));
     }
     if (g_playerHoverBrush) {
-        try { g_playerHoverBrush.Color(GetSystemButtonHoverColor(g_settings.playerHoverEffectMode)); } catch (...) {}
-    } else {
-        try { g_playerHoverBrush = SolidColorBrush(GetSystemButtonHoverColor(g_settings.playerHoverEffectMode)); } catch (...) {}
-    }
-    if (g_playerPressedBrush) {
-        try { g_playerPressedBrush.Color(GetSystemButtonPressedColor(g_settings.playerHoverEffectMode)); } catch (...) {}
-    } else {
-        try { g_playerPressedBrush = SolidColorBrush(GetSystemButtonPressedColor(g_settings.playerHoverEffectMode)); } catch (...) {}
-    }
-    if (g_playerBorderBrush) {
-        try { g_playerBorderBrush.Color(GetSystemButtonBorderColor(g_settings.playerHoverEffectMode)); } catch (...) {}
-    } else {
-        try { g_playerBorderBrush = SolidColorBrush(GetSystemButtonBorderColor(g_settings.playerHoverEffectMode)); } catch (...) {}
-    }
-    if (g_playerBorderPressedBrush) {
-        try { g_playerBorderPressedBrush.Color(GetSystemButtonBorderPressedColor(g_settings.playerHoverEffectMode)); } catch (...) {}
-    } else {
-        try { g_playerBorderPressedBrush = SolidColorBrush(GetSystemButtonBorderPressedColor(g_settings.playerHoverEffectMode)); } catch (...) {}
+        g_playerHoverBrush.Color(GetSystemButtonHoverColor(g_settings.playerHoverEffectMode));
+        g_playerPressedBrush.Color(GetSystemButtonPressedColor(g_settings.playerHoverEffectMode));
     }
 }
 static Border GetButtonTemplateRoot(Button const& btn) {
@@ -1970,23 +1826,20 @@ static CompositeTransform EnsureCompositeTransform(UIElement const& el) {
     return nullptr;
 }
 
-static EasingFunctionBase MakeEase(bool easeOut, double exponent = 4.5) {
+static EasingFunctionBase MakeEase(bool easeOut) {
     ExponentialEase ease;
-    ease.Exponent(exponent);
+    ease.Exponent(4.5);
     ease.EasingMode(easeOut ? EasingMode::EaseOut : EasingMode::EaseIn);
     return ease;
 }
 
 static void AppendAnim(Storyboard const& sb, DependencyObject const& target,
                        PCWSTR property, double from, double to, int durationMs,
-                       bool easeOut, int beginMs = 0) {
+                       bool easeOut) {
     DoubleAnimation anim;
     anim.From(from);
     anim.To(to);
     anim.Duration(DurationHelper::FromTimeSpan(std::chrono::milliseconds(durationMs)));
-    if (beginMs > 0) {
-        anim.BeginTime(winrt::Windows::Foundation::TimeSpan(std::chrono::milliseconds(beginMs)));
-    }
     anim.EasingFunction(MakeEase(easeOut));
     anim.FillBehavior(FillBehavior::Stop);
     Storyboard::SetTarget(anim, target);
@@ -1995,8 +1848,8 @@ static void AppendAnim(Storyboard const& sb, DependencyObject const& target,
 }
 
 static void AnimateFade(UIElement const& el, double from, double to, int durationMs,
-                        bool easeOut = true, double scaleFrom = 1.0,
-                        double scaleTo = 1.0) {
+                        bool easeOut, double scaleFrom,
+                        double scaleTo) {
     if (!el) return;
     try {
         bool scaling = (scaleFrom != scaleTo);
@@ -2221,55 +2074,42 @@ static void SetupPlayerCommonStates(Button const& btn, Brush const& normalBg) {
         elevBorderPressed,
         transparent);
 }
-static void ApplyPlayerButtonState(Button const& btn, Brush const&, bool hovered, bool pressed) {
-    if (!btn) return;
-    try {
-        GoToCommonState(btn, IsHoverEffectEnabled(g_settings.playerHoverEffectMode), pressed, hovered);
-    } catch (...) {}
-}
 static bool DecodeImageToBGRA(const std::vector<BYTE>& imgBytes,
                             std::vector<BYTE>& outPixels,
                             int& outW, int& outH)
 {
     if (imgBytes.empty()) return false;
-    IWICImagingFactory* pFactory = nullptr;
+    winrt::com_ptr<IWICImagingFactory> factory;
     if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
                                 CLSCTX_INPROC_SERVER,
-                                IID_PPV_ARGS(&pFactory))) || !pFactory)
+                                IID_PPV_ARGS(factory.put()))))
         return false;
-    IStream* pStream = SHCreateMemStream(imgBytes.data(), (UINT)imgBytes.size());
-    if (!pStream) { pFactory->Release(); return false; }
-    bool ok = false;
-    IWICBitmapDecoder* pDecoder = nullptr;
-    if (SUCCEEDED(pFactory->CreateDecoderFromStream(
-            pStream, nullptr, WICDecodeMetadataCacheOnDemand, &pDecoder))) {
-        IWICBitmapFrameDecode* pFrame = nullptr;
-        if (SUCCEEDED(pDecoder->GetFrame(0, &pFrame))) {
-            IWICFormatConverter* pConv = nullptr;
-            if (SUCCEEDED(pFactory->CreateFormatConverter(&pConv))) {
-                if (SUCCEEDED(pConv->Initialize(
-                        pFrame, GUID_WICPixelFormat32bppPBGRA,
-                        WICBitmapDitherTypeNone, nullptr, 0.0,
-                        WICBitmapPaletteTypeMedianCut))) {
-                    UINT w = 0, h = 0;
-                    pConv->GetSize(&w, &h);
-                    if (w > 0 && h > 0) {
-                        outPixels.resize((size_t)w * h * 4);
-                        if (SUCCEEDED(pConv->CopyPixels(nullptr, w * 4,
-                                (UINT)outPixels.size(), outPixels.data()))) {
-                            outW = (int)w; outH = (int)h; ok = true;
-                        }
-                    }
-                }
-                pConv->Release();
-            }
-            pFrame->Release();
-        }
-        pDecoder->Release();
-    }
-    pStream->Release();
-    pFactory->Release();
-    return ok;
+    winrt::com_ptr<IStream> stream;
+    stream.attach(SHCreateMemStream(imgBytes.data(), (UINT)imgBytes.size()));
+    if (!stream) return false;
+    winrt::com_ptr<IWICBitmapDecoder> decoder;
+    if (FAILED(factory->CreateDecoderFromStream(
+            stream.get(), nullptr, WICDecodeMetadataCacheOnDemand, decoder.put())))
+        return false;
+    winrt::com_ptr<IWICBitmapFrameDecode> frame;
+    if (FAILED(decoder->GetFrame(0, frame.put()))) return false;
+    winrt::com_ptr<IWICFormatConverter> converter;
+    if (FAILED(factory->CreateFormatConverter(converter.put()))) return false;
+    if (FAILED(converter->Initialize(
+            frame.get(), GUID_WICPixelFormat32bppPBGRA,
+            WICBitmapDitherTypeNone, nullptr, 0.0,
+            WICBitmapPaletteTypeMedianCut)))
+        return false;
+    UINT w = 0, h = 0;
+    converter->GetSize(&w, &h);
+    if (w == 0 || h == 0) return false;
+    outPixels.resize((size_t)w * h * 4);
+    if (FAILED(converter->CopyPixels(nullptr, w * 4,
+            (UINT)outPixels.size(), outPixels.data())))
+        return false;
+    outW = (int)w;
+    outH = (int)h;
+    return true;
 }
 static void DownsampleBGRA(const std::vector<BYTE>& src, int srcW, int srcH,
                             std::vector<BYTE>& dst, int dstW, int dstH)
@@ -2359,9 +2199,8 @@ static bool UpdateAlbumBlurBgCache(const std::vector<BYTE>& thumbBytes,
     int smallH = srcH / blurDiv; if (smallH < 1) smallH = 1;
     std::vector<BYTE> small;
     DownsampleBGRA(srcPixels, srcW, srcH, small, smallW, smallH);
-    int blurRadius = std::clamp(g_settings.blurRadius, 1, 50);
     for (int i = 0; i < 3; ++i) {
-        ApplyBoxBlurBGRA(small, smallW, smallH, blurRadius);
+        ApplyBoxBlurBGRA(small, smallW, smallH, g_settings.blurRadius);
     }
     std::vector<BYTE> blurred;
     DownsampleBGRA(small, smallW, smallH, blurred, targetW, targetH);
@@ -2372,22 +2211,18 @@ static bool UpdateAlbumBlurBgCache(const std::vector<BYTE>& thumbBytes,
     return true;
 }
 static AlbumPalette ExtractAlbumPalette(const std::vector<BYTE>& thumbBytes) {
-    const winrt::Windows::UI::Color fallbackPrimary{255, 18, 18, 18};
-    const winrt::Windows::UI::Color fallbackSecondary{255, 45, 45, 45};
     if (thumbBytes.empty())
-        return {fallbackPrimary, fallbackSecondary};
+        return kFallbackAlbumPalette;
     try {
         std::vector<BYTE> pixels;
         int w = 0, h = 0;
-        if (!DecodeImageToBGRA(thumbBytes, pixels, w, h) || w <= 0 || h <= 0 ||
-            pixels.size() < (size_t)w * h * 4)
-            return {fallbackPrimary, fallbackSecondary};
+        if (!DecodeImageToBGRA(thumbBytes, pixels, w, h))
+            return kFallbackAlbumPalette;
         struct Bucket { uint32_t r=0, g=0, b=0, n=0; };
         Bucket buckets[16][16][16]{};
         for (int y = 0; y < h; y += 4) {
             for (int x = 0; x < w; x += 4) {
                 size_t idx = ((size_t)y * w + x) * 4;
-                if (idx + 4 > pixels.size()) continue;
                 BYTE pb = pixels[idx];
                 BYTE pg = pixels[idx + 1];
                 BYTE pr = pixels[idx + 2];
@@ -2415,7 +2250,7 @@ static AlbumPalette ExtractAlbumPalette(const std::vector<BYTE>& thumbBytes) {
                                     (BYTE)(fr * 255), (BYTE)(fg * 255), (BYTE)(fb * 255)});
                 }
         if (cands.empty())
-            return {fallbackPrimary, fallbackSecondary};
+            return kFallbackAlbumPalette;
         std::sort(cands.begin(), cands.end(),
                 [](const Cand& a, const Cand& b){ return a.w > b.w; });
         winrt::Windows::UI::Color primary{255, cands[0].r, cands[0].g, cands[0].b};
@@ -2431,17 +2266,10 @@ static AlbumPalette ExtractAlbumPalette(const std::vector<BYTE>& thumbBytes) {
         }
         return {primary, secondary};
     } catch (...) {
-        return {fallbackPrimary, fallbackSecondary};
+        return kFallbackAlbumPalette;
     }
 }
-static DWORD GetWindowsAccentColor() {
-    DWORD color = 0;
-    BOOL opaque = FALSE;
-    if (SUCCEEDED(DwmGetColorizationColor(&color, &opaque)))
-        return 0xFF000000 | (color & 0x00FFFFFF);
-    return 0xFF0078D4;
-}
-static winrt::Windows::UI::Color ParseColorWithSpecialValues(const std::wstring& colorStr, BYTE alpha = 255) {
+static winrt::Windows::UI::Color ParseColorWithSpecialValues(const std::wstring& colorStr, BYTE alpha) {
     int r = 255, g = 255, b = 255;
     size_t pos1 = colorStr.find(L' ');
     size_t pos2 = colorStr.find(L' ', pos1 + 1);
@@ -2451,11 +2279,9 @@ static winrt::Windows::UI::Color ParseColorWithSpecialValues(const std::wstring&
             g = std::stoi(colorStr.substr(pos1 + 1, pos2 - pos1 - 1));
             b = std::stoi(colorStr.substr(pos2 + 1));
             if (r == -1 && g == -1 && b == -1) {
-                DWORD accentColor = GetWindowsAccentColor();
-                return winrt::Windows::UI::Color{alpha,
-                    (BYTE)((accentColor >> 16) & 0xFF),
-                    (BYTE)((accentColor >> 8) & 0xFF),
-                    (BYTE)(accentColor & 0xFF)};
+                auto accent = winrt::Windows::UI::ViewManagement::UISettings().GetColorValue(
+                    winrt::Windows::UI::ViewManagement::UIColorType::Accent);
+                return winrt::Windows::UI::Color{alpha, accent.R, accent.G, accent.B};
             }
             if (r == -2 && g == -2 && b == -2) {
                 if (g_cachedPaletteHash == 0) {
@@ -2491,20 +2317,20 @@ static winrt::Windows::UI::Color ParseColorWithThemeSupport(const std::wstring& 
         return ParseColorWithSpecialValues(colorStr, alpha);
     }
 }
+static BYTE PercentToAlpha(int percent) {
+    return (BYTE)(percent * 255 / 100);
+}
 static winrt::Windows::UI::Color TextColor() {
-    BYTE alpha = (BYTE)((g_settings.titleColorOpacity / 100.0) * 255);
-    return ParseColorWithThemeSupport(g_settings.titleColor, alpha);
+    return ParseColorWithThemeSupport(g_settings.titleColor, PercentToAlpha(g_settings.titleColorOpacity));
 }
 static winrt::Windows::UI::Color ArtistColor() {
-    BYTE alpha = (BYTE)((g_settings.artistColorOpacity / 100.0) * 255);
-    return ParseColorWithThemeSupport(g_settings.artistColor, alpha);
+    return ParseColorWithThemeSupport(g_settings.artistColor, PercentToAlpha(g_settings.artistColorOpacity));
 }
 static winrt::Windows::UI::Color ButtonColor() {
-    BYTE alpha = (BYTE)((g_settings.buttonColorOpacity / 100.0) * 255);
-    return ParseColorWithThemeSupport(g_settings.buttonColor, alpha);
+    return ParseColorWithThemeSupport(g_settings.buttonColor, PercentToAlpha(g_settings.buttonColorOpacity));
 }
 static winrt::Windows::UI::Color ContextMenuIconColor() {
-    BYTE alpha = (BYTE)((g_settings.contextMenuIconOpacity / 100.0) * 255);
+    BYTE alpha = PercentToAlpha(g_settings.contextMenuIconOpacity);
     const std::wstring& clr = g_settings.contextMenuIconColor;
     if (clr.empty()) {
         return ParseColorWithThemeSupport(g_settings.buttonColor, alpha);
@@ -2519,8 +2345,7 @@ static const std::wstring& ContextMenuIconStyle() {
 static Brush MakeAlbumBlurBrush(const std::vector<BYTE>& thumbBytes,
                                 int panelW, int panelH)
 {
-    if (!UpdateAlbumBlurBgCache(thumbBytes, panelW, panelH) ||
-        g_blurBgCache.blurredPixels.empty())
+    if (!UpdateAlbumBlurBgCache(thumbBytes, panelW, panelH))
         return MakeBrush({0x00, 0x00, 0x00, 0x00});
     try {
         size_t bytesNeeded = (size_t)panelW * panelH * 4;
@@ -2529,7 +2354,7 @@ static Brush MakeAlbumBlurBrush(const std::vector<BYTE>& thumbBytes,
         auto byteAccess = buf.as<Windows::Storage::Streams::IBufferByteAccess>();
         BYTE* pixels = nullptr;
         byteAccess->Buffer(&pixels);
-        if (pixels && g_blurBgCache.blurredPixels.size() >= bytesNeeded)
+        if (pixels)
             memcpy(pixels, g_blurBgCache.blurredPixels.data(), bytesNeeded);
         buf.Length(static_cast<uint32_t>(bytesNeeded));
         wb.Invalidate();
@@ -2542,13 +2367,13 @@ static Brush MakeAlbumBlurBrush(const std::vector<BYTE>& thumbBytes,
 }
 static bool UsesBackgroundBrush() {
     auto& t = g_settings.backgroundType;
-    return t == L"solid" || t == L"gradient" || t == L"acrylic" || t == L"mica" || t == L"mica_alt";
+    return t == L"solid" || t == L"gradient" || t == L"acrylic";
 }
 static Brush MakeBackgroundBrush() {
     auto& t = g_settings.backgroundType;
-    BYTE opacity = (BYTE)((g_settings.solidOpacity / 100.0) * 255);
+    BYTE opacity = PercentToAlpha(g_settings.solidOpacity);
     auto color1 = ParseColorWithThemeSupport(g_settings.solidColor, opacity);
-    auto color2 = ParseColorWithSpecialValues(g_settings.solidColor2, opacity);
+    auto gradientColor1 = ParseColorWithSpecialValues(g_settings.solidColor2, opacity);
     auto gradientColor2 = ParseColorWithSpecialValues(g_settings.gradientColor2, opacity);
     if (t == L"gradient") {
         try {
@@ -2560,9 +2385,9 @@ static Brush MakeBackgroundBrush() {
             double endY = 0.5 + 0.5 * std::sin(angleRad);
             brush.StartPoint(winrt::Windows::Foundation::Point((float)startX, (float)startY));
             brush.EndPoint(winrt::Windows::Foundation::Point((float)endX, (float)endY));
-            double balancePoint = std::clamp(g_settings.gradientBalance, 0, 100) / 100.0;
+            double balancePoint = g_settings.gradientBalance / 100.0;
             winrt::Windows::UI::Xaml::Media::GradientStop stop1;
-            stop1.Color(color2);
+            stop1.Color(gradientColor1);
             stop1.Offset(0.0);
             winrt::Windows::UI::Xaml::Media::GradientStop stop2;
             stop2.Color(gradientColor2);
@@ -2587,16 +2412,8 @@ static Brush MakeBackgroundBrush() {
             return brush;
         } catch (...) {}
     }
-    if (t == L"mica" || t == L"mica_alt") {
-        BYTE micaAlpha = (BYTE)((g_settings.micaOpacity / 100.0) * 255);
-        auto col = winrt::Windows::UI::Color{micaAlpha, color1.R, color1.G, color1.B};
-        return MakeBrush(col);
-    }
     if (t == L"solid") {
         return MakeBrush(color1);
-    }
-    if (t == L"album_art_blur") {
-        return MakeBrush({0x00, 0xFF, 0xFF, 0xFF});
     }
     return MakeBrush({0x00, 0xFF, 0xFF, 0xFF});
 }
@@ -2615,24 +2432,6 @@ static FrameworkElement FindChildByName(FrameworkElement const& root, std::wstri
         if (auto found = FindChildByName(child, name, depth - 1)) return found;
     }
     return nullptr;
-}
-static void DumpXamlTree(DependencyObject const& node, int depth, int maxDepth) {
-    if (!node || depth > maxDepth) return;
-    std::wstring indent(depth * 2, L' ');
-    auto fe = node.try_as<FrameworkElement>();
-    std::wstring name  = fe ? std::wstring(fe.Name()) : L"";
-    winrt::hstring typeHstr = winrt::get_class_name(node);
-    std::wstring type  = std::wstring(typeHstr);
-    auto dot = type.rfind(L'.');
-    if (dot != std::wstring::npos) type = type.substr(dot + 1);
-    int col = fe ? Grid::GetColumn(fe) : -1;
-    if (!name.empty()) Wh_Log(L"%ls[%ls] name='%ls' col=%d", indent.c_str(), type.c_str(), name.c_str(), col);
-    else Wh_Log(L"%ls[%ls]", indent.c_str(), type.c_str());
-    int n = VisualTreeHelper::GetChildrenCount(node);
-    for (int i = 0; i < n; ++i) {
-        auto child = VisualTreeHelper::GetChild(node, i);
-        if (child) DumpXamlTree(child, depth + 1, maxDepth);
-    }
 }
 static constexpr wchar_t kGridName[]        = L"FluentMediaBar";
 static constexpr wchar_t kArtImageName[]    = L"FluentMedia_Art";
@@ -2658,8 +2457,6 @@ static std::atomic<bool> g_hiddenByIdle{false};
 static std::chrono::steady_clock::time_point g_lastMediaTime = std::chrono::steady_clock::now();
 static void SwitchMediaSession();
 static bool AudioAppIsCurrentSource();
-static bool AppAudioGetState(float* outVolume, bool* outMuted);
-static bool AppAudioSetVolume(float value);
 static bool AppAudioAdjustVolume(float delta);
 static bool AppAudioToggleMute();
 static std::atomic<int>  g_targetVolumePercent{-1};
@@ -2667,7 +2464,6 @@ static std::atomic<bool> g_targetMuted{false};
 static std::atomic<int>       g_pendingVolumePercent{-1};
 static std::atomic<bool>      g_volumeWriterActive{false};
 static std::atomic<ULONGLONG> g_volumeUserActionTick{0};
-static void QueueAppVolume(int percent);
 static void SendMediaCommandAsync(int cmd) {
     SpawnTrackedWorker([cmd]() {
         if (g_unloading) return;
@@ -2704,22 +2500,15 @@ static void SendMediaCommandAsync(int cmd) {
                         break;
                     }
                     case kCmdNext: session.TrySkipNextAsync().get(); break;
-                    case kCmdStop:
-                        try {
-                            auto result = session.TryStopAsync().get();
-                            if (!result) {
-                                session.TryPauseAsync().get();
-                                session.TryChangePlaybackPositionAsync(0).get();
-                            }
-                        } catch (...) {
-                            try {
-                                session.TryPauseAsync().get();
-                                session.TryChangePlaybackPositionAsync(0).get();
-                            } catch (...) {
-                                Wh_Log(L"SendMediaCommandAsync: Fallback also failed");
-                            }
+                    case kCmdStop: {
+                        bool stopped = false;
+                        try { stopped = session.TryStopAsync().get(); } catch (...) {}
+                        if (!stopped) {
+                            session.TryPauseAsync().get();
+                            session.TryChangePlaybackPositionAsync(0).get();
                         }
                         break;
+                    }
                     case kCmdRewind:
                         try {
                             auto timeline = session.GetTimelineProperties();
@@ -2826,7 +2615,6 @@ static TextScrollState g_titleScroll;
 static TextScrollState g_artistScroll;
 static void OnSessionsChanged();
 static void AttachToSession(GlobalSystemMediaTransportControlsSession session);
-static void SwitchMediaSession();
 static void SwitchMediaSession() {
     GlobalSystemMediaTransportControlsSessionManager mgr{nullptr};
     GlobalSystemMediaTransportControlsSession curSession{nullptr};
@@ -2866,8 +2654,8 @@ static void InitAudioDeviceEnumerator() {
     std::lock_guard<std::mutex> lk(g_deviceEnumeratorMtx);
     if (!g_pDeviceEnumerator) {
         CoCreateInstance(
-            XIID_MMDeviceEnumerator, NULL, CLSCTX_INPROC_SERVER,
-            XIID_IMMDeviceEnumerator, (LPVOID*)&g_pDeviceEnumerator);
+            __uuidof(MMDeviceEnumerator), NULL, CLSCTX_INPROC_SERVER,
+            __uuidof(IMMDeviceEnumerator), (LPVOID*)&g_pDeviceEnumerator);
     }
 }
 static void CleanupAudioDeviceEnumerator() {
@@ -2892,7 +2680,6 @@ static std::wstring GetWindowAppUserModelId(HWND hWnd);
 static void ShowMediaContextMenu(FrameworkElement const& target);
 static void ShowMiniPlayerFlyout(FrameworkElement const& target);
 static void LaunchConfiguredApp();
-[[maybe_unused]]
 static void ExecuteMediaAction(const std::wstring& action, FrameworkElement const& sourceElement = nullptr) {
     if (action == L"none") {
         return;
@@ -3802,7 +3589,7 @@ static void ForEachRenderAudioSession(
     if (FAILED(g_pDeviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, device.put())))
         return;
     winrt::com_ptr<IAudioSessionManager2> manager;
-    if (FAILED(device->Activate(XIID_IAudioSessionManager2, CLSCTX_ALL, nullptr,
+    if (FAILED(device->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr,
                                 manager.put_void()))) {
         return;
     }
@@ -5133,8 +4920,8 @@ static void VizCaptureThreadProc() {
     BuildHannWindow();
     BuildTwiddleFactors();
     winrt::com_ptr<IMMDeviceEnumerator> pEnum;
-    if (FAILED(CoCreateInstance(XIID_MMDeviceEnumerator, nullptr, CLSCTX_ALL,
-                                XIID_IMMDeviceEnumerator, pEnum.put_void()))) {
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                __uuidof(IMMDeviceEnumerator), pEnum.put_void()))) {
         g_CaptureRunning.store(false);
         CoUninitialize();
         return;
@@ -8132,8 +7919,7 @@ static Grid BuildPlayerGrid() {
                 pauseBorder.Name(kPauseOverlayName);
                 pauseBorder.HorizontalAlignment(HorizontalAlignment::Stretch);
                 pauseBorder.VerticalAlignment(VerticalAlignment::Stretch);
-                BYTE opacity = (BYTE)((g_settings.pauseOverlayOpacity * 255) / 100);
-                pauseBorder.Background(MakeBrush({opacity, 0x00, 0x00, 0x00}));
+                pauseBorder.Background(MakeBrush({PercentToAlpha(g_settings.pauseOverlayOpacity), 0x00, 0x00, 0x00}));
                 pauseBorder.Visibility(Visibility::Collapsed);
                 Canvas::SetZIndex(pauseBorder, 8);
                 TextBlock pauseIcon;
@@ -8330,29 +8116,29 @@ static Grid BuildPlayerGrid() {
                 try {
                     const auto& btnCfg = currentButtons[i];
                     auto btn = MakeControlButton(btnCfg.cmd, false, buttonClr);
-                    switch (btnCfg.type) {
-                        case MediaButtonType::Previous:
+                    switch (btnCfg.cmd) {
+                        case kCmdPrevious:
                             btn.Name(kPrevBtnName);
                             break;
-                        case MediaButtonType::PlayPause:
+                        case kCmdPlayPause:
                             btn.Name(kPlayBtnName);
                             break;
-                        case MediaButtonType::Next:
+                        case kCmdNext:
                             btn.Name(kNextBtnName);
                             break;
-                        case MediaButtonType::Rewind:
+                        case kCmdRewind:
                             btn.Name(kRewindBtnName);
                             break;
-                        case MediaButtonType::Forward:
+                        case kCmdForward:
                             btn.Name(kForwardBtnName);
                             break;
-                        case MediaButtonType::Shuffle:
+                        case kCmdToggleShuffle:
                             btn.Name(kShuffleBtnName);
                             break;
-                        case MediaButtonType::Repeat:
+                        case kCmdCycleRepeat:
                             btn.Name(kRepeatBtnName);
                             break;
-                        case MediaButtonType::SwitchSessions:
+                        case kCmdSwitchSession:
                             btn.Name(kSwitchSessionsBtnName);
                             break;
                     }
@@ -8430,9 +8216,9 @@ static Grid BuildPlayerGrid() {
         auto isPressed = std::make_shared<bool>(false);
         auto isHovered = std::make_shared<bool>(false);
         auto playerNormalBg = MakeBackgroundBrush();
-        auto updatePlayerVisualState = [playerButton, playerNormalBg, isPressed, isHovered]() {
+        auto updatePlayerVisualState = [playerButton, isPressed, isHovered]() {
             bool hovered = *isHovered || g_miniPlayerFlyoutOpen;
-            ApplyPlayerButtonState(playerButton, playerNormalBg, hovered, *isPressed);
+            GoToCommonState(playerButton, IsHoverEffectEnabled(g_settings.playerHoverEffectMode), *isPressed, hovered);
         };
         g_playerButtonStateUpdater = updatePlayerVisualState;
         RunWhenButtonReady(playerButton, [playerButton, playerNormalBg]() {
@@ -8777,21 +8563,8 @@ static bool InjectPlayerGridIntoTaskbar(HWND hWnd) {
             Wh_Log(L"InjectPlayerGrid: Failed to get root FrameworkElement");
             return false;
         }
-        if (g_settings.enableTreeDump) {
-            DumpXamlTree(root, 0, 5);
-            auto rootGrid = FindTaskbarRootGrid(root);
-            if (rootGrid) {
-                auto repeater = FindChildByName(rootGrid, L"TaskbarFrameRepeater");
-                if (repeater) {
-                    DumpXamlTree(repeater, 0, 3);
-                }
-            }
-        }
         auto [targetParent, insertAt] = ResolveInjectionTarget(root, g_settings.position);
         if (!targetParent) {
-            if (g_settings.enableTreeDump) {
-                DumpXamlTree(root, 0, 8);
-            }
             return false;
         }
         Grid playerGrid = BuildPlayerGrid();
@@ -9557,8 +9330,7 @@ static void RefreshPlayerContentsInstance() {
                                     textBlock.FontFamily(Media::FontFamily(
                                         useFluent ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets"));
                                     textBlock.FontSize((double)g_settings.emptyIconSize);
-                                    BYTE alpha = (BYTE)std::clamp((int)std::round(g_settings.emptyIconOpacity * 255.0 / 100.0), 0, 255);
-                                    auto iconClr = ParseColorWithThemeSupport(g_settings.emptyIconColor, alpha);
+                                    auto iconClr = ParseColorWithThemeSupport(g_settings.emptyIconColor, PercentToAlpha(g_settings.emptyIconOpacity));
                                     textBlock.Foreground(MakeBrush(iconClr));
                                 }
                                 iconBorder.Visibility(Visibility::Visible);
@@ -9979,8 +9751,6 @@ static void ReleaseSharedBrushes() {
     g_mediaPressedBrush = nullptr;
     g_playerHoverBrush  = nullptr;
     g_playerPressedBrush = nullptr;
-    g_playerBorderBrush  = nullptr;
-    g_playerBorderPressedBrush = nullptr;
     g_vizBars.reset();
     g_vizBrushes.reset();
 }

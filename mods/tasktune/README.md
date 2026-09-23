@@ -11,7 +11,7 @@ taskbar. It uses Windows media sessions for playback control and can fall back t
 - Per-application volume and mute controls for media and audio-only applications
 - Session switching, configurable mouse actions, and a compact mini-player
 - Double-click anywhere on the player to open Spotify or another configured app
-- Fluent solid, gradient, Acrylic, Mica, and album-art backgrounds
+- Solid, gradient, Acrylic, and blurred album-art backgrounds
 - Optional WASAPI spectrum visualizer with configurable shapes, colors, and EQ presets
 - Automatic hiding when media is unavailable, the taskbar is idle, or an app is full-screen
 - Extensive sizing, spacing, color, typography, animation, and empty-state settings
