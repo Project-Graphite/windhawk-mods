@@ -385,7 +385,7 @@ Leave **Icon** empty and the item uses its target's real shell icon. Otherwise:
       $name: Appearance
       $description: How this item looks in the panel.
   $name: Stack items
-  $description: Everything the launcher can start, in launch order. An empty name ends the list.
+  $description: Everything the launcher can start. An empty name ends the list.
 - panelTitle: Stack
   $name: Panel title
   $description: Heading shown at the top of the panel.
@@ -684,6 +684,7 @@ static std::mutex g_buttonMutex;
 static std::atomic<bool> g_panelOpen{false};
 static std::atomic<bool> g_launching{false};
 static std::atomic<bool> g_cancelLaunch{false};
+static std::atomic<DWORD> g_launchThreadId{0};
 static ULONGLONG g_panelHiddenTick = 0;
 static std::atomic<UINT> g_dpi{96};
 static bool g_trayIconAdded = false;
@@ -2460,6 +2461,30 @@ static void SaveItemOrder() {
     Wh_SetStringValue(L"itemOrder", joined.c_str());
 }
 
+static std::vector<std::wstring> GroupSequence(const std::vector<int>& order) {
+    std::vector<std::wstring> sequence;
+    for (int index : order) {
+        const std::wstring& name = g_settings.items[index].group;
+        if (std::find(sequence.begin(), sequence.end(), name) == sequence.end()) {
+            sequence.push_back(name);
+        }
+    }
+    return sequence;
+}
+
+static std::vector<int> GroupedOrder(const std::vector<int>& order,
+                                     const std::vector<std::wstring>& sequence) {
+    std::vector<int> grouped;
+    for (const auto& name : sequence) {
+        for (int index : order) {
+            if (g_settings.items[index].group == name) {
+                grouped.push_back(index);
+            }
+        }
+    }
+    return grouped;
+}
+
 static std::vector<int> OrderedIndices() {
     std::vector<int> order;
     std::vector<bool> placed(g_settings.items.size(), false);
@@ -2477,7 +2502,7 @@ static std::vector<int> OrderedIndices() {
             order.push_back((int)i);
         }
     }
-    return order;
+    return GroupedOrder(order, GroupSequence(order));
 }
 
 static void AdoptOrder(const std::vector<int>& order) {
@@ -2490,17 +2515,6 @@ static void AdoptOrder(const std::vector<int>& order) {
 static void NormalizeItemOrder() {
     std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
     AdoptOrder(OrderedIndices());
-}
-
-static std::vector<std::wstring> GroupSequence(const std::vector<int>& order) {
-    std::vector<std::wstring> sequence;
-    for (int index : order) {
-        const std::wstring& name = g_settings.items[index].group;
-        if (std::find(sequence.begin(), sequence.end(), name) == sequence.end()) {
-            sequence.push_back(name);
-        }
-    }
-    return sequence;
 }
 
 static bool MoveItemWithinGroup(int itemIndex, int delta) {
@@ -2555,16 +2569,7 @@ static bool MoveGroupBlock(const std::wstring& group, int delta) {
         return false;
     }
     std::swap(sequence[position], sequence[position + delta]);
-
-    std::vector<int> rebuilt;
-    for (const auto& name : sequence) {
-        for (int index : order) {
-            if (g_settings.items[index].group == name) {
-                rebuilt.push_back(index);
-            }
-        }
-    }
-    AdoptOrder(rebuilt);
+    AdoptOrder(GroupedOrder(order, sequence));
     return true;
 }
 
@@ -2975,6 +2980,7 @@ static void ReportProgress() {
 }
 
 static void RunLaunchSequence(std::vector<int> indices) {
+    g_launchThreadId = GetCurrentThreadId();
     g_launching = true;
     g_cancelLaunch = false;
     g_progressTotal = (int)indices.size();
@@ -3140,6 +3146,10 @@ static void RunShutdownSequence(std::vector<int> indices) {
             }
         }
 
+        if (g_unloading || g_cancelLaunch) {
+            break;
+        }
+
         if (!alive.empty() && force) {
             for (DWORD pid : alive) {
                 TerminateProcessById(pid);
@@ -3188,9 +3198,9 @@ static void StartShutdown(std::vector<int> indices) {
 static std::vector<int> SelectedIndices() {
     std::vector<int> indices;
     std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-    for (size_t i = 0; i < g_settings.items.size(); i++) {
+    for (int i : OrderedIndices()) {
         if (g_settings.items[i].enabled) {
-            indices.push_back((int)i);
+            indices.push_back(i);
         }
     }
     return indices;
@@ -3199,9 +3209,9 @@ static std::vector<int> SelectedIndices() {
 static std::vector<int> RunningSelectedIndices() {
     std::vector<int> indices;
     std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-    for (size_t i = 0; i < g_settings.items.size(); i++) {
+    for (int i : OrderedIndices()) {
         if (g_settings.items[i].enabled && g_settings.items[i].running) {
-            indices.push_back((int)i);
+            indices.push_back(i);
         }
     }
     return indices;
@@ -3210,11 +3220,11 @@ static std::vector<int> RunningSelectedIndices() {
 static std::vector<int> ProfileIndices(const std::wstring& profile) {
     std::vector<int> indices;
     std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-    for (size_t i = 0; i < g_settings.items.size(); i++) {
+    for (int i : OrderedIndices()) {
         const StackItem& item = g_settings.items[i];
         if (ToLower(profile) == L"all" ? item.enabled
                                        : ListContains(item.profiles, profile)) {
-            indices.push_back((int)i);
+            indices.push_back(i);
         }
     }
     return indices;
@@ -4003,6 +4013,9 @@ static void FocusEdge(bool last) {
 }
 
 static void LaunchSelected() {
+    if (g_launching) {
+        return;
+    }
     std::vector<int> indices = SelectedIndices();
     if (indices.empty()) {
         return;
@@ -4233,6 +4246,9 @@ static void HandleClick(const HitResult& hit) {
             }
             break;
         case HitKind::Item:
+            if (g_launching) {
+                break;
+            }
             if (hit.index >= 0 && hit.index < (int)g_rows.size()) {
                 StartLaunch({g_rows[hit.index].itemIndex});
                 bool closeAfter = false;
@@ -5458,6 +5474,9 @@ void Wh_ModSettingsChanged() {
 void Wh_ModBeforeUninit() {
     g_unloading = true;
     g_cancelLaunch = true;
+    if (DWORD id = g_launchThreadId) {
+        PostThreadMessageW(id, WM_QUIT, 0, 0);
+    }
     if (g_messageWnd) {
         PostMessageW(g_messageWnd, WM_QUIT, 0, 0);
     }
