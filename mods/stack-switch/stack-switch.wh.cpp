@@ -9,7 +9,7 @@
 // @homepage        https://github.com/Project-Graphite/windhawk-mods
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -ldwmapi -lgdi32 -lgdiplus -lole32 -lshell32 -lshlwapi -luser32 -luuid -ladvapi32
+// @compilerOptions -ldwmapi -lgdi32 -lgdiplus -lole32 -lshell32 -lshlwapi -luser32 -ladvapi32
 // ==/WindhawkMod==
 
 // ==WindhawkModReadme==
@@ -398,7 +398,6 @@ Leave **Icon** empty and the item uses its target's real shell icon. Otherwise:
   $description: Where terminal items open. Auto groups them into one Windows Terminal window.
   $options:
   - auto: Auto
-  - wt: Always Windows Terminal
   - shell: Always the shell's own console
 - wtWindowId: _stack
   $name: Windows Terminal window
@@ -540,7 +539,6 @@ using std::min;
 
 #include <gdiplus.h>
 
-#include <commctrl.h>
 #include <dwmapi.h>
 #include <shellapi.h>
 #include <shlwapi.h>
@@ -554,6 +552,7 @@ using std::min;
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <numbers>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -603,7 +602,7 @@ enum class ButtonPosition {
 enum class ButtonAlign { Top, Middle, Bottom };
 enum class ButtonStyle { Glyph, GlyphLabel, Label };
 enum class ThemeMode { Auto, Dark, Light };
-enum class TerminalHost { Auto, WindowsTerminal, Shell };
+enum class TerminalHost { Auto, Shell };
 enum GroupMenuCommand : UINT {
     kGroupMenuCollapse = 1,
     kGroupMenuToggleAll,
@@ -673,7 +672,6 @@ struct Settings {
     std::wstring accentColor;
     std::wstring fontFamily;
     int fontSize = 13;
-    double animationSpeed = 1.0;
     int panelWidth = 400;
     int panelMaxHeight = 640;
     bool compactRows = false;
@@ -925,10 +923,6 @@ static std::wstring FileNameOf(std::wstring_view path) {
                                                          : path.substr(slash + 1));
 }
 
-static bool FileExists(const std::wstring& path) {
-    return !path.empty() && PathFileExistsW(path.c_str());
-}
-
 static ItemType ParseItemType(PCWSTR value) {
     if (wcscmp(value, L"vscode") == 0) return ItemType::VSCode;
     if (wcscmp(value, L"folder") == 0) return ItemType::Folder;
@@ -1040,9 +1034,7 @@ static void LoadSettings() {
 
     auto terminalHost = WindhawkUtils::StringSetting::make(L"terminalHost");
     loaded.terminalHost =
-        wcscmp(terminalHost, L"wt") == 0      ? TerminalHost::WindowsTerminal
-        : wcscmp(terminalHost, L"shell") == 0 ? TerminalHost::Shell
-                                              : TerminalHost::Auto;
+        wcscmp(terminalHost, L"shell") == 0 ? TerminalHost::Shell : TerminalHost::Auto;
 
     loaded.wtWindowId = Trim(WindhawkUtils::StringSetting::make(L"wtWindowId").get());
     loaded.vscodePath = Trim(WindhawkUtils::StringSetting::make(L"vscodePath").get());
@@ -1079,7 +1071,7 @@ static void LoadSettings() {
     loaded.accentColor = Trim(WindhawkUtils::StringSetting::make(L"accentColor").get());
     loaded.fontFamily = Trim(WindhawkUtils::StringSetting::make(L"fontFamily").get());
     loaded.fontSize = max(9, min(22, Wh_GetIntSetting(L"fontSize")));
-    loaded.animationSpeed =
+    g_animationSpeed =
         ParseAnimationSpeed(WindhawkUtils::StringSetting::make(L"animation").get());
     loaded.panelWidth = max(280, Wh_GetIntSetting(L"panelWidth"));
     loaded.panelMaxHeight = max(240, Wh_GetIntSetting(L"panelMaxHeight"));
@@ -1099,8 +1091,6 @@ static void LoadSettings() {
     if (loaded.fontFamily.empty() || loaded.fontFamily.size() >= LF_FACESIZE) {
         loaded.fontFamily = L"Segoe UI";
     }
-
-    g_animationSpeed = loaded.animationSpeed;
 
     std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
     g_settings = std::move(loaded);
@@ -1181,14 +1171,13 @@ static int PostCloseToProcess(DWORD pid) {
     return context.posted;
 }
 
-static bool TerminateProcessById(DWORD pid) {
+static void TerminateProcessById(DWORD pid) {
     HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
     if (!process) {
-        return false;
+        return;
     }
-    BOOL terminated = TerminateProcess(process, 0);
+    TerminateProcess(process, 0);
     CloseHandle(process);
-    return terminated != FALSE;
 }
 
 static std::wstring FindVSCode();
@@ -1222,7 +1211,7 @@ static std::wstring ResolveProcessName(const StackItem& item) {
 static std::wstring FindFirstExisting(std::initializer_list<PCWSTR> candidates) {
     for (PCWSTR candidate : candidates) {
         std::wstring path = ExpandTokens(candidate);
-        if (FileExists(path)) {
+        if (PathFileExistsW(path.c_str())) {
             return path;
         }
     }
@@ -1295,21 +1284,10 @@ static std::wstring EncodeUtf16Base64(const std::wstring& text) {
     return encoded;
 }
 
-static std::wstring EscapeDoubleQuotes(const std::wstring& text) {
+static std::wstring BackslashEscape(const std::wstring& text, wchar_t special) {
     std::wstring escaped;
     for (wchar_t character : text) {
-        if (character == L'"') {
-            escaped += L'\\';
-        }
-        escaped += character;
-    }
-    return escaped;
-}
-
-static std::wstring EscapeSemicolons(const std::wstring& text) {
-    std::wstring escaped;
-    for (wchar_t character : text) {
-        if (character == L';') {
+        if (character == special) {
             escaped += L'\\';
         }
         escaped += character;
@@ -1332,13 +1310,13 @@ static bool BuildShellInvocation(const StackItem& item,
             if (out.file.empty()) {
                 return false;
             }
-            out.args = L"-l -c \"" + EscapeDoubleQuotes(command) +
+            out.args = L"-l -c \"" + BackslashEscape(command, L'"') +
                        (keepOpen ? L"; exec bash\"" : L"\"");
             return true;
         }
         case ShellKind::Wsl:
             out.file = L"wsl.exe";
-            out.args = L"-- bash -lc \"" + EscapeDoubleQuotes(command) +
+            out.args = L"-- bash -lc \"" + BackslashEscape(command, L'"') +
                        (keepOpen ? L"; exec bash\"" : L"\"");
             return true;
         case ShellKind::Pwsh:
@@ -1353,6 +1331,7 @@ static bool BuildShellInvocation(const StackItem& item,
 
 static bool WrapInWindowsTerminal(const StackItem& item,
                                   const std::wstring& workingDir,
+                                  bool ownWindow,
                                   ShellInvocation& invocation) {
     TerminalHost host;
     std::wstring windowId;
@@ -1368,8 +1347,6 @@ static bool WrapInWindowsTerminal(const StackItem& item,
     if (terminal.empty()) {
         return false;
     }
-    bool ownWindow = item.windowState == WindowStateOption::Minimized ||
-                     item.windowState == WindowStateOption::Maximized;
 
     std::wstring args;
     if (ownWindow) {
@@ -1385,7 +1362,7 @@ static bool WrapInWindowsTerminal(const StackItem& item,
         args += L" -d " + QuoteIfNeeded(workingDir);
     }
     args += L" " + QuoteIfNeeded(invocation.file) + L" " +
-            EscapeSemicolons(invocation.args);
+            BackslashEscape(invocation.args, L';');
     invocation.file = terminal;
     invocation.args = std::move(args);
     return true;
@@ -1537,10 +1514,11 @@ static bool BuildLaunchPlan(const StackItem& item, LaunchPlan& plan) {
             if (!BuildShellInvocation(item, command, visible, invocation)) {
                 return false;
             }
+            bool ownWindow = item.windowState == WindowStateOption::Minimized ||
+                             item.windowState == WindowStateOption::Maximized;
             if (visible && !item.waitForExit &&
-                WrapInWindowsTerminal(item, plan.workingDir, invocation) &&
-                (item.windowState == WindowStateOption::Minimized ||
-                 item.windowState == WindowStateOption::Maximized)) {
+                WrapInWindowsTerminal(item, plan.workingDir, ownWindow, invocation) &&
+                ownWindow) {
                 plan.adjustWindowTitle = item.name;
             }
             plan.file = invocation.file;
@@ -1608,7 +1586,6 @@ static bool LaunchPlanNow(const LaunchPlan& plan, HANDLE* outProcess) {
 struct Palette {
     gp::Color background;
     gp::Color surface;
-    gp::Color surfaceStrong;
     gp::Color border;
     gp::Color divider;
     gp::Color text;
@@ -1738,7 +1715,6 @@ static Palette BuildPalette() {
     if (dark) {
         palette.background = gp::Color(247, 0x1F, 0x1F, 0x1F);
         palette.surface = gp::Color(255, 0x31, 0x31, 0x31);
-        palette.surfaceStrong = gp::Color(255, 0x3C, 0x3C, 0x3C);
         palette.border = gp::Color(190, 0x3C, 0x3C, 0x3C);
         palette.divider = gp::Color(120, 0x3C, 0x3C, 0x3C);
         palette.text = gp::Color(255, 0xCC, 0xCC, 0xCC);
@@ -1753,7 +1729,6 @@ static Palette BuildPalette() {
     } else {
         palette.background = gp::Color(249, 0xF8, 0xF8, 0xF8);
         palette.surface = gp::Color(255, 0xFF, 0xFF, 0xFF);
-        palette.surfaceStrong = gp::Color(255, 0xF0, 0xF0, 0xF0);
         palette.border = gp::Color(220, 0xCE, 0xCE, 0xCE);
         palette.divider = gp::Color(160, 0xE5, 0xE5, 0xE5);
         palette.text = gp::Color(255, 0x3B, 0x3B, 0x3B);
@@ -2171,7 +2146,7 @@ static void DrawChevron(gp::Graphics& graphics,
     double centerX = box.X + box.Width / 2.0;
     double centerY = box.Y + box.Height / 2.0;
     double reach = Scale(4);
-    double angle = (1.0 - openAmount) * (-90.0) * 3.14159265358979 / 180.0;
+    double angle = (openAmount - 1.0) * std::numbers::pi / 2.0;
     double cosine = cos(angle);
     double sine = sin(angle);
     auto rotate = [&](double x, double y) {
@@ -2358,7 +2333,6 @@ static void ClearIconCache() {
 }
 
 struct GroupBlock {
-    std::wstring name;
     int clipTop = 0;
     int clipBottom = 0;
 };
@@ -2396,9 +2370,7 @@ struct HitResult {
     HitKind kind = HitKind::None;
     int index = -1;
 
-    bool operator==(const HitResult& other) const {
-        return kind == other.kind && index == other.index;
-    }
+    bool operator==(const HitResult&) const = default;
 };
 
 struct PanelLayout {
@@ -2406,7 +2378,6 @@ struct PanelLayout {
     gp::Rect content;
     gp::Rect header;
     gp::Rect settingsButton;
-    gp::Rect chips;
     gp::Rect search;
     gp::Rect searchClear;
     gp::Rect list;
@@ -2566,7 +2537,7 @@ static void NormalizeItemOrder() {
 
 static bool MoveItemWithinGroup(int itemIndex, int delta) {
     std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-    if (itemIndex < 0 || itemIndex >= (int)g_settings.items.size() || delta == 0) {
+    if (itemIndex < 0 || itemIndex >= (int)g_settings.items.size()) {
         return false;
     }
     const std::wstring group = g_settings.items[itemIndex].group;
@@ -2584,9 +2555,6 @@ static bool MoveItemWithinGroup(int itemIndex, int delta) {
             break;
         }
     }
-    if (position == slots.size()) {
-        return false;
-    }
     if (delta < 0 ? position == 0 : position + 1 >= slots.size()) {
         return false;
     }
@@ -2597,9 +2565,6 @@ static bool MoveItemWithinGroup(int itemIndex, int delta) {
 
 static bool MoveGroupBlock(const std::wstring& group, int delta) {
     std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-    if (delta == 0) {
-        return false;
-    }
     std::vector<int> order = OrderedIndices();
     std::vector<std::wstring> sequence = GroupSequence(order);
     size_t position = sequence.size();
@@ -2678,9 +2643,6 @@ static void RebuildRows() {
                 members.push_back((size_t)candidate);
             }
         }
-        if (members.empty()) {
-            continue;
-        }
 
         int groupIndex = -1;
         int visibleHeight = (int)members.size() * rowHeight;
@@ -2700,7 +2662,6 @@ static void RebuildRows() {
 
             visibleHeight = (int)((int)members.size() * rowHeight * Ease(openAmount));
             GroupBlock block;
-            block.name = group;
             block.clipTop = y;
             block.clipBottom = y + visibleHeight;
             groupIndex = (int)g_groups.size();
@@ -2730,7 +2691,7 @@ static void RebuildRows() {
 }
 
 static bool RowVisible(const PanelRow& row) {
-    if (row.groupIndex < 0 || row.groupIndex >= (int)g_groups.size()) {
+    if (row.groupIndex < 0) {
         return true;
     }
     const GroupBlock& block = g_groups[row.groupIndex];
@@ -2790,7 +2751,6 @@ static void ComputeLayout() {
                  Scale(30), Scale(30));
     y += headerHeight;
 
-    g_layout.chips = gp::Rect(shadow, y, width, chipsHeight);
     y += chipsHeight;
 
     int searchBoxHeight = Scale(30);
@@ -3586,7 +3546,7 @@ static void PaintPanel() {
         }
 
         gp::Rect clip = g_layout.list;
-        if (row.groupIndex >= 0 && row.groupIndex < (int)g_groups.size()) {
+        if (row.groupIndex >= 0) {
             const GroupBlock& block = g_groups[row.groupIndex];
             int top = max(g_layout.list.Y, g_layout.list.Y + block.clipTop - g_scrollOffset);
             int bottom =
