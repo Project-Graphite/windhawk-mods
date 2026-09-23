@@ -6157,32 +6157,32 @@ static const wchar_t* GetGlyphWithStyle(int cmd, const std::wstring& style, bool
     bool isFilled = (style == L"fluent_filled" || style == L"mdl2_filled");
     switch (cmd) {
         case 1:
-            if (isFilled) return L"";
-            return L"";
+            if (isFilled) return L"\uF8AC";
+            return L"\uE892";
         case 2:
             if (isPlaying) {
-                if (isFluent && isFilled) return L"";
-                if (!isFluent && isFilled) return L"";
-                return L"";
+                if (isFluent && isFilled) return L"\uE62E";
+                if (!isFluent && isFilled) return L"\uF8AE";
+                return L"\uE769";
             } else {
-                if (isFilled) return L"";
-                return L"";
+                if (isFilled) return L"\uF5B0";
+                return L"\uE768";
             }
         case 3:
-            if (isFilled) return L"";
-            return L"";
+            if (isFilled) return L"\uF8AD";
+            return L"\uE893";
         case 5:
-            if (isFilled) return L"";
-            return L"";
+            if (isFilled) return L"\uE627";
+            return L"\uEB9E";
         case 6:
-            if (isFilled) return L"";
-            return L"";
+            if (isFilled) return L"\uE628";
+            return L"\uEB9D";
         case 7:
-            return L"";
+            return L"\uE8B1";
         case 8:
             return RepeatModeGlyph(g_repeatMode.load());
         case 9:
-            return L"";
+            return L"\uE974";
         case 10: return RepeatModeGlyph(RepeatMode::Off);
         case 11: return RepeatModeGlyph(RepeatMode::All);
         case 12: return RepeatModeGlyph(RepeatMode::One);
@@ -6447,11 +6447,11 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
                 std::wstring label = L"Rewind " + std::to_wstring(g_settings.seekStepSeconds) + L"s";
                 menu.Items().Append(MakeMediaContextMenuItem(5, label.c_str(), canSeek, canSeek ? 1.0 : 0.4));
             } else if (item == L"next") {
-                menu.Items().Append(MakeMediaContextMenuItem(3, L"Next Track", canSkipNext, canSkipNext ? 1.0 : 0.4));
+                menu.Items().Append(MakeMediaContextMenuItem(3, L"Next track", canSkipNext, canSkipNext ? 1.0 : 0.4));
             } else if (item == L"prev") {
-                menu.Items().Append(MakeMediaContextMenuItem(1, L"Previous Track", canSkipPrevious, canSkipPrevious ? 1.0 : 0.4));
+                menu.Items().Append(MakeMediaContextMenuItem(1, L"Previous track", canSkipPrevious, canSkipPrevious ? 1.0 : 0.4));
             } else if (item == L"switch_sessions") {
-                menu.Items().Append(MakeMediaContextMenuItem(9, L"Switch Sessions", g_sessionCount.load() > 1, g_sessionCount.load() > 1 ? 1.0 : 0.4));
+                menu.Items().Append(MakeMediaContextMenuItem(9, L"Switch sessions", g_sessionCount.load() > 1, g_sessionCount.load() > 1 ? 1.0 : 0.4));
             } else if (item == L"open_app") {
                 menu.Items().Append(MakeActionContextMenuItem(L"\uE8A7", L"Open media app", []() {
                     ExecuteMediaAction(L"open_app");
@@ -9451,7 +9451,7 @@ static void RefreshPlayerContentsInstance() {
             try {
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
                     const wchar_t* glyph = audioAppSource
-                        ? (media.isPlaying ? L"" : L"")
+                        ? (media.isPlaying ? L"\uE767" : L"\uE74F")
                         : GetGlyph(2, media.isPlaying);
                     ct.Text(winrt::hstring(glyph));
                     ct.Foreground(MakeBrush(ButtonColor()));
