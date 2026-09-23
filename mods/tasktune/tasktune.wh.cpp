@@ -931,21 +931,17 @@ struct ModSettings {
     std::wstring ignoredProcesses     = L"";
     std::vector<std::pair<std::wstring, std::wstring>> ignoredProcessMatchers;
     bool         enableTreeDump       = false;
-    bool         showDebugBorders     = false;
-    bool         showMiniPlayerBorder = false;
     bool         keepMiniPlayerOpen   = false;
     bool         hideMediaSessionsList = false;
     bool         miniPlayerMatchPlayerBackground = true;
     std::wstring miniPlayerPlacementMode = L"screen";
-    int          miniPlayerHorizontalOffsetAbove = 0;
+    int          miniPlayerHorizontalOffsetNear = 0;
     std::wstring miniPlayerVerticalPlacementNear = L"top";
     std::wstring miniPlayerHorizontalPlacement = L"right";
     int          miniPlayerHorizontalDistanceFromScreenEdge = 0;
     std::wstring miniPlayerVerticalPlacement = L"bottom";
     int          miniPlayerVerticalDistanceFromScreenEdge = 0;
     std::wstring miniPlayerAnimation = L"auto";
-    bool         showLayoutAnchors    = false;
-    bool         showRestartButton    = false;
     bool         hideUnsupportedButtons  = false;
     bool         disableAlbumArtClick    = false;
     bool         emptyStateHideButtons    = true;
@@ -1409,7 +1405,7 @@ static void LoadSettings() {
     g_settings.miniPlayerMatchPlayerBackground =
         Wh_GetIntSetting(L"PlayerMenuSettings.miniPlayerMatchPlayerBackground") != 0;
     g_settings.miniPlayerPlacementMode = Str(L"PlayerMenuSettings.placementMode", L"screen");
-    g_settings.miniPlayerHorizontalOffsetAbove =
+    g_settings.miniPlayerHorizontalOffsetNear =
         Wh_GetIntSetting(L"PlayerMenuSettings.PlayerMenuSettingsNear.miniPlayerHorizontalOffsetNear");
     g_settings.miniPlayerVerticalPlacementNear =
         Str(L"PlayerMenuSettings.PlayerMenuSettingsNear.miniPlayerVerticalPlacementNear", L"top");
@@ -1504,7 +1500,7 @@ static void RefreshMiniPlayerFlyoutUI();
 static void FetchMiniSessionInfosAsync(HWND taskbarWnd);
 struct MiniSessionInfo;
 static void AnimateSessionPill(winrt::Windows::UI::Xaml::Shapes::Rectangle const& pill, bool isCurrent, bool animate);
-static winrt::Windows::UI::Xaml::Controls::Button BuildSessionRowButton(const MiniSessionInfo& info, bool isCurrent, HWND taskbarWnd, int rowIndex);
+static winrt::Windows::UI::Xaml::Controls::Button BuildSessionRowButton(const MiniSessionInfo& info, bool isCurrent, int rowIndex);
 
 static void ApplySettings();
 static std::atomic<bool> g_unloading{false};
@@ -1548,7 +1544,7 @@ static void WaitForTrackedWorkers() {
 }
 
 static std::atomic<bool> g_miniPlayerFlyoutOpen{false};
-static int    g_miniPlayerAnimAxis = 0;
+static bool   g_miniPlayerAnimHorizontal = false;
 static double g_miniPlayerAnimSign = 1.0;
 static std::atomic<bool> g_miniPlayerClosingAnimInProgress{false};
 static std::atomic<bool> g_miniPlayerClosingAnimStarted{false};
@@ -2583,6 +2579,11 @@ static Brush MakeBackgroundBrush() {
     }
     return MakeBrush({0x00, 0xFF, 0xFF, 0xFF});
 }
+static void ApplyBrushBackground(Border const& b) {
+    b.Background(MakeBackgroundBrush());
+    b.Visibility(Visibility::Visible);
+    b.Opacity(1.0);
+}
 static FrameworkElement FindChildByName(FrameworkElement const& root, std::wstring_view name, int depth = 32) {
     if (!root || depth == 0) return nullptr;
     int n = VisualTreeHelper::GetChildrenCount(root);
@@ -2615,7 +2616,6 @@ static void DumpXamlTree(DependencyObject const& node, int depth, int maxDepth) 
 static constexpr wchar_t kGridName[]        = L"FluentMediaBar";
 static constexpr wchar_t kArtImageName[]    = L"FluentMedia_Art";
 static constexpr wchar_t kAppIconImageName[]= L"FluentMedia_AppIcon";
-static constexpr wchar_t kAnchorOverlayName[]= L"FluentMedia_DebugAnchorTarget";
 static constexpr wchar_t kTextStackName[]   = L"FluentMedia_TextStack";
 static constexpr wchar_t kTitleBlockName[]  = L"FluentMedia_Title";
 static constexpr wchar_t kArtistBlockName[] = L"FluentMedia_Artist";
@@ -4841,9 +4841,53 @@ static void StopMediaThread() {
 static HANDLE g_timerThread    = nullptr;
 static HANDLE g_timerStopEvent = nullptr;
 static HANDLE g_timerUpdateEvent = nullptr;
-[[clang::no_destroy]] static winrt::Windows::UI::Xaml::DispatcherTimer g_scrollDispatcherTimer{nullptr};
-static winrt::event_token                        g_scrollDispatcherTimerToken{};
-static bool                                       g_scrollDispatcherTimerHasToken = false;
+struct TickTimer {
+    winrt::Windows::UI::Xaml::DispatcherTimer timer{nullptr};
+    winrt::event_token token{};
+    void (*onTick)(winrt::Windows::Foundation::IInspectable const&, winrt::Windows::Foundation::IInspectable const&);
+};
+static void StartTickTimer(TickTimer& t) {
+    HWND hWnd = g_taskbarWnd;
+    if (!hWnd || !IsWindow(hWnd)) return;
+    RunFromWindowThread(hWnd, [](void* param) {
+        auto& t = *static_cast<TickTimer*>(param);
+        try {
+            if (!t.timer) {
+                t.timer = winrt::Windows::UI::Xaml::DispatcherTimer();
+                t.timer.Interval(
+                    winrt::Windows::Foundation::TimeSpan{std::chrono::milliseconds(16)});
+                t.token = t.timer.Tick(t.onTick);
+            }
+            t.timer.Start();
+        } catch (...) {}
+    }, &t);
+}
+static void StopTickTimer(TickTimer& t) {
+    HWND hWnd = g_taskbarWnd;
+    auto stop = [](void* param) {
+        auto& t = *static_cast<TickTimer*>(param);
+        try {
+            if (t.timer) {
+                t.timer.Stop();
+                if (g_unloading) {
+                    if (t.token) {
+                        t.timer.Tick(t.token);
+                        t.token = {};
+                    }
+                    t.timer = nullptr;
+                }
+            }
+        } catch (...) {}
+    };
+    if (hWnd && IsWindow(hWnd)) {
+        RunFromWindowThread(hWnd, stop, &t);
+    } else {
+        stop(&t);
+    }
+}
+static void ScrollTimerTick(winrt::Windows::Foundation::IInspectable const&,
+                            winrt::Windows::Foundation::IInspectable const&);
+[[clang::no_destroy]] static TickTimer g_scrollTimer{.onTick = &ScrollTimerTick};
 static void TickScrollState(TextScrollState& s, int stepPx, int pauseMs, const std::wstring& mode) {
     if (!s.active) return;
     if (s.pausing) {
@@ -4898,47 +4942,9 @@ static void ScrollTimerTick(winrt::Windows::Foundation::IInspectable const&,
     g_scrollTickAnyActive = false;
     ForEachPlayerInstance(&ScrollTickCurrentInstance);
     if (!g_scrollTickAnyActive) {
-        if (g_scrollDispatcherTimer) {
-            try { g_scrollDispatcherTimer.Stop(); } catch (...) {}
+        if (g_scrollTimer.timer) {
+            try { g_scrollTimer.timer.Stop(); } catch (...) {}
         }
-    }
-}
-static void StartScrollTimer() {
-    HWND hWnd = g_taskbarWnd;
-    if (!hWnd || !IsWindow(hWnd)) return;
-    RunFromWindowThread(hWnd, [](void*) {
-        try {
-            if (!g_scrollDispatcherTimer) {
-                g_scrollDispatcherTimer = winrt::Windows::UI::Xaml::DispatcherTimer();
-                g_scrollDispatcherTimer.Interval(
-                    winrt::Windows::Foundation::TimeSpan{std::chrono::milliseconds(16)});
-                g_scrollDispatcherTimerToken = g_scrollDispatcherTimer.Tick(&ScrollTimerTick);
-                g_scrollDispatcherTimerHasToken = true;
-            }
-            g_scrollDispatcherTimer.Start();
-        } catch (...) {}
-    }, nullptr);
-}
-static void StopScrollTimer() {
-    HWND hWnd = g_taskbarWnd;
-    auto stop = [](void*) {
-        try {
-            if (g_scrollDispatcherTimer) {
-                g_scrollDispatcherTimer.Stop();
-                if (g_unloading) {
-                    if (g_scrollDispatcherTimerHasToken) {
-                        g_scrollDispatcherTimer.Tick(g_scrollDispatcherTimerToken);
-                        g_scrollDispatcherTimerHasToken = false;
-                    }
-                    g_scrollDispatcherTimer = nullptr;
-                }
-            }
-        } catch (...) {}
-    };
-    if (hWnd && IsWindow(hWnd)) {
-        RunFromWindowThread(hWnd, stop, nullptr);
-    } else {
-        stop(nullptr);
     }
 }
 static void ResetScrollState(TextScrollState& s) {
@@ -5055,8 +5061,6 @@ static void RefreshPlayerContents();
 static void RefreshPlayerContentsInstance();
 static void UpdateVisibility();
 static void RefreshThemeColors();
-static void RemovePlayerGrid();
-static bool InjectPlayerGrid();
 static std::atomic<bool> g_themeChangePending{false};
 static DWORD WINAPI TimerThreadProc(void*) {
     static bool lastThemeWasLight = IsSystemLightTheme();
@@ -5805,56 +5809,14 @@ static void VizApplyFrame() {
     g_VizFrameBarCount = barCount;
     ForEachPlayerInstance(&VizApplyFrameToCurrentInstance);
 }
-[[clang::no_destroy]] static winrt::Windows::UI::Xaml::DispatcherTimer g_vizDispatcherTimer{nullptr};
-static winrt::event_token g_vizDispatcherTimerToken{};
-static bool g_vizDispatcherTimerHasToken = false;
 static void VizTimerTick(winrt::Windows::Foundation::IInspectable const&,
                         winrt::Windows::Foundation::IInspectable const&) {
     if (g_unloading || g_applyingSettings) return;
     if (!g_settings.vizEnabled) return;
     VizApplyFrame();
 }
-static void StartVizTimer() {
-    HWND hWnd = g_taskbarWnd;
-    if (!hWnd || !IsWindow(hWnd)) return;
-    RunFromWindowThread(hWnd, [](void*) {
-        try {
-            if (!g_vizDispatcherTimer) {
-                g_vizDispatcherTimer = winrt::Windows::UI::Xaml::DispatcherTimer();
-                g_vizDispatcherTimer.Interval(
-                    winrt::Windows::Foundation::TimeSpan{std::chrono::milliseconds(16)});
-                g_vizDispatcherTimerToken = g_vizDispatcherTimer.Tick(&VizTimerTick);
-                g_vizDispatcherTimerHasToken = true;
-            }
-            g_vizDispatcherTimer.Start();
-        } catch (...) {}
-    }, nullptr);
-}
-static void StopVizTimer() {
-    HWND hWnd = g_taskbarWnd;
-    auto stop = [](void*) {
-        try {
-            if (g_vizDispatcherTimer) {
-                g_vizDispatcherTimer.Stop();
-                if (g_unloading) {
-                    if (g_vizDispatcherTimerHasToken) {
-                        g_vizDispatcherTimer.Tick(g_vizDispatcherTimerToken);
-                        g_vizDispatcherTimerHasToken = false;
-                    }
-                    g_vizDispatcherTimer = nullptr;
-                }
-            }
-        } catch (...) {}
-    };
-    if (hWnd && IsWindow(hWnd)) {
-        RunFromWindowThread(hWnd, stop, nullptr);
-    } else {
-        stop(nullptr);
-    }
-}
+[[clang::no_destroy]] static TickTimer g_vizTimer{.onTick = &VizTimerTick};
 static FrameworkElement BuildVisualizerElement() {
-    g_vizBars->clear();
-    g_vizBrushes->clear();
     int barCount = std::clamp(g_settings.vizBars, 1, VIZ_BARS_MAX);
     g_vizBars->reserve((size_t)barCount);
     g_vizBrushes->reserve((size_t)barCount);
@@ -5904,16 +5866,7 @@ static FrameworkElement BuildVisualizerElement() {
     vizContainer.VerticalAlignment(VerticalAlignment::Center);
     vizContainer.HorizontalAlignment(HorizontalAlignment::Center);
     vizContainer.IsHitTestVisible(false);
-    vizContainer.Background(MakeBrush({0x00, 0x00, 0x00, 0x00}));
     vizContainer.Margin({marginL, 0, marginR, 0});
-    if (g_settings.showDebugBorders) {
-        Border vizDebugBorder;
-        vizDebugBorder.BorderBrush(MakeBrush({0xFF, 0xFF, 0xFF, 0x00}));
-        vizDebugBorder.BorderThickness({1, 1, 1, 1});
-        vizDebugBorder.HorizontalAlignment(HorizontalAlignment::Stretch);
-        vizDebugBorder.VerticalAlignment(VerticalAlignment::Stretch);
-        vizContainer.Children().Append(vizDebugBorder);
-    }
     vizContainer.Children().Append(bars);
     return vizContainer;
 }
@@ -5936,34 +5889,16 @@ static void StartTimerThread() {
         g_timerUpdateEvent = nullptr;
     }
     if (g_settings.enableTitleScrolling || g_settings.enableArtistScrolling) {
-        StartScrollTimer();
+        StartTickTimer(g_scrollTimer);
     }
 }
 static void StopTimerThread() {
-    StopScrollTimer();
-    StopVizTimer();
+    StopTickTimer(g_scrollTimer);
+    StopTickTimer(g_vizTimer);
     StopVizCaptureThread();
     if (g_timerStopEvent) SetEvent(g_timerStopEvent);
     if (g_timerThread) {
-        DWORD tid = GetCurrentThreadId();
-        HWND hTaskbar = g_taskbarWnd;
-        bool isUiThread = hTaskbar && (GetWindowThreadProcessId(hTaskbar, nullptr) == tid);
-        if (isUiThread) {
-            DWORD result = WAIT_TIMEOUT;
-            while (result == WAIT_TIMEOUT) {
-                result = MsgWaitForMultipleObjects(1, &g_timerThread, FALSE, 50, QS_SENDMESSAGE);
-                if (result == WAIT_OBJECT_0 + 1) {
-                    MSG msg;
-                    while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE | PM_QS_SENDMESSAGE)) {
-                        TranslateMessage(&msg);
-                        DispatchMessageW(&msg);
-                    }
-                    result = WAIT_TIMEOUT;
-                }
-            }
-        } else {
-            WaitForSingleObject(g_timerThread, INFINITE);
-        }
+        WaitForSingleObject(g_timerThread, INFINITE);
         CloseHandle(g_timerThread);
         g_timerThread = nullptr;
     }
@@ -5989,17 +5924,14 @@ static void RefreshThemeColorsInstance() {
                             bgBorder.Background(MakeAlbumBlurBrush(g_cachedThumbnailBytes, w, h));
                         }
                     } else {
-                        auto fallbackCol = IsSystemLightTheme()
+                        bgBorder.Background(MakeBrush(IsSystemLightTheme()
                             ? winrt::Windows::UI::Color{0xCC, 0xF3, 0xF3, 0xF3}
-                            : winrt::Windows::UI::Color{0xCC, 0x20, 0x20, 0x20};
-                        bgBorder.Background(MakeBrush(fallbackCol));
+                            : winrt::Windows::UI::Color{0xCC, 0x20, 0x20, 0x20}));
                     }
                     bgBorder.Visibility(Visibility::Visible);
                     bgBorder.Opacity(g_settings.blurOpacity / 100.0);
                 } else if (UsesBackgroundBrush()) {
-                    bgBorder.Background(MakeBackgroundBrush());
-                    bgBorder.Visibility(Visibility::Visible);
-                    bgBorder.Opacity(1.0);
+                    ApplyBrushBackground(bgBorder);
                 } else {
                     bgBorder.Background(nullptr);
                     bgBorder.Visibility(Visibility::Collapsed);
@@ -6038,18 +5970,16 @@ static void RefreshThemeColors() {
     ForEachPlayerInstance(&RefreshThemeColorsInstance);
 }
 static HMONITOR GetMonitorByNumber(int monitorNumber) {
-    HMONITOR result = nullptr;
-    int current = 0;
-    struct Ctx { int target; HMONITOR* result; int* current; };
-    Ctx ctx{monitorNumber - 1, &result, &current};
+    struct Ctx { int target; int current; HMONITOR result; };
+    Ctx ctx{monitorNumber - 1, 0, nullptr};
     EnumDisplayMonitors(nullptr, nullptr,
         [](HMONITOR hMon, HDC, LPRECT, LPARAM lp) CALLBACK -> BOOL {
             auto* c = reinterpret_cast<Ctx*>(lp);
-            if (*c->current == c->target) { *c->result = hMon; return FALSE; }
-            (*c->current)++;
+            if (c->current == c->target) { c->result = hMon; return FALSE; }
+            c->current++;
             return TRUE;
         }, reinterpret_cast<LPARAM>(&ctx));
-    return result;
+    return ctx.result;
 }
 static HWND FindTaskbarWndForMonitor(HMONITOR targetMonitor) {
     struct Ctx { HMONITOR target; HWND result; };
@@ -6118,8 +6048,6 @@ static XamlRoot GetTaskbarXamlRoot(HWND hTaskbarWnd) {
         Wh_Log(L"GetTaskbarXamlRoot: could not find taskband host window, aborting");
         return nullptr;
     }
-    wchar_t swCls[64] = {};
-    GetClassNameW(hTaskSwWnd, swCls, ARRAYSIZE(swCls));
     void* taskBand = (void*)GetWindowLongPtrW(hTaskSwWnd, 0);
     if (!taskBand) {
         Wh_Log(L"GetTaskbarXamlRoot: taskBand pointer is null, aborting");
@@ -6187,9 +6115,7 @@ static XamlRoot GetTaskbarXamlRoot(HWND hTaskbarWnd) {
         }
     }
 #else
-    Wh_Log(L"GetTaskbarXamlRoot: Unknown architecture, using default offset 0x10");
-    taskbarElementIUnknownOffset = 0x10;
-    frameHeightPatternRecognized = true;
+#error "Unsupported architecture"
 #endif
     if (!frameHeightPatternRecognized ||
         !IsReadableMemoryRange(
@@ -6211,15 +6137,23 @@ static XamlRoot GetTaskbarXamlRoot(HWND hTaskbarWnd) {
         return nullptr;
     }
     FrameworkElement taskbarElement{nullptr};
-    HRESULT hr = taskbarElementIUnknown->QueryInterface(
+    taskbarElementIUnknown->QueryInterface(
         winrt::guid_of<FrameworkElement>(), winrt::put_abi(taskbarElement));
     auto result = taskbarElement ? taskbarElement.XamlRoot() : nullptr;
     if (taskbarHostSharedPtr[1] && Std_Ref_Decref_Original)
         Std_Ref_Decref_Original(taskbarHostSharedPtr[1]);
-    return SUCCEEDED(hr) ? result : nullptr;
+    return result;
+}
+static const wchar_t* RepeatModeGlyph(RepeatMode m) {
+    if (m == RepeatMode::All) return L"\uE8EE";
+    if (m == RepeatMode::One) return L"\uE8ED";
+    return L"\uF5E7";
+}
+static bool IsFluentIconStyle(const std::wstring& s) {
+    return s == L"fluent_outline" || s == L"fluent_filled";
 }
 static const wchar_t* GetGlyphWithStyle(int cmd, const std::wstring& style, bool isPlaying = false) {
-    bool isFluent = (style == L"fluent_outline" || style == L"fluent_filled");
+    bool isFluent = IsFluentIconStyle(style);
     bool isFilled = (style == L"fluent_filled" || style == L"mdl2_filled");
     switch (cmd) {
         case 1:
@@ -6245,19 +6179,13 @@ static const wchar_t* GetGlyphWithStyle(int cmd, const std::wstring& style, bool
             return L"";
         case 7:
             return L"";
-        case 8: {
-            RepeatMode mode = g_repeatMode.load();
-            switch (mode) {
-                case RepeatMode::Off: return L"";
-                case RepeatMode::All: return L"";
-                case RepeatMode::One: return L"";
-            }
-        }
+        case 8:
+            return RepeatModeGlyph(g_repeatMode.load());
         case 9:
             return L"";
-        case 10: return L"";
-        case 11: return L"";
-        case 12: return L"";
+        case 10: return RepeatModeGlyph(RepeatMode::Off);
+        case 11: return RepeatModeGlyph(RepeatMode::All);
+        case 12: return RepeatModeGlyph(RepeatMode::One);
     }
     return L"";
 }
@@ -6271,22 +6199,7 @@ static TextBlock MakeIconText(const wchar_t* glyph, double sz, winrt::Windows::U
     t.Foreground(MakeBrush(c));
     t.VerticalAlignment(VerticalAlignment::Center);
     t.HorizontalAlignment(HorizontalAlignment::Center);
-    bool useFluent = (g_settings.iconStyle == L"fluent_outline" || g_settings.iconStyle == L"fluent_filled");
-    try {
-        if (useFluent) {
-            t.FontFamily(FontFamily(L"Segoe Fluent Icons"));
-        } else {
-            t.FontFamily(FontFamily(L"Segoe MDL2 Assets"));
-        }
-    } catch (...) {
-        try {
-            t.FontFamily(FontFamily(L"Segoe MDL2 Assets"));
-        } catch (...) {
-            try {
-                t.FontFamily(FontFamily(L"Segoe UI Symbol"));
-            } catch (...) {}
-        }
-    }
+    t.FontFamily(FontFamily(IsFluentIconStyle(g_settings.iconStyle) ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets"));
     return t;
 }
 static bool IsPointerInside(PointerRoutedEventArgs const& e, UIElement const& elem) {
@@ -6320,10 +6233,6 @@ static void SetButtonLabel(Button const& btn, std::wstring const& label) {
 static Button MakeControlButton(int cmd, bool isPlaying, winrt::Windows::UI::Color iconColor) {
     Button btn;
     try {
-        if (cmd < 1 || cmd > 9) {
-            Wh_Log(L"MakeControlButton: Invalid command %d, defaulting to 2 (play/pause)", cmd);
-            cmd = 2;
-        }
         btn.Width((double)g_settings.buttonSize);
         btn.Height((double)g_settings.buttonSize);
         btn.Padding({1,1,1,1});
@@ -6336,13 +6245,8 @@ static Button MakeControlButton(int cmd, bool isPlaying, winrt::Windows::UI::Col
         btn.BorderThickness({0,0,0,0});
         btn.VerticalAlignment(VerticalAlignment::Center);
         btn.HorizontalAlignment(HorizontalAlignment::Center);
-        const wchar_t* glyph = GetGlyph(cmd, isPlaying);
-        double opacity = 1.0;
-        if (cmd == 7 && !g_shuffleEnabled.load()) {
-            opacity = 0.4;
-        }
-        auto iconText = MakeIconText(glyph, (double)g_settings.buttonIconSize, iconColor);
-        iconText.Opacity(opacity);
+        auto iconText = MakeIconText(GetGlyph(cmd, isPlaying), (double)g_settings.buttonIconSize, iconColor);
+        iconText.Opacity(cmd == 7 && !g_shuffleEnabled.load() ? 0.4 : 1.0);
         btn.Content(winrt::box_value(iconText));
         SetButtonLabel(btn, MediaCommandLabel(cmd));
         btn.Click([cmd](auto const&, auto const&) {
@@ -6430,57 +6334,20 @@ static Button MakeControlButton(int cmd, bool isPlaying, winrt::Windows::UI::Col
     }
     return btn;
 }
-static void AddLayoutAnchorOverlay(Grid const& target, const wchar_t* name, winrt::Windows::UI::Color color) {
-    if (!target || !g_settings.showLayoutAnchors) return;
-    try {
-        Grid overlay;
-        overlay.Name(name);
-        overlay.IsHitTestVisible(false);
-        overlay.HorizontalAlignment(HorizontalAlignment::Stretch);
-        overlay.VerticalAlignment(VerticalAlignment::Stretch);
-        winrt::Windows::UI::Xaml::Shapes::Rectangle vLine;
-        vLine.Width(1);
-        vLine.Fill(MakeBrush(color));
-        vLine.HorizontalAlignment(HorizontalAlignment::Center);
-        vLine.VerticalAlignment(VerticalAlignment::Stretch);
-        winrt::Windows::UI::Xaml::Shapes::Rectangle hLine;
-        hLine.Height(1);
-        hLine.Fill(MakeBrush(color));
-        hLine.HorizontalAlignment(HorizontalAlignment::Stretch);
-        hLine.VerticalAlignment(VerticalAlignment::Center);
-        Border outline;
-        outline.BorderBrush(MakeBrush(color));
-        outline.BorderThickness({1,1,1,1});
-        outline.HorizontalAlignment(HorizontalAlignment::Stretch);
-        outline.VerticalAlignment(VerticalAlignment::Stretch);
-        overlay.Children().Append(outline);
-        overlay.Children().Append(vLine);
-        overlay.Children().Append(hLine);
-        Canvas::SetZIndex(overlay, 5000);
-        target.Children().Append(overlay);
-    } catch (...) {}
+static FontIcon MakeContextMenuIcon(const wchar_t* glyph, double opacity) {
+    FontIcon icon;
+    icon.Glyph(glyph);
+    icon.FontSize((double)g_settings.buttonIconSize);
+    icon.FontFamily(FontFamily(IsFluentIconStyle(ContextMenuIconStyle()) ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets"));
+    icon.Foreground(MakeBrush(ContextMenuIconColor()));
+    icon.Opacity(opacity);
+    return icon;
 }
 static MenuFlyoutItem MakeActionContextMenuItem(const wchar_t* glyph, const wchar_t* label,
                                                 std::function<void()> onClick) {
     MenuFlyoutItem item;
     item.Text(label);
-    item.IsEnabled(true);
-    try {
-        FontIcon icon;
-        icon.Glyph(glyph);
-        icon.FontSize((double)g_settings.buttonIconSize);
-        bool useFluent = (ContextMenuIconStyle() == L"fluent_outline" || ContextMenuIconStyle() == L"fluent_filled");
-        try {
-            icon.FontFamily(FontFamily(useFluent ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets"));
-        } catch (...) {
-            try {
-                icon.FontFamily(FontFamily(L"Segoe MDL2 Assets"));
-            } catch (...) {}
-        }
-        icon.Foreground(MakeBrush(ContextMenuIconColor()));
-        icon.Opacity(1.0);
-        item.Icon(icon);
-    } catch (...) {}
+    item.Icon(MakeContextMenuIcon(glyph, 1.0));
     item.Click([onClick](winrt::Windows::Foundation::IInspectable const&, RoutedEventArgs const&) {
         if (g_unloading) return;
         try {
@@ -6490,32 +6357,12 @@ static MenuFlyoutItem MakeActionContextMenuItem(const wchar_t* glyph, const wcha
     return item;
 }
 static MenuFlyoutItem MakeMediaContextMenuItem(int cmd, const wchar_t* label, bool enabled, double iconOpacity) {
-    MenuFlyoutItem item;
-    item.Text(label);
-    item.IsEnabled(enabled);
-    try {
-        FontIcon icon;
-        icon.Glyph(GetGlyphWithStyle(cmd, ContextMenuIconStyle()));
-        icon.FontSize((double)g_settings.buttonIconSize);
-        bool useFluent = (ContextMenuIconStyle() == L"fluent_outline" || ContextMenuIconStyle() == L"fluent_filled");
-        try {
-            icon.FontFamily(FontFamily(useFluent ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets"));
-        } catch (...) {
-            try {
-                icon.FontFamily(FontFamily(L"Segoe MDL2 Assets"));
-            } catch (...) {}
-        }
-        icon.Foreground(MakeBrush(ContextMenuIconColor()));
-        icon.Opacity(iconOpacity);
-        item.Icon(icon);
-    } catch (...) {}
-    item.Click([cmd](winrt::Windows::Foundation::IInspectable const&, RoutedEventArgs const&) {
-        if (g_unloading) return;
-        try {
-            SendMediaCommandAsync(cmd);
-            DispatchMediaUpdate();
-        } catch (...) {}
+    auto item = MakeActionContextMenuItem(GetGlyphWithStyle(cmd, ContextMenuIconStyle()), label, [cmd]() {
+        SendMediaCommandAsync(cmd);
+        DispatchMediaUpdate();
     });
+    item.IsEnabled(enabled);
+    item.Icon().Opacity(iconOpacity);
     return item;
 }
 static void ShowMediaContextMenu(FrameworkElement const& target) {
@@ -6534,45 +6381,7 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
             shuffleEnabled  = g_shuffleEnabled.load();
         }
         MenuFlyout menu;
-        try {
-            menu.Placement(Controls::Primitives::FlyoutPlacementMode::Top);
-        } catch (...) {}
         RepeatMode curRepeat = g_repeatMode.load();
-        auto makeRepeatSubItem = [&](int cmd, const wchar_t* label, const wchar_t* glyph, bool isCurrent) {
-            MenuFlyoutItem ri;
-            ri.Text(label);
-            ri.IsEnabled(canRepeat);
-            try {
-                FontIcon ic;
-                ic.Glyph(glyph);
-                ic.FontSize((double)g_settings.buttonIconSize);
-                bool useFluent = (ContextMenuIconStyle() == L"fluent_outline" || ContextMenuIconStyle() == L"fluent_filled");
-                try {
-                    ic.FontFamily(FontFamily(useFluent ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets"));
-                } catch (...) {}
-                ic.Foreground(MakeBrush(ContextMenuIconColor()));
-                ic.Opacity(isCurrent ? 1.0 : 0.5);
-                ri.Icon(ic);
-            } catch (...) {}
-            ri.Click([cmd](winrt::Windows::Foundation::IInspectable const&, RoutedEventArgs const&) {
-                if (g_unloading) return;
-                try {
-                    SendMediaCommandAsync(cmd);
-                    DispatchMediaUpdate();
-                } catch (...) {}
-            });
-            return ri;
-        };
-        bool addedSeparator = false;
-        auto ensureSeparator = [&]() {
-            if (!addedSeparator) {
-                try {
-                    Controls::MenuFlyoutSeparator sep;
-                    menu.Items().Append(sep);
-                } catch (...) {}
-                addedSeparator = true;
-            }
-        };
         for (const auto& item : g_settings.contextMenuItems) {
             if (item == L"repeat") {
                 if (g_settings.contextMenuRepeatStyle == L"toggle") {
@@ -6584,22 +6393,11 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
                 } else {
                     MenuFlyoutSubItem repeatSubMenu;
                     repeatSubMenu.Text(L"Repeat");
-                    try {
-                        FontIcon repeatIcon;
-                        repeatIcon.Glyph(GetGlyphWithStyle(8, ContextMenuIconStyle()));
-                        repeatIcon.FontSize((double)g_settings.buttonIconSize);
-                        bool useFluent = (ContextMenuIconStyle() == L"fluent_outline" || ContextMenuIconStyle() == L"fluent_filled");
-                        try {
-                            repeatIcon.FontFamily(FontFamily(useFluent ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets"));
-                        } catch (...) {}
-                        repeatIcon.Foreground(MakeBrush(ContextMenuIconColor()));
-                        repeatIcon.Opacity(canRepeat ? 1.0 : 0.4);
-                        repeatSubMenu.Icon(repeatIcon);
-                    } catch (...) {}
+                    repeatSubMenu.Icon(MakeContextMenuIcon(GetGlyphWithStyle(8, ContextMenuIconStyle()), canRepeat ? 1.0 : 0.4));
                     repeatSubMenu.IsEnabled(canRepeat);
-                    repeatSubMenu.Items().Append(makeRepeatSubItem(10, L"Repeat off", GetGlyphWithStyle(10, ContextMenuIconStyle()), curRepeat == RepeatMode::Off));
-                    repeatSubMenu.Items().Append(makeRepeatSubItem(11, L"Repeat all", GetGlyphWithStyle(11, ContextMenuIconStyle()), curRepeat == RepeatMode::All));
-                    repeatSubMenu.Items().Append(makeRepeatSubItem(12, L"Repeat one", GetGlyphWithStyle(12, ContextMenuIconStyle()), curRepeat == RepeatMode::One));
+                    repeatSubMenu.Items().Append(MakeMediaContextMenuItem(10, L"Repeat off", canRepeat, curRepeat == RepeatMode::Off ? 1.0 : 0.5));
+                    repeatSubMenu.Items().Append(MakeMediaContextMenuItem(11, L"Repeat all", canRepeat, curRepeat == RepeatMode::All ? 1.0 : 0.5));
+                    repeatSubMenu.Items().Append(MakeMediaContextMenuItem(12, L"Repeat one", canRepeat, curRepeat == RepeatMode::One ? 1.0 : 0.5));
                     menu.Items().Append(repeatSubMenu);
                 }
             } else if (item == L"shuffle") {
@@ -6610,32 +6408,12 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
                 } else {
                     MenuFlyoutSubItem shuffleSubMenu;
                     shuffleSubMenu.Text(L"Shuffle");
-                    try {
-                        FontIcon shuffleIcon;
-                        shuffleIcon.Glyph(GetGlyphWithStyle(7, ContextMenuIconStyle()));
-                        shuffleIcon.FontSize((double)g_settings.buttonIconSize);
-                        bool useFluent = (ContextMenuIconStyle() == L"fluent_outline" || ContextMenuIconStyle() == L"fluent_filled");
-                        try {
-                            shuffleIcon.FontFamily(FontFamily(useFluent ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets"));
-                        } catch (...) {}
-                        shuffleIcon.Foreground(MakeBrush(ContextMenuIconColor()));
-                        shuffleIcon.Opacity(canShuffle ? 1.0 : 0.4);
-                        shuffleSubMenu.Icon(shuffleIcon);
-                    } catch (...) {}
+                    shuffleSubMenu.Icon(MakeContextMenuIcon(GetGlyphWithStyle(7, ContextMenuIconStyle()), canShuffle ? 1.0 : 0.4));
                     shuffleSubMenu.IsEnabled(canShuffle);
                     MenuFlyoutItem shuffleOffItem;
                     shuffleOffItem.Text(L"Shuffle off");
                     shuffleOffItem.IsEnabled(canShuffle);
-                    try {
-                        FontIcon ic;
-                        ic.Glyph(GetGlyphWithStyle(7, ContextMenuIconStyle()));
-                        ic.FontSize((double)g_settings.buttonIconSize);
-                        bool useFluent = (ContextMenuIconStyle() == L"fluent_outline" || ContextMenuIconStyle() == L"fluent_filled");
-                        try { ic.FontFamily(FontFamily(useFluent ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets")); } catch (...) {}
-                        ic.Foreground(MakeBrush(ContextMenuIconColor()));
-                        ic.Opacity(!shuffleEnabled ? 1.0 : 0.5);
-                        shuffleOffItem.Icon(ic);
-                    } catch (...) {}
+                    shuffleOffItem.Icon(MakeContextMenuIcon(GetGlyphWithStyle(7, ContextMenuIconStyle()), !shuffleEnabled ? 1.0 : 0.5));
                     shuffleOffItem.Click([](winrt::Windows::Foundation::IInspectable const&, RoutedEventArgs const&) {
                         if (g_unloading) return;
                         try {
@@ -6648,16 +6426,7 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
                     MenuFlyoutItem shuffleOnItem;
                     shuffleOnItem.Text(L"Shuffle on");
                     shuffleOnItem.IsEnabled(canShuffle);
-                    try {
-                        FontIcon ic;
-                        ic.Glyph(GetGlyphWithStyle(7, ContextMenuIconStyle()));
-                        ic.FontSize((double)g_settings.buttonIconSize);
-                        bool useFluent = (ContextMenuIconStyle() == L"fluent_outline" || ContextMenuIconStyle() == L"fluent_filled");
-                        try { ic.FontFamily(FontFamily(useFluent ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets")); } catch (...) {}
-                        ic.Foreground(MakeBrush(ContextMenuIconColor()));
-                        ic.Opacity(shuffleEnabled ? 1.0 : 0.5);
-                        shuffleOnItem.Icon(ic);
-                    } catch (...) {}
+                    shuffleOnItem.Icon(MakeContextMenuIcon(GetGlyphWithStyle(7, ContextMenuIconStyle()), shuffleEnabled ? 1.0 : 0.5));
                     shuffleOnItem.Click([](winrt::Windows::Foundation::IInspectable const&, RoutedEventArgs const&) {
                         if (g_unloading) return;
                         try {
@@ -6704,19 +6473,7 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
                     ? winrt::hstring(L"App volume - " + std::to_wstring(percent) + L"%")
                     : winrt::hstring(L"App volume"));
                 volumeSubMenu.IsEnabled(percent >= 0);
-                try {
-                    FontIcon volumeIcon;
-                    volumeIcon.Glyph(muted ? L"\uE74F" : L"\uE767");
-                    volumeIcon.FontSize((double)g_settings.buttonIconSize);
-                    bool useFluent = (ContextMenuIconStyle() == L"fluent_outline" ||
-                                      ContextMenuIconStyle() == L"fluent_filled");
-                    try {
-                        volumeIcon.FontFamily(FontFamily(
-                            useFluent ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets"));
-                    } catch (...) {}
-                    volumeIcon.Foreground(MakeBrush(ContextMenuIconColor()));
-                    volumeSubMenu.Icon(volumeIcon);
-                } catch (...) {}
+                volumeSubMenu.Icon(MakeContextMenuIcon(muted ? L"\uE74F" : L"\uE767", 1.0));
                 volumeSubMenu.Items().Append(MakeActionContextMenuItem(
                     L"\uE995", L"Volume up",
                     []() { SendMediaCommandAsync(kCmdVolumeUp); }));
@@ -6729,28 +6486,6 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
                     []() { SendMediaCommandAsync(kCmdToggleMute); }));
                 menu.Items().Append(volumeSubMenu);
             }
-        }
-        if (g_settings.showRestartButton) {
-            ensureSeparator();
-        }
-        if (g_settings.showRestartButton) {
-            menu.Items().Append(MakeActionContextMenuItem(L"\uE72C", L"Restart Player", []() {
-                try {
-                    StopVizTimer();
-                    g_vizCurrentlyVisible = false;
-                    RemovePlayerGrid();
-                    auto dispatcher = winrt::Windows::UI::Core::CoreWindow::GetForCurrentThread().Dispatcher();
-                    dispatcher.RunAsync(winrt::Windows::UI::Core::CoreDispatcherPriority::Normal, [=]() {
-                        try {
-                            InjectPlayerGrid();
-                        } catch (...) {
-                            Wh_Log(L"Restart Player: Exception in InjectPlayerGrid");
-                        }
-                    });
-                } catch (...) {
-                    Wh_Log(L"Restart Player: exception");
-                }
-            }));
         }
         Controls::Primitives::FlyoutShowOptions flyoutOptions;
         flyoutOptions.Placement(Controls::Primitives::FlyoutPlacementMode::Top);
@@ -6770,9 +6505,7 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
                     if (auto bgFe = FindChildByName(g_playerGrid, kBackgroundName)) {
                         if (auto bgBorder = bgFe.try_as<Border>()) {
                             if (UsesBackgroundBrush()) {
-                                bgBorder.Background(MakeBackgroundBrush());
-                                bgBorder.Visibility(Visibility::Visible);
-                                bgBorder.Opacity(1.0);
+                                ApplyBrushBackground(bgBorder);
                             }
                         }
                     }
@@ -6805,6 +6538,23 @@ static bool                                  g_miniPlayerVolumeSuppress = false;
 [[clang::no_destroy]] static StackPanel      g_miniPlayerSessionListRef{nullptr};
 [[clang::no_destroy]] static Border          g_miniPlayerSessionListSepRef{nullptr};
 [[clang::no_destroy]] static Border          g_miniPlayerBgOverlayRef{nullptr};
+static void ClearMiniPlayerRefs() {
+    g_miniPlayerArtRef            = nullptr;
+    g_miniPlayerTitleRef          = nullptr;
+    g_miniPlayerArtistRef         = nullptr;
+    g_miniPlayerPlayBtnRef        = nullptr;
+    g_miniPlayerPrevBtnRef        = nullptr;
+    g_miniPlayerNextBtnRef        = nullptr;
+    g_miniPlayerShuffleBtnRef     = nullptr;
+    g_miniPlayerRepeatBtnRef      = nullptr;
+    g_miniPlayerMuteBtnRef        = nullptr;
+    g_miniPlayerVolumeSliderRef   = nullptr;
+    g_miniPlayerVolumeTextRef     = nullptr;
+    g_miniPlayerVolumeRowRef      = nullptr;
+    g_miniPlayerSessionListRef    = nullptr;
+    g_miniPlayerSessionListSepRef = nullptr;
+    g_miniPlayerBgOverlayRef      = nullptr;
+}
 
 static void ApplyMiniPlayerBackground(Border const& overlay,
                                       const std::vector<BYTE>& thumbBytes) {
@@ -6858,21 +6608,24 @@ static std::mutex                   g_miniSessionMtx;
 static std::vector<BYTE> g_miniPlayerCachedThumb;
 static std::vector<size_t> g_miniSessionCachedThumbSizes;
 static std::vector<std::wstring> g_miniSessionRowIds;
-static std::atomic<int> g_miniSessionHoveredIndex{-1};
+static int g_miniSessionHoveredIndex = -1;
 
+static winrt::Windows::Storage::Streams::IRandomAccessStream StreamFromBytes(std::vector<BYTE> const& bytes) {
+    winrt::com_ptr<IStream> memStream;
+    memStream.attach(SHCreateMemStream(bytes.data(), static_cast<UINT>(bytes.size())));
+    winrt::Windows::Storage::Streams::IRandomAccessStream stream{nullptr};
+    if (memStream) {
+        ::CreateRandomAccessStreamOverStream(
+            memStream.get(), BSOS_DEFAULT,
+            winrt::guid_of<winrt::Windows::Storage::Streams::IRandomAccessStream>(),
+            winrt::put_abi(stream));
+    }
+    return stream;
+}
 static void LoadMiniPlayerArtBitmap(Controls::Image const& img, std::vector<BYTE> const& thumbBytes) {
     if (!img || thumbBytes.empty()) return;
     try {
-        IStream* pRawStream = SHCreateMemStream(
-            thumbBytes.data(), static_cast<UINT>(thumbBytes.size()));
-        if (!pRawStream) return;
-        winrt::com_ptr<IStream> comStream;
-        comStream.attach(pRawStream);
-        winrt::Windows::Storage::Streams::IRandomAccessStream rasStream{nullptr};
-        ::CreateRandomAccessStreamOverStream(
-            comStream.get(), BSOS_DEFAULT,
-            winrt::guid_of<winrt::Windows::Storage::Streams::IRandomAccessStream>(),
-            winrt::put_abi(rasStream));
+        auto rasStream = StreamFromBytes(thumbBytes);
         if (!rasStream) return;
         BitmapImage bmp;
         img.Source(bmp);
@@ -6880,8 +6633,26 @@ static void LoadMiniPlayerArtBitmap(Controls::Image const& img, std::vector<BYTE
         img.Visibility(Visibility::Visible);
     } catch (...) {}
 }
+static Controls::Image MakeSessionRowArtImage(std::vector<BYTE> const& bytes) {
+    auto stream = StreamFromBytes(bytes);
+    if (!stream) return nullptr;
+    Controls::Image rowImg;
+    rowImg.Stretch(Stretch::None);
+    rowImg.HorizontalAlignment(HorizontalAlignment::Center);
+    rowImg.VerticalAlignment(VerticalAlignment::Center);
+    BitmapImage bmp;
+    bmp.DecodePixelHeight(32);
+    rowImg.Source(bmp);
+    bmp.SetSourceAsync(stream);
+    return rowImg;
+}
+static winrt::Windows::UI::Color SessionRowBackground(bool isCurrent, bool isLight) {
+    if (!isCurrent) return {0x00, 0x00, 0x00, 0x00};
+    return isLight ? winrt::Windows::UI::Color{0x20, 0x00, 0x00, 0x00}
+                   : winrt::Windows::UI::Color{0x2C, 0xFF, 0xFF, 0xFF};
+}
 
-static std::vector<std::shared_ptr<std::atomic<bool>>> g_miniSessionCurrentFlags;
+static std::vector<std::shared_ptr<bool>> g_miniSessionCurrentFlags;
 
 static void RefreshMiniPlayerFlyoutUI() {
     if (!g_miniPlayerFlyoutOpen) return;
@@ -6942,9 +6713,7 @@ static void RefreshMiniPlayerFlyoutUI() {
             trimmedArtist.erase(0, trimmedArtist.find_first_not_of(L" \t\n\r"));
             trimmedArtist.erase(trimmedArtist.find_last_not_of(L" \t\n\r") + 1);
             bool isEmpty = trimmedArtist.empty();
-
-            winrt::hstring newArtist = isEmpty ? winrt::hstring(L"") : winrt::hstring(artist);
-            g_miniPlayerArtistRef.Text(newArtist);
+            g_miniPlayerArtistRef.Text(isEmpty ? winrt::hstring() : winrt::hstring(artist));
             g_miniPlayerArtistRef.Visibility(isEmpty ? Visibility::Collapsed : Visibility::Visible);
         }
 
@@ -6954,7 +6723,7 @@ static void RefreshMiniPlayerFlyoutUI() {
             if (auto icon = g_miniPlayerPlayBtnRef.Content().try_as<TextBlock>()) {
                 const wchar_t* glyph = audioAppSource
                     ? (isPlaying ? L"\uE767" : L"\uE74F")
-                    : (isPlaying ? L"\uE62E" : L"\uF5B0");
+                    : GetGlyphWithStyle(2, L"fluent_filled", isPlaying);
                 icon.Text(winrt::hstring(glyph));
             }
         }
@@ -7021,8 +6790,7 @@ static void RefreshMiniPlayerFlyoutUI() {
             g_miniPlayerRepeatBtnRef.Opacity(enabled ? 1.0 : 0.35);
             if (auto icon = g_miniPlayerRepeatBtnRef.Content().try_as<TextBlock>()) {
                 RepeatMode mode = g_repeatMode.load();
-                icon.Text(mode == RepeatMode::One ? L"\uE8ED" :
-                          mode == RepeatMode::All ? L"\uE8EE" : L"\uF5E7");
+                icon.Text(RepeatModeGlyph(mode));
                 icon.Opacity(enabled && mode != RepeatMode::Off ? 1.0 : 0.40);
             }
         }
@@ -7045,54 +6813,44 @@ static void RefreshMiniPlayerFlyoutUI() {
                 infos = g_miniSessionInfos;
             }
 
-            bool noMusic = (!hasMedia || title.empty()) && infos.empty();
-            bool hasOtherSessions = !infos.empty();
             if (g_miniPlayerSessionListSepRef) {
                 g_miniPlayerSessionListSepRef.Visibility(
-                    (noMusic || !hasOtherSessions || g_settings.hideMediaSessionsList) ? Visibility::Collapsed : Visibility::Visible);
+                    (infos.empty() || g_settings.hideMediaSessionsList) ? Visibility::Collapsed : Visibility::Visible);
             }
 
             if (g_miniPlayerSessionListRef) {
                 auto sessionList = g_miniPlayerSessionListRef;
-                Visibility listVisibility = (noMusic || !hasOtherSessions) ? Visibility::Collapsed : Visibility::Visible;
-                sessionList.Visibility(listVisibility);
+                sessionList.Visibility(infos.empty() ? Visibility::Collapsed : Visibility::Visible);
 
                 std::vector<std::wstring> ids;
                 for (auto const& info : infos) ids.push_back(info.id);
                 if (ids != g_miniSessionRowIds) {
                     sessionList.Children().Clear();
-                    {
-                        std::lock_guard<std::mutex> lk(g_miniSessionMtx);
-                        g_miniSessionCurrentFlags.clear();
-                    }
+                    g_miniSessionCurrentFlags.clear();
                     g_miniSessionCachedThumbSizes.clear();
                     g_miniSessionCachedThumbSizes.resize(infos.size(), SIZE_MAX);
-                    HWND tw = g_taskbarWnd;
                     for (size_t i = 0; i < infos.size(); ++i) {
                         bool isCurrent = (infos[i].id == currentId);
-                        auto rowBtn = BuildSessionRowButton(infos[i], isCurrent, tw, static_cast<int>(i));
+                        auto rowBtn = BuildSessionRowButton(infos[i], isCurrent, static_cast<int>(i));
                         sessionList.Children().Append(rowBtn);
                         g_miniSessionCachedThumbSizes[i] = infos[i].thumbBytes.size();
                     }
                     g_miniSessionRowIds = std::move(ids);
             } else {
                 bool isLight = IsSystemLightTheme();
-                int hoveredIdx = g_miniSessionHoveredIndex.load();
+                int hoveredIdx = g_miniSessionHoveredIndex;
 
                 for (uint32_t i = 0; i < infos.size(); ++i) {
                     bool isCurrent = (infos[i].id == currentId);
                     bool wasCurrent = isCurrent;
                     if (i < g_miniSessionCurrentFlags.size() && g_miniSessionCurrentFlags[i]) {
-                        wasCurrent = g_miniSessionCurrentFlags[i]->load();
-                        g_miniSessionCurrentFlags[i]->store(isCurrent);
+                        wasCurrent = *g_miniSessionCurrentFlags[i];
+                        *g_miniSessionCurrentFlags[i] = isCurrent;
                     }
                     if (auto btn = sessionList.Children().GetAt(i).try_as<Button>()) {
                         if (auto hb = btn.Content().try_as<Border>()) {
                             if (hoveredIdx != static_cast<int>(i)) {
-                                hb.Background(MakeBrush(isCurrent
-                                    ? (isLight ? winrt::Windows::UI::Color{0x20, 0x00, 0x00, 0x00}
-                                               : winrt::Windows::UI::Color{0x2C, 0xFF, 0xFF, 0xFF})
-                                    : winrt::Windows::UI::Color{0x00, 0x00, 0x00, 0x00}));
+                                hb.Background(MakeBrush(SessionRowBackground(isCurrent, isLight)));
                             }
                             if (auto grid = hb.Child().try_as<Grid>()) {
                                 for (uint32_t j = 0; j < grid.Children().Size(); ++j) {
@@ -7111,30 +6869,7 @@ static void RefreshMiniPlayerFlyoutUI() {
                                             if (i < g_miniSessionCachedThumbSizes.size())
                                                 g_miniSessionCachedThumbSizes[i] = newSize;
                                             if (!infos[i].thumbBytes.empty()) {
-                                                try {
-                                                    IStream* ps = SHCreateMemStream(
-                                                        infos[i].thumbBytes.data(),
-                                                        (UINT)infos[i].thumbBytes.size());
-                                                    if (ps) {
-                                                        winrt::com_ptr<IStream> cs; cs.attach(ps);
-                                                        winrt::Windows::Storage::Streams::IRandomAccessStream rs{nullptr};
-                                                        ::CreateRandomAccessStreamOverStream(
-                                                            cs.get(), BSOS_DEFAULT,
-                                                            winrt::guid_of<winrt::Windows::Storage::Streams::IRandomAccessStream>(),
-                                                            winrt::put_abi(rs));
-                                                        if (rs) {
-                                                            Controls::Image rowImg;
-                                                            rowImg.Width(32);
-                                                            rowImg.Height(32);
-                                                            rowImg.Stretch(Stretch::Uniform);
-                                                            BitmapImage bmp;
-                                                            bmp.DecodePixelHeight(32);
-                                                            rowImg.Source(bmp);
-                                                            bmp.SetSourceAsync(rs);
-                                                            artBdr.Child(rowImg);
-                                                        }
-                                                    }
-                                                } catch (...) {}
+                                                try { artBdr.Child(MakeSessionRowArtImage(infos[i].thumbBytes)); } catch (...) {}
                                             } else {
                                                 try { artBdr.Child(nullptr); } catch (...) {}
                                             }
@@ -7196,14 +6931,12 @@ static void AnimateSessionPill(winrt::Windows::UI::Xaml::Shapes::Rectangle const
 
     if (!animate) {
         pill.Opacity(isCurrent ? 1.0 : 0.0);
-        st.ScaleX(1.0);
         st.ScaleY(isCurrent ? 1.0 : 0.0);
         return;
     }
 
     if (isCurrent) {
         pill.Opacity(0.0);
-        st.ScaleX(1.0);
         st.ScaleY(0.0);
 
         try {
@@ -7232,7 +6965,6 @@ static void AnimateSessionPill(winrt::Windows::UI::Xaml::Shapes::Rectangle const
             sb.Begin();
         } catch (...) {
             pill.Opacity(1.0);
-            st.ScaleX(1.0);
             st.ScaleY(1.0);
         }
     } else {
@@ -7261,20 +6993,13 @@ static void AnimateSessionPill(winrt::Windows::UI::Xaml::Shapes::Rectangle const
             sb.Begin();
         } catch (...) {
             pill.Opacity(0.0);
-            st.ScaleX(1.0);
             st.ScaleY(0.0);
         }
     }
 }
 
-static Button BuildSessionRowButton(const MiniSessionInfo& info, bool isCurrent, HWND taskbarWnd, int rowIndex) {
+static Button BuildSessionRowButton(const MiniSessionInfo& info, bool isCurrent, int rowIndex) {
     bool isLight = IsSystemLightTheme();
-
-    winrt::Windows::UI::Color bgSelected    = isLight
-        ? winrt::Windows::UI::Color{0x20, 0x00, 0x00, 0x00}
-        : winrt::Windows::UI::Color{0x2C, 0xFF, 0xFF, 0xFF};
-    winrt::Windows::UI::Color bgUnselected  = winrt::Windows::UI::Color{0x00, 0x00, 0x00, 0x00};
-    winrt::Windows::UI::Color bgNormal = isCurrent ? bgSelected : bgUnselected;
 
     winrt::Windows::UI::Color bgHover = isLight 
         ? winrt::Windows::UI::Color{0x0E, 0x00, 0x00, 0x00}
@@ -7283,18 +7008,15 @@ static Button BuildSessionRowButton(const MiniSessionInfo& info, bool isCurrent,
         ? winrt::Windows::UI::Color{0x18, 0x00, 0x00, 0x00}
         : winrt::Windows::UI::Color{0x20, 0xFF, 0xFF, 0xFF};
 
-    auto isCurrentFlag = std::make_shared<std::atomic<bool>>(isCurrent);
-    {
-        std::lock_guard<std::mutex> lk(g_miniSessionMtx);
-        if (static_cast<size_t>(rowIndex) >= g_miniSessionCurrentFlags.size()) {
-            g_miniSessionCurrentFlags.resize(rowIndex + 1);
-        }
-        g_miniSessionCurrentFlags[rowIndex] = isCurrentFlag;
+    auto isCurrentFlag = std::make_shared<bool>(isCurrent);
+    if (static_cast<size_t>(rowIndex) >= g_miniSessionCurrentFlags.size()) {
+        g_miniSessionCurrentFlags.resize(rowIndex + 1);
     }
+    g_miniSessionCurrentFlags[rowIndex] = isCurrentFlag;
 
     Border hoverBorder;
     hoverBorder.CornerRadius({6, 6, 6, 6});
-    hoverBorder.Background(MakeBrush(bgNormal));
+    hoverBorder.Background(MakeBrush(SessionRowBackground(isCurrent, isLight)));
     hoverBorder.Height(48);
     hoverBorder.HorizontalAlignment(HorizontalAlignment::Stretch);
     hoverBorder.Padding({0, 0, 12, 0});
@@ -7321,7 +7043,6 @@ static Button BuildSessionRowButton(const MiniSessionInfo& info, bool isCurrent,
         pill.Height(20);
         pill.RadiusX(1.5);
         pill.RadiusY(1.5);
-        pill.Margin({0, 0, 0, 0});
         pill.VerticalAlignment(VerticalAlignment::Center);
         pill.HorizontalAlignment(HorizontalAlignment::Left);
 
@@ -7343,27 +7064,7 @@ static Button BuildSessionRowButton(const MiniSessionInfo& info, bool isCurrent,
     rowArt.Background(MakeBrush({0x40, 0x80, 0x80, 0x80}));
     rowArt.VerticalAlignment(VerticalAlignment::Center);
     if (!info.thumbBytes.empty()) {
-        try {
-            IStream* ps = SHCreateMemStream(info.thumbBytes.data(), (UINT)info.thumbBytes.size());
-            if (ps) {
-                winrt::com_ptr<IStream> cs; cs.attach(ps);
-                winrt::Windows::Storage::Streams::IRandomAccessStream rs{nullptr};
-                ::CreateRandomAccessStreamOverStream(cs.get(), BSOS_DEFAULT,
-                    winrt::guid_of<winrt::Windows::Storage::Streams::IRandomAccessStream>(),
-                    winrt::put_abi(rs));
-                if (rs) {
-                    Controls::Image rowImg;
-                    rowImg.Stretch(Stretch::None);
-                    rowImg.HorizontalAlignment(HorizontalAlignment::Center);
-                    rowImg.VerticalAlignment(VerticalAlignment::Center);
-                    BitmapImage bmp;
-                    bmp.DecodePixelHeight(32);
-                    rowImg.Source(bmp);
-                    bmp.SetSourceAsync(rs);
-                    rowArt.Child(rowImg);
-                }
-            }
-        } catch (...) {}
+        try { rowArt.Child(MakeSessionRowArtImage(info.thumbBytes)); } catch (...) {}
     }
     Grid::SetColumn(rowArt, 1);
     rowGrid.Children().Append(rowArt);
@@ -7403,15 +7104,6 @@ static Button BuildSessionRowButton(const MiniSessionInfo& info, bool isCurrent,
         ? winrt::Windows::UI::Color{0xFF, 0x50, 0x50, 0x50}
         : winrt::Windows::UI::Color{0xFF, 0xFF, 0xFF, 0xFF}));
     rowText.Children().Append(rowArtist);
-
-    if (g_settings.showMiniPlayerBorder) {
-        rowArt.BorderBrush(MakeBrush({0xFF, 0xFF, 0x40, 0x00}));
-        rowArt.BorderThickness({1, 1, 1, 1});
-        rowText.BorderBrush(MakeBrush({0xFF, 0x00, 0xFF, 0xFF}));
-        rowText.BorderThickness({1, 1, 1, 1});
-        hoverBorder.BorderBrush(MakeBrush({0xFF, 0xFF, 0x00, 0xFF}));
-        hoverBorder.BorderThickness({1, 1, 1, 1});
-    }
 
     Grid::SetColumn(rowText, 2);
     rowGrid.Children().Append(rowText);
@@ -7465,21 +7157,20 @@ static Button BuildSessionRowButton(const MiniSessionInfo& info, bool isCurrent,
     ApplyFluentMediaButtonStyle(rowBtn);
 
     auto hBorderWeak  = winrt::make_weak(hoverBorder);
-    auto brushSelected   = MakeBrush(bgSelected);
-    auto brushUnselected = MakeBrush(bgUnselected);
+    auto brushSelected   = MakeBrush(SessionRowBackground(true, isLight));
+    auto brushUnselected = MakeBrush(SessionRowBackground(false, isLight));
     auto brushHover       = MakeBrush(bgHover);
     auto brushPressed     = MakeBrush(bgPressed);
     auto restingBrush = [isCurrentFlag, brushSelected, brushUnselected]() {
-        return isCurrentFlag->load() ? brushSelected : brushUnselected;
+        return *isCurrentFlag ? brushSelected : brushUnselected;
     };
 
     rowBtn.PointerEntered([hBorderWeak, brushHover, rowIndex](auto const&, auto const&) {
-        g_miniSessionHoveredIndex.store(rowIndex);
+        g_miniSessionHoveredIndex = rowIndex;
         if (auto b = hBorderWeak.get()) b.Background(brushHover);
     });
     rowBtn.PointerExited([hBorderWeak, restingBrush, rowIndex](auto const&, auto const&) {
-        int expected = rowIndex;
-        g_miniSessionHoveredIndex.compare_exchange_strong(expected, -1);
+        if (g_miniSessionHoveredIndex == rowIndex) g_miniSessionHoveredIndex = -1;
         if (auto b = hBorderWeak.get()) b.Background(restingBrush());
     });
     rowBtn.AddHandler(UIElement::PointerPressedEvent(), winrt::box_value(
@@ -7497,13 +7188,11 @@ static Button BuildSessionRowButton(const MiniSessionInfo& info, bool isCurrent,
         if (auto b = hBorderWeak.get()) b.Background(brushHover);
     })), true);
     rowBtn.PointerCanceled([hBorderWeak, restingBrush, rowIndex](auto const&, auto const&) {
-        int expected = rowIndex;
-        g_miniSessionHoveredIndex.compare_exchange_strong(expected, -1);
+        if (g_miniSessionHoveredIndex == rowIndex) g_miniSessionHoveredIndex = -1;
         if (auto b = hBorderWeak.get()) b.Background(restingBrush());
     });
     rowBtn.PointerCaptureLost([hBorderWeak, restingBrush, rowIndex](auto const&, auto const&) {
-        int expected = rowIndex;
-        g_miniSessionHoveredIndex.compare_exchange_strong(expected, -1);
+        if (g_miniSessionHoveredIndex == rowIndex) g_miniSessionHoveredIndex = -1;
         if (auto b = hBorderWeak.get()) b.Background(restingBrush());
     });
 
@@ -7578,25 +7267,6 @@ static Grid BuildMiniPlayerFlyoutContent() {
     outer.MaxWidth(360);
     outer.MinHeight(400);
 
-    bool isPlaying = false;
-    bool hasMedia = false;
-    bool canSkipPrevious = true, canSkipNext = true;
-    bool canShuffle = true, canRepeat = true;
-    std::wstring title, artist;
-    std::vector<BYTE> thumbBytes;
-    {
-        std::lock_guard<std::mutex> lk(g_mediaMtx);
-        isPlaying       = g_media.isPlaying;
-        hasMedia        = g_media.hasMedia;
-        canSkipPrevious = g_media.canSkipPrevious;
-        canSkipNext     = g_media.canSkipNext;
-        canShuffle      = g_media.canShuffle;
-        canRepeat       = g_media.canRepeat;
-        title           = g_media.title;
-        artist          = g_media.artist;
-        thumbBytes      = g_media.thumbnailBytes;
-    }
-
     Border bg;
     bg.CornerRadius({8, 8, 8, 8});
     bg.Padding({16, 16, 16, 16});
@@ -7604,67 +7274,27 @@ static Grid BuildMiniPlayerFlyoutContent() {
 
     bool isLight = IsSystemLightTheme();
 
-    if (g_settings.showMiniPlayerBorder) {
-        bg.BorderThickness({2, 2, 2, 2});
-        bg.BorderBrush(MakeBrush(isLight
-            ? winrt::Windows::UI::Color{0xFF, 0x00, 0x00, 0x00}
-            : winrt::Windows::UI::Color{0xFF, 0xFF, 0xFF, 0xFF}));
-    } else {
-        bg.BorderThickness({1, 1, 1, 1});
-        bg.BorderBrush(MakeBrush(isLight
-            ? winrt::Windows::UI::Color{0x30, 0x00, 0x00, 0x00}
-            : winrt::Windows::UI::Color{0x30, 0xFF, 0xFF, 0xFF}));
-    }
+    bg.BorderThickness({1, 1, 1, 1});
+    bg.BorderBrush(MakeBrush(isLight
+        ? winrt::Windows::UI::Color{0x30, 0x00, 0x00, 0x00}
+        : winrt::Windows::UI::Color{0x30, 0xFF, 0xFF, 0xFF}));
 
-    try {
-        using namespace winrt::Windows::UI::Xaml::Media;
-        ThemeShadow shadow;
-        bg.Shadow(shadow);
-        bg.Translation({0.f, 0.f, 32.f});
-    } catch (...) {
+    bg.Shadow(ThemeShadow());
+    bg.Translation({0.f, 0.f, 32.f});
 
-    }
-
-    Brush flyoutContentBackground{nullptr};
-    try {
-        winrt::Windows::UI::Xaml::Media::AcrylicBrush acrylic;
-        acrylic.BackgroundSource(winrt::Windows::UI::Xaml::Media::AcrylicBackgroundSource::Backdrop);
-        
-        winrt::Windows::UI::Color tint = isLight
-            ? winrt::Windows::UI::Color{0xff, 0xf2, 0xf2, 0xf2}
-            : winrt::Windows::UI::Color{0xFF, 0x24, 0x24, 0x24};
-        
-        acrylic.TintColor(tint);
-        acrylic.TintOpacity(isLight ? 0.0 : 0.5);
-        acrylic.TintLuminosityOpacity(isLight ? 0.9 : 0.96);
-        winrt::Windows::UI::Color fallback = isLight
-            ? winrt::Windows::UI::Color{0xff, 0xf2, 0xf2, 0xf2}
-            : winrt::Windows::UI::Color{0xFF, 0x24, 0x24, 0x24};
-        acrylic.FallbackColor(fallback);
-        
-        flyoutContentBackground = acrylic;
-    } catch (...) {
-        flyoutContentBackground = MakeBrush(isLight
-            ? winrt::Windows::UI::Color{0xf5, 0xf2, 0xf2, 0xf2}
-            : winrt::Windows::UI::Color{0xF5, 0x24, 0x24, 0x24});
-    }
-    bg.Background(nullptr);
+    AcrylicBrush flyoutContentBackground;
+    flyoutContentBackground.BackgroundSource(AcrylicBackgroundSource::Backdrop);
+    winrt::Windows::UI::Color tint = isLight
+        ? winrt::Windows::UI::Color{0xff, 0xf2, 0xf2, 0xf2}
+        : winrt::Windows::UI::Color{0xFF, 0x24, 0x24, 0x24};
+    flyoutContentBackground.TintColor(tint);
+    flyoutContentBackground.TintOpacity(isLight ? 0.0 : 0.5);
+    flyoutContentBackground.TintLuminosityOpacity(isLight ? 0.9 : 0.96);
+    flyoutContentBackground.FallbackColor(tint);
 
     StackPanel content;
     content.Orientation(Orientation::Vertical);
     content.HorizontalAlignment(HorizontalAlignment::Stretch);
-
-    auto wrapDebugBorder = [](FrameworkElement const& elem, winrt::Windows::UI::Color color) -> FrameworkElement {
-        if (!g_settings.showMiniPlayerBorder) return elem;
-        Grid wrapper;
-        wrapper.Children().Append(elem);
-        Border dbg;
-        dbg.BorderBrush(MakeBrush(color));
-        dbg.BorderThickness({1, 1, 1, 1});
-        dbg.IsHitTestVisible(false);
-        wrapper.Children().Append(dbg);
-        return wrapper;
-    };
 
     Border artBorder;
     artBorder.MaxWidth(300);
@@ -7674,17 +7304,10 @@ static Grid BuildMiniPlayerFlyoutContent() {
     artBorder.CornerRadius({8, 8, 8, 8});
     artBorder.Background(MakeBrush({0x40, 0x80, 0x80, 0x80}));
     artBorder.Margin({0, 0, 0, 10});
-    {
-        bool isLight = IsSystemLightTheme();
-        artBorder.BorderThickness(g_settings.showMiniPlayerBorder ? Thickness{2, 2, 2, 2} : Thickness{1, 1, 1, 1});
-        if (g_settings.showMiniPlayerBorder) {
-            artBorder.BorderBrush(MakeBrush({0xFF, 0xFF, 0x00, 0x00}));
-        } else {
-            artBorder.BorderBrush(MakeBrush(isLight
-                ? winrt::Windows::UI::Color{0x30, 0x00, 0x00, 0x00}
-                : winrt::Windows::UI::Color{0x30, 0xFF, 0xFF, 0xFF}));
-        }
-    }
+    artBorder.BorderThickness({1, 1, 1, 1});
+    artBorder.BorderBrush(MakeBrush(isLight
+        ? winrt::Windows::UI::Color{0x30, 0x00, 0x00, 0x00}
+        : winrt::Windows::UI::Color{0x30, 0xFF, 0xFF, 0xFF}));
 
     Grid artInnerGrid;
     artInnerGrid.HorizontalAlignment(HorizontalAlignment::Stretch);
@@ -7710,10 +7333,7 @@ static Grid BuildMiniPlayerFlyoutContent() {
     artImage.HorizontalAlignment(HorizontalAlignment::Center);
     artImage.VerticalAlignment(VerticalAlignment::Center);
     artImage.Visibility(Visibility::Collapsed);
-    if (!thumbBytes.empty()) {
-        LoadMiniPlayerArtBitmap(artImage, thumbBytes);
-        g_miniPlayerCachedThumb = thumbBytes;
-    }
+    g_miniPlayerCachedThumb.clear();
     artInnerGrid.Children().Append(artImage);
     artBorder.Child(artInnerGrid);
     content.Children().Append(artBorder);
@@ -7727,18 +7347,7 @@ static Grid BuildMiniPlayerFlyoutContent() {
     titleBlock.TextAlignment(TextAlignment::Center);
     titleBlock.Foreground(MakeBrush(TextColor()));
     titleBlock.Margin({0, 0, 0, 4});
-    {
-        std::wstring displayTitle;
-        if (!hasMedia) {
-            displayTitle = g_settings.noMediaTitleText;
-        } else if (title.empty()) {
-            displayTitle = g_settings.emptyTitleText;
-        } else {
-            displayTitle = title;
-        }
-        titleBlock.Text(winrt::hstring(displayTitle));
-    }
-    content.Children().Append(wrapDebugBorder(titleBlock, {0xFF, 0xFF, 0xFF, 0x00}));
+    content.Children().Append(titleBlock);
 
     TextBlock artistBlock;
     artistBlock.FontSize(13);
@@ -7749,8 +7358,7 @@ static Grid BuildMiniPlayerFlyoutContent() {
     artistBlock.Opacity(0.65);
     artistBlock.Foreground(MakeBrush(ArtistColor()));
     artistBlock.Margin({0, 0, 0, 5});
-    artistBlock.Text(artist.empty() ? winrt::hstring(L" ") : winrt::hstring(artist));
-    content.Children().Append(wrapDebugBorder(artistBlock, {0xFF, 0x00, 0xFF, 0x00}));
+    content.Children().Append(artistBlock);
 
     StackPanel controlsRow;
     controlsRow.Orientation(Orientation::Horizontal);
@@ -7760,7 +7368,7 @@ static Grid BuildMiniPlayerFlyoutContent() {
 
     auto iconClr = ButtonColor();
 
-    auto MakeBigBtn = [&](int cmd, bool playing, bool executeCommand = true) -> Button {
+    auto MakeBigBtn = [&](int cmd) -> Button {
         Button btn;
         btn.Width(48);
         btn.Height(48);
@@ -7772,14 +7380,9 @@ static Grid BuildMiniPlayerFlyoutContent() {
 
         const wchar_t* glyph = L"";
         if (cmd == 1) glyph = L"\uE622";
-        else if (cmd == 2) glyph = playing ? L"\uE62E" : L"\uF5B0";
         else if (cmd == 3) glyph = L"\uE623";
         else if (cmd == 7) glyph = L"\uE8B1";
-        else if (cmd == 8) {
-            RepeatMode mode = g_repeatMode.load();
-            glyph = mode == RepeatMode::One ? L"\uE8ED" :
-                    mode == RepeatMode::All ? L"\uE8EE" : L"\uF5E7";
-        }
+        else if (cmd == 8) glyph = RepeatModeGlyph(g_repeatMode.load());
 
         TextBlock iconText;
         iconText.Text(winrt::hstring(glyph));
@@ -7793,30 +7396,23 @@ static Grid BuildMiniPlayerFlyoutContent() {
         btn.Content(winrt::box_value(iconText));
         SetButtonLabel(btn, MediaCommandLabel(cmd));
 
-        if (executeCommand) {
-            btn.Click([cmd](auto const&, auto const&) {
-                if (!g_unloading) {
-                    try {
-                        SendMediaCommandAsync(cmd);
-                        DispatchMediaUpdate();
-                    } catch (...) {}
-                }
-            });
-        }
+        btn.Click([cmd](auto const&, auto const&) {
+            if (!g_unloading) {
+                try {
+                    SendMediaCommandAsync(cmd);
+                    DispatchMediaUpdate();
+                } catch (...) {}
+            }
+        });
 
         ApplyFluentMediaButtonStyle(btn);
 
         auto isHovered = std::make_shared<bool>(false);
-        auto pressLocked = std::make_shared<bool>(false);
-        auto applyState = [weakBtn = winrt::make_weak(btn), isHovered, pressLocked](bool pressed) {
+        auto applyState = [weakBtn = winrt::make_weak(btn), isHovered](bool pressed) {
             try {
                 if (auto b = weakBtn.get())
                     GoToCommonState(b, IsHoverEffectEnabled(g_settings.mediaButtonsHoverEffectMode), pressed, *isHovered);
             } catch (...) {}
-        };
-        auto updateBtnVisualState = [applyState, pressLocked]() {
-            if (*pressLocked) return;
-            applyState(false);
         };
         
         RunWhenButtonReady(btn, [btn, applyState]() {
@@ -7826,13 +7422,13 @@ static Grid BuildMiniPlayerFlyoutContent() {
             } catch (...) {}
         });
         
-        btn.PointerEntered([isHovered, updateBtnVisualState](auto const&, auto const&) {
+        btn.PointerEntered([isHovered, applyState](auto const&, auto const&) {
             *isHovered = true;
-            updateBtnVisualState();
+            applyState(false);
         });
-        btn.PointerExited([isHovered, updateBtnVisualState](auto const&, auto const&) {
+        btn.PointerExited([isHovered, applyState](auto const&, auto const&) {
             *isHovered = false;
-            updateBtnVisualState();
+            applyState(false);
         });
         btn.AddHandler(UIElement::PointerPressedEvent(), winrt::box_value(
             winrt::Windows::UI::Xaml::Input::PointerEventHandler(
@@ -7854,30 +7450,11 @@ static Grid BuildMiniPlayerFlyoutContent() {
         return btn;
     };
 
-    Button shuffleBtn = MakeBigBtn(7, false);
-    Button prevBtn    = MakeBigBtn(1, false);
-    Button playBtn    = MakeBigBtn(2, isPlaying);
-    Button nextBtn    = MakeBigBtn(3, false);
-    Button repeatBtn  = MakeBigBtn(8, false, false);
-
-    shuffleBtn.IsEnabled(hasMedia && canShuffle);
-    shuffleBtn.Opacity(hasMedia && canShuffle ? 1.0 : 0.35);
-    prevBtn.IsEnabled(hasMedia && canSkipPrevious);
-    prevBtn.Opacity(hasMedia && canSkipPrevious ? 1.0 : 0.35);
-    playBtn.IsEnabled(hasMedia);
-    playBtn.Opacity(hasMedia ? 1.0 : 0.35);
-    nextBtn.IsEnabled(hasMedia && canSkipNext);
-    nextBtn.Opacity(hasMedia && canSkipNext ? 1.0 : 0.35);
-    repeatBtn.IsEnabled(hasMedia && canRepeat);
-    repeatBtn.Opacity(hasMedia && canRepeat ? 1.0 : 0.35);
-
-    repeatBtn.Click([](auto const&, auto const&) {
-        if (g_unloading) return;
-        try {
-            SendMediaCommandAsync(8);
-            DispatchMediaUpdate();
-        } catch (...) {}
-    });
+    Button shuffleBtn = MakeBigBtn(7);
+    Button prevBtn    = MakeBigBtn(1);
+    Button playBtn    = MakeBigBtn(2);
+    Button nextBtn    = MakeBigBtn(3);
+    Button repeatBtn  = MakeBigBtn(8);
 
     controlsRow.Children().Append(shuffleBtn);
     controlsRow.Children().Append(prevBtn);
@@ -7885,16 +7462,7 @@ static Grid BuildMiniPlayerFlyoutContent() {
     controlsRow.Children().Append(nextBtn);
     controlsRow.Children().Append(repeatBtn);
 
-    if (g_settings.showMiniPlayerBorder) {
-        prevBtn.BorderBrush(MakeBrush({0xFF, 0xFF, 0x40, 0x40}));
-        prevBtn.BorderThickness({1, 1, 1, 1});
-        playBtn.BorderBrush(MakeBrush({0xFF, 0x40, 0xFF, 0x40}));
-        playBtn.BorderThickness({1, 1, 1, 1});
-        nextBtn.BorderBrush(MakeBrush({0xFF, 0x40, 0x40, 0xFF}));
-        nextBtn.BorderThickness({1, 1, 1, 1});
-    }
-
-    content.Children().Append(wrapDebugBorder(controlsRow, {0xFF, 0x00, 0x00, 0xFF}));
+    content.Children().Append(controlsRow);
 
     {
         Grid volumeRow;
@@ -7949,7 +7517,6 @@ static Grid BuildMiniPlayerFlyoutContent() {
         volumeSlider.Margin({8, 0, 8, 0});
         volumeSlider.VerticalAlignment(VerticalAlignment::Center);
         Automation::AutomationProperties::SetName(volumeSlider, L"App volume");
-        try { volumeSlider.ThumbToolTipValueConverter(nullptr); } catch (...) {}
         volumeSlider.ValueChanged([](winrt::Windows::Foundation::IInspectable const&,
                                      Controls::Primitives::RangeBaseValueChangedEventArgs const& e) {
             if (g_unloading || g_miniPlayerVolumeSuppress) return;
@@ -7982,14 +7549,13 @@ static Grid BuildMiniPlayerFlyoutContent() {
         g_miniPlayerMuteBtnRef      = muteBtn;
         g_miniPlayerVolumeSliderRef = volumeSlider;
         g_miniPlayerVolumeTextRef   = volumeText;
-        content.Children().Append(wrapDebugBorder(volumeRow, {0xFF, 0x00, 0xFF, 0xFF}));
+        content.Children().Append(volumeRow);
     }
 
     {
         Border sep;
         sep.Height(1);
         sep.Margin({-16, 0, -16, 0});
-        bool isLight = IsSystemLightTheme();
         sep.Background(MakeBrush(isLight
             ? winrt::Windows::UI::Color{0x20, 0x00, 0x00, 0x00}
             : winrt::Windows::UI::Color{0x20, 0xFF, 0xFF, 0xFF}));
@@ -8005,7 +7571,7 @@ static Grid BuildMiniPlayerFlyoutContent() {
         sessionList.Margin({-16, 3, -16, 3});
         sessionList.Visibility(Visibility::Collapsed);
         g_miniPlayerSessionListRef = sessionList;
-        content.Children().Append(wrapDebugBorder(sessionList, {0xFF, 0xFF, 0x00, 0xFF}));
+        content.Children().Append(sessionList);
     } else {
         g_miniPlayerSessionListRef = nullptr;
     }
@@ -8034,25 +7600,14 @@ static Grid BuildMiniPlayerFlyoutContent() {
     Grid::SetRow(playerBackgroundOverlay, 0);
     innerGrid.Children().Append(playerBackgroundOverlay);
     g_miniPlayerBgOverlayRef = playerBackgroundOverlay;
-    ApplyMiniPlayerBackground(playerBackgroundOverlay, thumbBytes);
 
     innerGrid.Children().Append(content);
-
-    if (g_settings.showMiniPlayerBorder) {
-        innerGrid.BorderBrush(MakeBrush({0xFF, 0x80, 0x80, 0xFF}));
-        innerGrid.BorderThickness({1, 1, 1, 1});
-    }
 
     bg.Child(innerGrid);
     outer.Children().Append(bg);
 
     outer.Opacity(0.0);
-    try {
-        using namespace winrt::Windows::UI::Xaml::Media;
-        CompositeTransform transform;
-        transform.TranslateY(0.0);
-        outer.RenderTransform(transform);
-    } catch (...) {}
+    outer.RenderTransform(CompositeTransform());
 
     g_miniPlayerArtRef       = artImage;
     g_miniPlayerTitleRef     = titleBlock;
@@ -8070,7 +7625,7 @@ struct MiniPlayerAnchor {
     winrt::Windows::Foundation::Point placementPoint{0.f, 0.f};
     Controls::Primitives::FlyoutPlacementMode placement =
         Controls::Primitives::FlyoutPlacementMode::Top;
-    int    animAxis = 0;
+    bool   animHorizontal = false;
     double animSign = 1.0;
 };
 
@@ -8139,52 +7694,52 @@ static bool ComputeScreenPlacementAnchor(FrameworkElement const& rootContent,
     else               anchorY = (top + bottom) / 2.0 + vDist;
 
     using FPM = Controls::Primitives::FlyoutPlacementMode;
-    FPM placement = FPM::Top;
-    int animAxis = 0;
-    double animSign = 1.0;
+    FPM placement;
+    bool animHorizontal;
+    double animSign;
 
     if (vBottom) {
         placement = hLeft ? FPM::TopEdgeAlignedLeft
                   : hRight ? FPM::TopEdgeAlignedRight
                   : FPM::Top;
-        animAxis = 0;
+        animHorizontal = false;
         animSign = 1.0;
     } else if (vTop) {
         placement = hLeft ? FPM::BottomEdgeAlignedLeft
                   : hRight ? FPM::BottomEdgeAlignedRight
                   : FPM::Bottom;
-        animAxis = 0;
+        animHorizontal = false;
         animSign = -1.0;
     } else {
         if (hLeft) {
             placement = FPM::Right;
-            animAxis = 1;
+            animHorizontal = true;
             animSign = -1.0;
         } else if (hRight) {
             placement = FPM::Left;
-            animAxis = 1;
+            animHorizontal = true;
             animSign = 1.0;
         } else {
             placement = FPM::Right;
             anchorX -= 180.0;
-            animAxis = 0;
+            animHorizontal = false;
             animSign = 1.0;
         }
     }
 
     if (g_settings.miniPlayerAnimation == L"top") {
-        animAxis = 0; animSign = -1.0;
+        animHorizontal = false; animSign = -1.0;
     } else if (g_settings.miniPlayerAnimation == L"bottom") {
-        animAxis = 0; animSign = 1.0;
+        animHorizontal = false; animSign = 1.0;
     } else if (g_settings.miniPlayerAnimation == L"left") {
-        animAxis = 1; animSign = -1.0;
+        animHorizontal = true; animSign = -1.0;
     } else if (g_settings.miniPlayerAnimation == L"right") {
-        animAxis = 1; animSign = 1.0;
+        animHorizontal = true; animSign = 1.0;
     }
 
     outAnchor.placementPoint = {(float)anchorX, (float)anchorY};
     outAnchor.placement = placement;
-    outAnchor.animAxis = animAxis;
+    outAnchor.animHorizontal = animHorizontal;
     outAnchor.animSign = animSign;
     return true;
 }
@@ -8238,7 +7793,7 @@ static void ShowMiniPlayerFlyout(FrameworkElement const& target) {
             g_miniPlayerFlyoutOpen = true;
             g_miniPlayerClosingAnimStarted.store(false);
             if (g_playerButtonStateUpdater) g_playerButtonStateUpdater();
-            g_miniSessionHoveredIndex.store(-1);
+            g_miniSessionHoveredIndex = -1;
             {
                 std::lock_guard<std::mutex> lk(g_miniSessionMtx);
                 g_miniSessionInfos.clear();
@@ -8274,26 +7829,15 @@ static void ShowMiniPlayerFlyout(FrameworkElement const& target) {
                 Wh_Log(L"Flyout.Opened: Exception removing Shadow");
             }
 
-            content.Opacity(0.0);
-            auto transform = content.RenderTransform()
-                .try_as<winrt::Windows::UI::Xaml::Media::CompositeTransform>();
-            if (!transform) {
-                transform = winrt::Windows::UI::Xaml::Media::CompositeTransform();
-                content.RenderTransform(transform);
-            }
-            transform.TranslateX(0.0);
-            transform.TranslateY(0.0);
+            auto transform = content.RenderTransform().as<winrt::Windows::UI::Xaml::Media::CompositeTransform>();
 
             auto fired = std::make_shared<bool>(false);
             auto doReveal = [content, transform, fired]() mutable {
                 if (*fired) return;
                 *fired = true;
                 try {
-                    if (!transform) return;
-                    bool horizontal = (g_miniPlayerAnimAxis == 1);
-                    double size = horizontal ? content.ActualWidth() : content.ActualHeight();
-                    if (size <= 0) size = 450.0;
-                    double startOffset = std::min(size, 48.0) * g_miniPlayerAnimSign;
+                    bool horizontal = g_miniPlayerAnimHorizontal;
+                    double startOffset = 48.0 * g_miniPlayerAnimSign;
 
                     PCWSTR propertyPath = horizontal
                         ? L"(UIElement.RenderTransform).(CompositeTransform.TranslateX)"
@@ -8301,7 +7845,6 @@ static void ShowMiniPlayerFlyout(FrameworkElement const& target) {
 
                     if (horizontal) transform.TranslateX(startOffset);
                     else            transform.TranslateY(startOffset);
-                    content.Opacity(0.0);
 
                     using namespace winrt::Windows::UI::Xaml::Media::Animation;
                     Storyboard sb;
@@ -8382,15 +7925,10 @@ static void ShowMiniPlayerFlyout(FrameworkElement const& target) {
             }
 
             try {
-                auto transform = content.RenderTransform()
-                    .try_as<winrt::Windows::UI::Xaml::Media::CompositeTransform>();
-                if (!transform) return;
                 e.Cancel(true);
 
-                bool horizontal = (g_miniPlayerAnimAxis == 1);
-                double size = horizontal ? content.ActualWidth() : content.ActualHeight();
-                if (size <= 0) size = 450.0;
-                double endOffset = std::min(size, 40.0) * g_miniPlayerAnimSign;
+                bool horizontal = g_miniPlayerAnimHorizontal;
+                double endOffset = 40.0 * g_miniPlayerAnimSign;
 
                 PCWSTR propertyPath = horizontal
                     ? L"(UIElement.RenderTransform).(CompositeTransform.TranslateX)"
@@ -8455,18 +7993,9 @@ static void ShowMiniPlayerFlyout(FrameworkElement const& target) {
         flyout.Closed([](auto const&, auto const&) {
             g_miniPlayerFlyoutOpen = false;
             g_miniPlayerClosingAnimStarted.store(false);
-            g_miniSessionHoveredIndex.store(-1);
-            g_miniPlayerArtRef = nullptr;
-            g_miniPlayerTitleRef = nullptr;
-            g_miniPlayerArtistRef = nullptr;
-            g_miniPlayerPlayBtnRef = nullptr;
-            g_miniPlayerPrevBtnRef = nullptr;
-            g_miniPlayerNextBtnRef = nullptr;
-            g_miniPlayerShuffleBtnRef = nullptr;
-            g_miniPlayerRepeatBtnRef = nullptr;
-            g_miniPlayerSessionListRef = nullptr;
-            g_miniPlayerSessionListSepRef = nullptr;
-            g_miniPlayerBgOverlayRef = nullptr;
+            g_miniSessionHoveredIndex = -1;
+            ClearMiniPlayerRefs();
+            g_miniPlayerFlyout = nullptr;
             g_miniSessionCachedThumbSizes.clear();
             g_miniSessionRowIds.clear();
             if (g_playerButtonStateUpdater) g_playerButtonStateUpdater();
@@ -8496,7 +8025,7 @@ static void ShowMiniPlayerFlyout(FrameworkElement const& target) {
                         if (ComputeScreenPlacementAnchor(rootContent, screenAnchor)) {
                             anchorPoint = screenAnchor.placementPoint;
                             placementMode = screenAnchor.placement;
-                            g_miniPlayerAnimAxis = screenAnchor.animAxis;
+                            g_miniPlayerAnimHorizontal = screenAnchor.animHorizontal;
                             g_miniPlayerAnimSign = screenAnchor.animSign;
                             anchorComputed = true;
                         } else {
@@ -8509,20 +8038,20 @@ static void ShowMiniPlayerFlyout(FrameworkElement const& target) {
                         auto xform = target.TransformToVisual(rootContent);
                         auto pt = xform.TransformPoint({0.f, 0.f});
                         float cx = pt.X + (float)target.ActualWidth() * 0.5f +
-                                   (float)g_settings.miniPlayerHorizontalOffsetAbove;
+                                   (float)g_settings.miniPlayerHorizontalOffsetNear;
 
                         bool placeBelow = (g_settings.miniPlayerVerticalPlacementNear == L"bottom");
                         if (placeBelow) {
                             float ty = pt.Y + (float)target.ActualHeight();
                             anchorPoint = {cx, ty};
                             placementMode = Controls::Primitives::FlyoutPlacementMode::Bottom;
-                            g_miniPlayerAnimAxis = 0;
+                            g_miniPlayerAnimHorizontal = false;
                             g_miniPlayerAnimSign = -1.0;
                         } else {
                             float ty = pt.Y;
                             anchorPoint = {cx, ty};
                             placementMode = Controls::Primitives::FlyoutPlacementMode::Top;
-                            g_miniPlayerAnimAxis = 0;
+                            g_miniPlayerAnimHorizontal = false;
                             g_miniPlayerAnimSign = 1.0;
                         }
                     }
@@ -8534,7 +8063,6 @@ static void ShowMiniPlayerFlyout(FrameworkElement const& target) {
 
         try {
             flyout.ShouldConstrainToRootBounds(false);
-            flyout.Placement(placementMode);
         } catch (...) {}
 
         g_miniPlayerFlyout = flyout;
@@ -8636,7 +8164,6 @@ static Grid BuildPlayerGrid() {
         g_vizBars->clear();
         g_vizBrushes->clear();
         auto buttonClr = ButtonColor();
-        auto bgBrush = MakeBackgroundBrush();
         double phMin = (double)g_settings.playerMinHeight;
         double phMax = (double)g_settings.playerMaxHeight;
         bool hasTextOrButtons = g_settings.showTrackTitle || g_settings.showTrackArtist || (g_settings.showMediaButtons && !g_mediaButtons.empty());
@@ -8686,10 +8213,6 @@ static Grid BuildPlayerGrid() {
         }
         chromeFill.IsHitTestVisible(false);
         playerButton.Content(chromeFill);
-        if (g_settings.showDebugBorders) {
-            playerButton.BorderBrush(MakeBrush({0xFF, 0xFF, 0x00, 0x00}));
-            playerButton.BorderThickness({2, 2, 2, 2});
-        }
         Grid panel;
         panel.Name(kPanelGridName);
         panel.VerticalAlignment(VerticalAlignment::Center);
@@ -8697,28 +8220,19 @@ static Grid BuildPlayerGrid() {
         if (hasTextOrButtons) {
             panel.Margin({4, 2, 4, 2});
         }
-        AddLayoutAnchorOverlay(panel, L"FluentMedia_DebugPanelAnchors", {0xD0, 0x00, 0xFF, 0x00});
-        if (g_settings.showDebugBorders) {
-            Border panelDebugBorder;
-            panelDebugBorder.BorderBrush(MakeBrush({0xFF, 0x00, 0xFF, 0x00}));
-            panelDebugBorder.BorderThickness({1,1,1,1});
-            panel.Children().Append(panelDebugBorder);
-        }
         bool buttonsLeft = g_settings.mirrorLayout;
         bool albumArtLeft = !g_settings.mirrorLayout;
         bool hasText = g_settings.showTrackTitle || g_settings.showTrackArtist;
-        ColumnDefinition colFirst, colText, colSpacer, colLast;
+        ColumnDefinition colFirst, colText, colLast;
         colFirst.Width({1.0, GridUnitType::Auto});
         if (hasText) {
             colText.Width({1.0, GridUnitType::Star});
         } else {
             colText.Width({0.0, GridUnitType::Pixel});
         }
-        colSpacer.Width({0.0, GridUnitType::Pixel});
         colLast.Width({1.0, GridUnitType::Auto});
         panel.ColumnDefinitions().Append(colFirst);
         panel.ColumnDefinitions().Append(colText);
-        panel.ColumnDefinitions().Append(colSpacer);
         panel.ColumnDefinitions().Append(colLast);
         Grid artContainer{nullptr};
         if (g_settings.showAlbumArt) {
@@ -8744,13 +8258,6 @@ static Grid BuildPlayerGrid() {
             artContainer.Margin({artLeftMargin, 0, artRightMargin, 0});
             artContainer.Opacity(g_settings.albumArtOpacity / 100.0);
             artContainer.Background(MakeBrush({0x00,0x00,0x00,0x00}));
-            AddLayoutAnchorOverlay(artContainer, L"FluentMedia_DebugArtAnchors", {0xD0, 0xFF, 0xFF, 0x00});
-            if (g_settings.showDebugBorders) {
-                Border artDebugBorder;
-                artDebugBorder.BorderBrush(MakeBrush({0xFF, 0xFF, 0xFF, 0x00}));
-                artDebugBorder.BorderThickness({2,2,2,2});
-                artContainer.Children().Append(artDebugBorder);
-            }
             winrt::Windows::UI::Xaml::Shapes::Rectangle placeholder;
             placeholder.Fill(MakeBrush({0x40,0x80,0x80,0x80}));
             double maxRadius = std::max({g_settings.albumArtCornerRadiusTL, g_settings.albumArtCornerRadiusTR,
@@ -8771,9 +8278,7 @@ static Grid BuildPlayerGrid() {
             artBorder.VerticalAlignment(VerticalAlignment::Stretch);
             Controls::Image artImage;
             artImage.Name(kArtImageName);
-            bool isSquare = (g_settings.albumArtMinWidth == g_settings.albumArtMinHeight) &&
-                        (g_settings.albumArtMaxWidth == g_settings.albumArtMaxHeight);
-            artImage.Stretch(isSquare ? Stretch::Uniform : Stretch::Uniform);
+            artImage.Stretch(Stretch::Uniform);
             artImage.HorizontalAlignment(HorizontalAlignment::Center);
             artImage.VerticalAlignment(VerticalAlignment::Center);
             Grid artInnerGrid;
@@ -8887,7 +8392,7 @@ static Grid BuildPlayerGrid() {
             if (albumArtLeft) {
                 Grid::SetColumn(artContainer, 0);
             } else {
-                Grid::SetColumn(artContainer, 3);
+                Grid::SetColumn(artContainer, 2);
             }
             panel.Children().Append(artContainer);
         }
@@ -8912,10 +8417,6 @@ static Grid BuildPlayerGrid() {
                 textContainer.MaxHeight((double)g_settings.textAreaMaxHeight);
             }
             textContainer.Margin({(double)g_settings.textAreaLeftMargin, 0, (double)g_settings.textAreaRightMargin, 0});
-            if (g_settings.showDebugBorders) {
-                textContainer.BorderBrush(MakeBrush({0xFF, 0x00, 0xFF, 0xFF}));
-                textContainer.BorderThickness({1,1,1,1});
-            }
             StackPanel textStack;
             textStack.Name(kTextStackName);
             textStack.Orientation(Orientation::Vertical);
@@ -9024,17 +8525,6 @@ static Grid BuildPlayerGrid() {
                     Wh_Log(L"BuildPlayerGrid: Exception setting control panel margin");
                 }
             }
-            if (g_settings.showDebugBorders) {
-                try {
-                    Border ctrlDebugBorder;
-                    ctrlDebugBorder.BorderBrush(MakeBrush({0xFF, 0xFF, 0x00, 0xFF}));
-                    ctrlDebugBorder.BorderThickness({1,1,1,1});
-                    Grid::SetColumn(ctrlDebugBorder, buttonsLeft ? 0 : 3);
-                    panel.Children().Append(ctrlDebugBorder);
-                } catch (...) {
-                    Wh_Log(L"BuildPlayerGrid: Exception creating debug border");
-                }
-            }
             for (size_t i = 0; i < currentButtons.size(); i++) {
                 try {
                     const auto& btnCfg = currentButtons[i];
@@ -9075,7 +8565,7 @@ static Grid BuildPlayerGrid() {
             if (buttonsLeft) {
                 Grid::SetColumn(ctrlPanel, 0);
             } else {
-                Grid::SetColumn(ctrlPanel, 3);
+                Grid::SetColumn(ctrlPanel, 2);
             }
             if (hasButtons) {
                 panel.Children().Append(ctrlPanel);
@@ -9111,7 +8601,6 @@ static Grid BuildPlayerGrid() {
         wrapper.Name(kGridName);
         wrapper.VerticalAlignment(g_settings.fullHeightHitArea ? VerticalAlignment::Stretch : VerticalAlignment::Center);
         wrapper.HorizontalAlignment(HorizontalAlignment::Left);
-        AddLayoutAnchorOverlay(wrapper, L"FluentMedia_DebugPlayerAnchors", {0xD0, 0xFF, 0x50, 0x50});
         try {
             if (g_settings.enableSmoothPositionAnimation) {
                 TransitionCollection transitions;
@@ -9136,9 +8625,7 @@ static Grid BuildPlayerGrid() {
         wrapper.Children().Append(playerButton);
         wrapper.Children().Append(panel);
         ApplyFluentMediaButtonStyle(playerButton);
-        if (!g_settings.showDebugBorders) {
-            playerButton.BorderThickness({1, 1, 1, 1});
-        }
+        playerButton.BorderThickness({1, 1, 1, 1});
         auto isPressed = std::make_shared<bool>(false);
         auto isHovered = std::make_shared<bool>(false);
         auto playerNormalBg = MakeBackgroundBrush();
@@ -9262,52 +8749,6 @@ static void RemovePlayerGridChildren(Panel const& targetPanel) {
         if (fe && fe.Name() == kGridName) {
             try { targetPanel.Children().RemoveAt(i); } catch (...) {}
         }
-    }
-}
-static void RemoveAnchorDebugOverlays(Grid const& targetGrid) {
-    if (!targetGrid) return;
-    for (int i = (int)targetGrid.Children().Size() - 1; i >= 0; --i) {
-        auto fe = targetGrid.Children().GetAt(i).try_as<FrameworkElement>();
-        if (fe && fe.Name() == kAnchorOverlayName) {
-            try { targetGrid.Children().RemoveAt(i); } catch (...) {}
-        }
-    }
-}
-static void UpdateAnchorDebugOverlay(Grid const& targetGrid, FrameworkElement const& targetElem) {
-    if (!targetGrid) return;
-    if (!g_settings.showLayoutAnchors || !targetElem) {
-        RemoveAnchorDebugOverlays(targetGrid);
-        return;
-    }
-    try {
-        Border overlay{nullptr};
-        for (uint32_t i = 0; i < targetGrid.Children().Size(); ++i) {
-            auto fe = targetGrid.Children().GetAt(i).try_as<FrameworkElement>();
-            if (fe && fe.Name() == kAnchorOverlayName) {
-                overlay = fe.try_as<Border>();
-                break;
-            }
-        }
-        if (!overlay) {
-            overlay = Border();
-            overlay.Name(kAnchorOverlayName);
-            overlay.IsHitTestVisible(false);
-            overlay.BorderBrush(MakeBrush({0xE0, 0x00, 0xA2, 0xFF}));
-            overlay.BorderThickness({2,2,2,2});
-            overlay.Background(MakeBrush({0x20, 0x00, 0xA2, 0xFF}));
-            overlay.HorizontalAlignment(HorizontalAlignment::Left);
-            overlay.VerticalAlignment(VerticalAlignment::Top);
-            Canvas::SetZIndex(overlay, 5001);
-            targetGrid.Children().Append(overlay);
-        }
-        auto transform = targetElem.TransformToVisual(targetGrid);
-        auto point = transform.TransformPoint({0, 0});
-        overlay.Width(std::max(1.0, targetElem.ActualWidth()));
-        overlay.Height(std::max(1.0, targetElem.ActualHeight()));
-        overlay.Margin({point.X, point.Y, 0, 0});
-        overlay.Visibility(Visibility::Visible);
-    } catch (...) {
-        RemoveAnchorDebugOverlays(targetGrid);
     }
 }
 static const wchar_t* const kStartButtonNames[] = {
@@ -9558,7 +8999,6 @@ static bool InjectPlayerGridIntoTaskbar(HWND hWnd) {
         auto targetGrid = targetParent.try_as<Grid>();
         bool isTrayPanel = (targetParent.Name() == L"SystemTrayFrameGrid");
         RemovePlayerGridChildren(targetPanel);
-        if (targetGrid) RemoveAnchorDebugOverlays(targetGrid);
         if (isTrayPanel) {
             playerGrid.Margin({(double)g_settings.playerMarginLeft, 0,
                             (double)g_settings.playerMarginRight, 0});
@@ -9654,7 +9094,6 @@ static bool InjectPlayerGridIntoTaskbar(HWND hWnd) {
                             WithPlayerInstance(owner, [&]() {
                             try {
                                 if (!g_playerGrid || !g_trackedElement || g_unloading) return;
-                                UpdateAnchorDebugOverlay(targetGrid, g_trackedElement);
                                 bool isVisible = (g_playerGrid.Visibility() == Visibility::Visible);
                                 double w = isVisible ? g_playerGrid.ActualWidth() : 0.0;
                                 double desiredGap = isVisible ? (w + g_settings.playerMarginLeft + g_settings.playerMarginRight) : 0.0;
@@ -9812,7 +9251,6 @@ static void RemovePlayerGridInstance() {
         }
         auto targetPanel = g_injectionParent.try_as<Panel>();
         auto targetGrid = g_injectionParent.try_as<Grid>();
-        if (targetGrid) RemoveAnchorDebugOverlays(targetGrid);
         RemovePlayerGridChildren(targetPanel);
         if (targetGrid && g_playerColumn >= 0 && g_playerColumn < (int)targetGrid.ColumnDefinitions().Size()) {
             for (uint32_t i = 0; i < targetGrid.Children().Size(); ++i) {
@@ -9842,17 +9280,7 @@ static void RemovePlayerGrid() {
     SetCurrentPlayerInstance(nullptr);
     g_playerInstances.clear();
     g_blurBgCache.Invalidate();
-    g_miniPlayerArtRef            = nullptr;
-    g_miniPlayerTitleRef          = nullptr;
-    g_miniPlayerArtistRef         = nullptr;
-    g_miniPlayerPlayBtnRef        = nullptr;
-    g_miniPlayerPrevBtnRef        = nullptr;
-    g_miniPlayerNextBtnRef        = nullptr;
-    g_miniPlayerShuffleBtnRef     = nullptr;
-    g_miniPlayerRepeatBtnRef      = nullptr;
-    g_miniPlayerSessionListRef    = nullptr;
-    g_miniPlayerSessionListSepRef = nullptr;
-    g_miniPlayerBgOverlayRef      = nullptr;
+    ClearMiniPlayerRefs();
 }
 static bool UpdateTrackText(TextBlock const& tb, std::wstring const& text, bool show, bool scrollEnabled,
                             TextScrollState& scroll, const wchar_t* viewName, const wchar_t* cloneName,
@@ -10005,8 +9433,8 @@ static void RefreshPlayerContentsInstance() {
                 kArtistScrollViewName, kArtistCloneName, ArtistColor(), trackTextChanged);
     if ((g_titleScroll.active || g_artistScroll.active) &&
         (g_settings.enableTitleScrolling || g_settings.enableArtistScrolling)) {
-        if (g_scrollDispatcherTimer && !g_scrollDispatcherTimer.IsEnabled()) {
-            try { g_scrollDispatcherTimer.Start(); } catch (...) {}
+        if (g_scrollTimer.timer && !g_scrollTimer.timer.IsEnabled()) {
+            try { g_scrollTimer.timer.Start(); } catch (...) {}
         }
     }
     try {
@@ -10146,8 +9574,7 @@ static void RefreshPlayerContentsInstance() {
                     overlay.Visibility(showPause ? Visibility::Visible : Visibility::Collapsed);
                     if (auto pauseIcon = overlay.Child().try_as<TextBlock>()) {
                         pauseIcon.Text(GetGlyph(2, true));
-                        bool useFluent = (g_settings.iconStyle == L"fluent_outline" || g_settings.iconStyle == L"fluent_filled");
-                        pauseIcon.FontFamily(Media::FontFamily(useFluent ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets"));
+                        pauseIcon.FontFamily(Media::FontFamily(IsFluentIconStyle(g_settings.iconStyle) ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets"));
                         pauseIcon.FontSize((double)g_settings.pauseOverlayIconSize);
                     }
                     if (showPause) {
@@ -10181,54 +9608,42 @@ static void RefreshPlayerContentsInstance() {
                 }
                 if (!isSameAlbum) {
                     try {
-                        IStream* pRawStream = SHCreateMemStream(
-                            media.thumbnailBytes.data(), static_cast<UINT>(media.thumbnailBytes.size()));
-                        if (pRawStream) {
-                            winrt::com_ptr<IStream> comStream;
-                            comStream.attach(pRawStream);
-                            winrt::Windows::Storage::Streams::IRandomAccessStream rasStream{ nullptr };
-                            ::CreateRandomAccessStreamOverStream(
-                                comStream.get(),
-                                BSOS_DEFAULT,
-                                winrt::guid_of<winrt::Windows::Storage::Streams::IRandomAccessStream>(),
-                                winrt::put_abi(rasStream));
-                            if (rasStream) {
-                                BitmapImage bmp;
-                                if (g_settings.albumArtQuality == L"low") {
-                                    int baseHeight = g_settings.albumArtMaxHeight > 0 ? g_settings.albumArtMaxHeight : 64;
-                                    int decodeHeight = baseHeight / 2;
-                                    if (decodeHeight < 16) decodeHeight = 16;
-                                    bmp.DecodePixelHeight(decodeHeight);
-                                } else if (g_settings.albumArtQuality == L"medium") {
-                                    if (g_settings.albumArtMaxHeight > 0) {
-                                        bmp.DecodePixelHeight(g_settings.albumArtMaxHeight);
+                        if (auto rasStream = StreamFromBytes(media.thumbnailBytes)) {
+                            BitmapImage bmp;
+                            if (g_settings.albumArtQuality == L"low") {
+                                int baseHeight = g_settings.albumArtMaxHeight > 0 ? g_settings.albumArtMaxHeight : 64;
+                                int decodeHeight = baseHeight / 2;
+                                if (decodeHeight < 16) decodeHeight = 16;
+                                bmp.DecodePixelHeight(decodeHeight);
+                            } else if (g_settings.albumArtQuality == L"medium") {
+                                if (g_settings.albumArtMaxHeight > 0) {
+                                    bmp.DecodePixelHeight(g_settings.albumArtMaxHeight);
+                                }
+                            }
+                            bmp.ImageOpened([img](auto const&, auto const&) {
+                                if (g_unloading || g_applyingSettings || !g_playerGrid) return;
+                                try {
+                                    if (auto panelFe = FindChildByName(g_playerGrid, kPanelGridName)) {
+                                        panelFe.UpdateLayout();
                                     }
-                                }
-                                bmp.ImageOpened([img](auto const&, auto const&) {
-                                    if (g_unloading || g_applyingSettings || !g_playerGrid) return;
-                                    try {
-                                        if (auto panelFe = FindChildByName(g_playerGrid, kPanelGridName)) {
-                                            panelFe.UpdateLayout();
-                                        }
-                                        AnimateContentSwap(img, kArtCrossfadeMs);
-                                        g_needsUiUpdate = true;
-                                        if (g_timerUpdateEvent) SetEvent(g_timerUpdateEvent);
-                                    } catch (...) {}
-                                });
-                                img.Source(bmp);
-                                bmp.SetSourceAsync(rasStream);
-                                img.Visibility(Visibility::Visible);
-                                g_cachedAlbumTitle = media.title;
-                                g_cachedAlbumArtist = media.artist;
-                                g_cachedThumbnailBytes = media.thumbnailBytes;
-                                if (auto artContainer = FindChildByName(g_playerGrid, kArtContainerName)) {
-                                    artContainer.Visibility(Visibility::Visible);
-                                }
-                                if (auto parent = VisualTreeHelper::GetParent(img)) {
-                                    if (auto artInnerGrid = parent.try_as<Grid>()) {
-                                        if (auto border = FindEmptyIconBorder(artInnerGrid)) {
-                                            border.Visibility(Visibility::Collapsed);
-                                        }
+                                    AnimateContentSwap(img, kArtCrossfadeMs);
+                                    g_needsUiUpdate = true;
+                                    if (g_timerUpdateEvent) SetEvent(g_timerUpdateEvent);
+                                } catch (...) {}
+                            });
+                            img.Source(bmp);
+                            bmp.SetSourceAsync(rasStream);
+                            img.Visibility(Visibility::Visible);
+                            g_cachedAlbumTitle = media.title;
+                            g_cachedAlbumArtist = media.artist;
+                            g_cachedThumbnailBytes = media.thumbnailBytes;
+                            if (auto artContainer = FindChildByName(g_playerGrid, kArtContainerName)) {
+                                artContainer.Visibility(Visibility::Visible);
+                            }
+                            if (auto parent = VisualTreeHelper::GetParent(img)) {
+                                if (auto artInnerGrid = parent.try_as<Grid>()) {
+                                    if (auto border = FindEmptyIconBorder(artInnerGrid)) {
+                                        border.Visibility(Visibility::Collapsed);
                                     }
                                 }
                             }
@@ -10269,9 +9684,7 @@ static void RefreshPlayerContentsInstance() {
                             } catch (...) {}
                         } else if (UsesBackgroundBrush()) {
                             try {
-                                bgBorder.Background(MakeBackgroundBrush());
-                                bgBorder.Visibility(Visibility::Visible);
-                                bgBorder.Opacity(1.0);
+                                ApplyBrushBackground(bgBorder);
                             } catch (...) {}
                         }
                     }
@@ -10286,9 +9699,7 @@ static void RefreshPlayerContentsInstance() {
                     if (auto bgBorder = bgFe.try_as<Border>()) {
                         try {
                             if (UsesBackgroundBrush()) {
-                                bgBorder.Background(MakeBackgroundBrush());
-                                bgBorder.Visibility(Visibility::Visible);
-                                bgBorder.Opacity(1.0);
+                                ApplyBrushBackground(bgBorder);
                             } else {
                                 bgBorder.Background(nullptr);
                                 bgBorder.Visibility(Visibility::Collapsed);
@@ -10617,17 +10028,17 @@ static void UpdateVisibility() {
             if (g_anyVisualizerVisible && !g_vizCurrentlyVisible) {
                 g_vizCurrentlyVisible = true;
                 StartVizCaptureThread();
-                StartVizTimer();
+                StartTickTimer(g_vizTimer);
             } else if (!g_anyVisualizerVisible && g_vizCurrentlyVisible) {
                 g_vizCurrentlyVisible = false;
-                StopVizTimer();
+                StopTickTimer(g_vizTimer);
                 SpawnTrackedWorker([]() { StopVizCaptureThread(); });
             }
         }
 
         if (g_settings.enableTitleScrolling || g_settings.enableArtistScrolling) {
-            if (g_anyPlayerVisible) StartScrollTimer();
-            else                    StopScrollTimer();
+            if (g_anyPlayerVisible) StartTickTimer(g_scrollTimer);
+            else                    StopTickTimer(g_scrollTimer);
         }
     } catch (...) {}
 }
@@ -10696,21 +10107,21 @@ static void WINAPI TrayUI_StartTaskbar_Hook(void* pThis) {
     g_curTaskbarWnd = hWnd;
     g_cachedAppIconSize = -1;
     g_blurBgCache.Invalidate();
-    StopVizTimer();
-    g_vizDispatcherTimer = nullptr;
-    g_vizDispatcherTimerHasToken = false;
-    StopScrollTimer();
-    g_scrollDispatcherTimer = nullptr;
-    g_scrollDispatcherTimerHasToken = false;
+    StopTickTimer(g_vizTimer);
+    g_vizTimer.timer = nullptr;
+    g_vizTimer.token = {};
+    StopTickTimer(g_scrollTimer);
+    g_scrollTimer.timer = nullptr;
+    g_scrollTimer.token = {};
     if (g_settings.vizEnabled) {
         SpawnTrackedWorker([]() {
             StopVizCaptureThread();
             StartVizCaptureThread();
         });
-        StartVizTimer();
+        StartTickTimer(g_vizTimer);
     }
     if (g_settings.enableTitleScrolling || g_settings.enableArtistScrolling) {
-        StartScrollTimer();
+        StartTickTimer(g_scrollTimer);
     }
     auto xamlRoot = GetTaskbarXamlRoot(hWnd);
     if (!xamlRoot) {
@@ -10799,10 +10210,6 @@ void Wh_ModUninit() {
             }
             RemovePlayerGrid();
             ReleaseSharedBrushes();
-            g_miniPlayerMuteBtnRef        = nullptr;
-            g_miniPlayerVolumeSliderRef   = nullptr;
-            g_miniPlayerVolumeTextRef     = nullptr;
-            g_miniPlayerVolumeRowRef      = nullptr;
             g_fluentMediaButtonStyle      = nullptr;
         }, nullptr);
     else {
