@@ -1624,7 +1624,6 @@ static std::wstring g_lastTitleArtistKey;
 static uint64_t     g_suspectArtSize   = 0;
 static uint64_t     g_suspectArtHash   = 0;
 static bool         g_artDelayPending  = false;
-static bool         g_artNewBrowserSession = false;
 enum class RepeatMode {
     Off = 0,
     All = 1,
@@ -1635,7 +1634,6 @@ static std::atomic<RepeatMode> g_repeatMode{RepeatMode::Off};
 static std::wstring g_cachedAlbumTitle;
 static std::wstring g_cachedAlbumArtist;
 static std::vector<BYTE> g_cachedThumbnailBytes;
-static int g_cachedAppIconSize = -1;
 static std::wstring g_scrollCachedTitle;
 static std::wstring g_scrollCachedArtist;
 struct BlurBgCache {
@@ -1669,6 +1667,7 @@ static bool g_vizPaletteColorsDirty = true;
 [[clang::no_destroy]] static GlobalSystemMediaTransportControlsSessionManager g_sessionMgr     = nullptr;
 [[clang::no_destroy]] static GlobalSystemMediaTransportControlsSession        g_currentSession = nullptr;
 static std::mutex  g_sessionMtx;
+static std::mutex  g_attachMtx;
 static bool g_userSwitchedSession = false;
 static std::atomic<bool> g_forceSessionRefresh{false};
 static std::atomic<int> g_sessionCount{0};
@@ -2799,9 +2798,6 @@ struct TextScrollState {
 };
 static TextScrollState g_titleScroll;
 static TextScrollState g_artistScroll;
-static void ResetScrollState(TextScrollState& s);
-static void FetchMediaPropertiesAsync();
-static void FetchPlaybackInfoAsync();
 static void OnSessionsChanged();
 static void AttachToSession(GlobalSystemMediaTransportControlsSession session);
 static void SwitchMediaSession();
@@ -2925,12 +2921,12 @@ static void ExecuteMediaAction(const std::wstring& action, FrameworkElement cons
         DispatchMediaUpdate();
         SpawnTrackedWorker([]() {
             for (DWORD delay : {300, 1200, 2500}) {
-                Sleep(delay);
-                if (g_unloading) return;
+                for (DWORD waited = 0; waited < delay; waited += 50) {
+                    Sleep(50);
+                    if (g_unloading || g_applyingSettings) return;
+                }
                 g_forceSessionRefresh = true;
                 OnSessionsChanged();
-                FetchPlaybackInfoAsync();
-                FetchMediaPropertiesAsync();
             }
         });
     } else if (action == L"rewind" || action == L"rewind_5s") {
@@ -4383,8 +4379,10 @@ static bool ApplyAudioAppToDisplay(std::wstring& title, std::wstring& artist,
     isPlaying = !entry.muted;
     return true;
 }
+static std::atomic<uint64_t> g_mediaPropsFetchGen{0};
+static std::atomic<uint64_t> g_playbackFetchGen{0};
 static void FetchMediaPropertiesAsync() {
-    SpawnTrackedWorker([]() {
+    SpawnTrackedWorker([gen = ++g_mediaPropsFetchGen]() {
         if (g_unloading) return;
         winrt::init_apartment(winrt::apartment_type::multi_threaded);
         try {
@@ -4444,21 +4442,13 @@ static void FetchMediaPropertiesAsync() {
                         uint64_t prevArtHash  = g_media.thumbnailHash;
                         g_lastTitleArtistKey = titleArtistKey;
 
-                        if (g_artNewBrowserSession) {
-                            if (thumbStreamSize > 0) {
-                                g_suspectArtSize  = thumbStreamSize;
-                                g_suspectArtHash  = thumbHash;
-                                g_artDelayPending = true;
-                                suspectMatch      = true;
-                            }
-                            g_artNewBrowserSession = false;
-                        } else if (trackChanged) {
+                        if (trackChanged) {
                             g_suspectArtSize  = isBrowserSession ? prevArtSize : 0;
                             g_suspectArtHash  = isBrowserSession ? prevArtHash : 0;
                             g_artDelayPending = isBrowserSession && prevArtSize > 0;
                         }
 
-                        if (!suspectMatch && g_artDelayPending && isBrowserSession) {
+                        if (g_artDelayPending && isBrowserSession) {
                             bool matchesSuspect = thumbStreamSize > 0 &&
                                                   thumbStreamSize == g_suspectArtSize &&
                                                   (g_suspectArtHash == 0 || thumbHash == g_suspectArtHash);
@@ -4492,16 +4482,19 @@ static void FetchMediaPropertiesAsync() {
                     std::lock_guard<std::mutex> lk(g_sessionMtx);
                     forceIconRefresh = g_userSwitchedSession;
                 }
-                if (g_settings.showAppIcon && (aumid != appIconKey || appIconBytes.empty() || forceIconRefresh || g_cachedAppIconSize != g_settings.appIconSize)) {
+                if (g_settings.showAppIcon && (aumid != appIconKey || appIconBytes.empty() || forceIconRefresh)) {
                     try {
                         appIconBytes = FetchAppIconBytes(aumid, g_settings.appIconSize);
                         appIconKey   = aumid;
-                        g_cachedAppIconSize = g_settings.appIconSize;
                     } catch (...) {
                     }
                 }
                 {
                     std::lock_guard<std::mutex> lk(g_mediaMtx);
+                    if (gen != g_mediaPropsFetchGen.load()) {
+                        winrt::uninit_apartment();
+                        return;
+                    }
                     try {
                         g_media.title          = std::wstring(props.Title());
                         g_media.artist         = std::wstring(props.Artist());
@@ -4529,7 +4522,7 @@ static void FetchMediaPropertiesAsync() {
     });
 }
 static void FetchPlaybackInfoAsync() {
-    SpawnTrackedWorker([]() {
+    SpawnTrackedWorker([gen = ++g_playbackFetchGen]() {
         if (g_unloading) return;
         winrt::init_apartment(winrt::apartment_type::multi_threaded);
         try {
@@ -4547,6 +4540,10 @@ static void FetchPlaybackInfoAsync() {
                     bool wasPlaying = false;
                     {
                         std::lock_guard<std::mutex> lk(g_mediaMtx);
+                        if (gen != g_playbackFetchGen.load()) {
+                            winrt::uninit_apartment();
+                            return;
+                        }
                         wasPlaying = g_media.isPlaying;
                         g_media.isPlaying = playing;
                     }
@@ -4701,28 +4698,16 @@ static void AttachToSession(GlobalSystemMediaTransportControlsSession session) {
             g_suspectArtSize  = 0;
             g_suspectArtHash  = 0;
             g_artDelayPending = false;
-            g_artNewBrowserSession = false;
         }
         DispatchMediaUpdate();
         return;
     }
-    bool needsReattach = false;
     {
-        std::lock_guard<std::mutex> lk(g_sessionMtx);
-        if (g_currentSession == session) {
-            if (!g_evMediaProps.value || !g_evPlayback.value) {
-                needsReattach = true;
-            } else {
-                goto fetch;
-            }
-        }
-    }
-    (void)needsReattach;
-    {
-        std::wstring appId;
-        try {
-            appId = std::wstring(session.SourceAppUserModelId());
-        } catch (...) {
+        std::lock_guard<std::mutex> attachLock(g_attachMtx);
+        if (g_unloading) return;
+        {
+            std::lock_guard<std::mutex> lk(g_sessionMtx);
+            if (g_currentSession == session && g_evMediaProps.value && g_evPlayback.value) goto fetch;
         }
         DetachCurrentSession();
         {
@@ -4736,26 +4721,22 @@ static void AttachToSession(GlobalSystemMediaTransportControlsSession session) {
             g_suspectArtSize  = 0;
             g_suspectArtHash  = 0;
             g_artDelayPending = false;
-            g_artNewBrowserSession = IsBrowserAumid(appId);
         }
-    }
-    g_cachedAppIconSize = -1;
-    ResetScrollState(g_titleScroll);
-    ResetScrollState(g_artistScroll);
-    {
-        std::lock_guard<std::mutex> lk(g_sessionMtx);
-        g_currentSession = session;
-        try {
-            g_evMediaProps = g_currentSession.MediaPropertiesChanged([](auto const&, auto const&) {
-                if (!g_unloading) FetchMediaPropertiesAsync();
-            });
-            g_evPlayback = g_currentSession.PlaybackInfoChanged([](auto const&, auto const&) {
-                if (!g_unloading) FetchPlaybackInfoAsync();
-            });
-        } catch (...) {
-            Wh_Log(L"AttachToSession: Failed to attach event handlers");
-            g_currentSession = nullptr;
-            return;
+        {
+            std::lock_guard<std::mutex> lk(g_sessionMtx);
+            g_currentSession = session;
+            try {
+                g_evMediaProps = g_currentSession.MediaPropertiesChanged([](auto const&, auto const&) {
+                    if (!g_unloading) FetchMediaPropertiesAsync();
+                });
+                g_evPlayback = g_currentSession.PlaybackInfoChanged([](auto const&, auto const&) {
+                    if (!g_unloading) FetchPlaybackInfoAsync();
+                });
+            } catch (...) {
+                Wh_Log(L"AttachToSession: Failed to attach event handlers");
+                g_currentSession = nullptr;
+                return;
+            }
         }
     }
 fetch:
@@ -4814,7 +4795,10 @@ static DWORD WINAPI MediaThreadProc(void*) {
         WaitForSingleObject(g_mediaStopEvent, INFINITE);
         try { if (g_evSessionsChanged.value) g_sessionMgr.SessionsChanged(g_evSessionsChanged); } catch (...) { Wh_Log(L"MediaThreadProc: Failed to unregister SessionsChanged event"); }
         try { if (g_evCurrentChanged.value)  g_sessionMgr.CurrentSessionChanged(g_evCurrentChanged); } catch (...) { Wh_Log(L"MediaThreadProc: Failed to unregister CurrentSessionChanged event"); }
-        DetachCurrentSession();
+        {
+            std::lock_guard<std::mutex> attachLock(g_attachMtx);
+            DetachCurrentSession();
+        }
         {
             std::lock_guard<std::mutex> lk(g_sessionMtx);
             g_sessionMgr = nullptr;
@@ -5597,7 +5581,6 @@ struct PlayerInstanceState {
     std::wstring          cachedAlbumTitle;
     std::wstring          cachedAlbumArtist;
     std::vector<BYTE>     cachedThumbnailBytes;
-    int                   cachedAppIconSize = -1;
     std::wstring          scrollCachedTitle;
     std::wstring          scrollCachedArtist;
     size_t                cachedPaletteHash = 0;
@@ -5621,7 +5604,6 @@ static void SwapPlayerInstanceState(PlayerInstanceState& s) {
     std::swap(s.cachedAlbumTitle,     g_cachedAlbumTitle);
     std::swap(s.cachedAlbumArtist,    g_cachedAlbumArtist);
     std::swap(s.cachedThumbnailBytes, g_cachedThumbnailBytes);
-    std::swap(s.cachedAppIconSize,    g_cachedAppIconSize);
     std::swap(s.scrollCachedTitle,    g_scrollCachedTitle);
     std::swap(s.scrollCachedArtist,   g_scrollCachedArtist);
     std::swap(s.cachedPaletteHash,    g_cachedPaletteHash);
@@ -9804,11 +9786,6 @@ static void RefreshPlayerContentsInstance() {
     if (g_settings.showAppIcon) {
         if (auto fe = FindChildByName(g_playerGrid, kAppIconImageName))
             if (auto img = fe.try_as<Controls::Image>()) {
-                bool sizeChanged = (g_cachedAppIconSize != g_settings.appIconSize);
-                if (sizeChanged && !media.appIconBytes.empty()) {
-                    g_cachedAppIconSize = g_settings.appIconSize;
-                    FetchMediaPropertiesAsync();
-                }
                 if (!media.appIconBytes.empty()) {
                     try {
                         int iconSz = g_settings.appIconSize;
@@ -10105,7 +10082,6 @@ static void WINAPI TrayUI_StartTaskbar_Hook(void* pThis) {
     g_playerInstances.clear();
     g_taskbarWnd = hWnd;
     g_curTaskbarWnd = hWnd;
-    g_cachedAppIconSize = -1;
     g_blurBgCache.Invalidate();
     StopTickTimer(g_vizTimer);
     g_vizTimer.timer = nullptr;
@@ -10173,7 +10149,6 @@ void Wh_ModAfterInit() {
     StartAudioAppThread();
     if (g_taskbarWnd) {
         RunFromWindowThread(g_taskbarWnd, [](void*) {
-            g_cachedAppIconSize = -1;
             ApplySettings();
             if (PlayerInstanceCount() > 0) {
                 RefreshPlayerContents();
