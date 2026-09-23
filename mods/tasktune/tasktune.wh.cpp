@@ -2128,7 +2128,11 @@ static void RunWhenButtonReady(Button const& btn, std::function<void()> const& a
         if (btn.IsLoaded()) {
             invoke();
         } else {
-            btn.Loaded([invoke](auto const&, auto const&) { invoke(); });
+            auto token = std::make_shared<winrt::event_token>();
+            *token = btn.Loaded([btn, invoke, token](auto const&, auto const&) {
+                btn.Loaded(*token);
+                invoke();
+            });
         }
     } catch (...) {
         invoke();
@@ -6356,9 +6360,10 @@ static Button MakeControlButton(int cmd, bool isPlaying, winrt::Windows::UI::Col
         auto isPressed = std::make_shared<bool>(false);
         auto isHovered = std::make_shared<bool>(false);
 
-        auto updateBtnVisualState = [btn, isPressed, isHovered]() {
+        auto updateBtnVisualState = [weakBtn = winrt::make_weak(btn), isPressed, isHovered]() {
             try {
-                GoToCommonState(btn, IsHoverEffectEnabled(g_settings.mediaButtonsHoverEffectMode), *isPressed, *isHovered);
+                if (auto b = weakBtn.get())
+                    GoToCommonState(b, IsHoverEffectEnabled(g_settings.mediaButtonsHoverEffectMode), *isPressed, *isHovered);
             } catch (...) {
 
             }
@@ -6826,7 +6831,6 @@ static void ApplyMiniPlayerBackground(Border const& overlay,
                 int w = (int)overlay.ActualWidth();
                 int h = (int)overlay.ActualHeight();
                 if (w <= 0 || h <= 0) return;
-                g_blurBgCache.Invalidate();
                 overlay.Background(MakeAlbumBlurBrush(thumbBytes, w, h));
             } catch (...) {}
         };
@@ -6853,6 +6857,7 @@ static std::vector<MiniSessionInfo> g_miniSessionInfos;
 static std::mutex                   g_miniSessionMtx;
 static std::vector<BYTE> g_miniPlayerCachedThumb;
 static std::vector<size_t> g_miniSessionCachedThumbSizes;
+static std::vector<std::wstring> g_miniSessionRowIds;
 static std::atomic<int> g_miniSessionHoveredIndex{-1};
 
 static void LoadMiniPlayerArtBitmap(Controls::Image const& img, std::vector<BYTE> const& thumbBytes) {
@@ -7000,6 +7005,7 @@ static void RefreshMiniPlayerFlyoutUI() {
         if (g_miniPlayerShuffleBtnRef) {
             bool enabled = hasMedia && canShuffle;
             g_miniPlayerShuffleBtnRef.IsEnabled(enabled);
+            g_miniPlayerShuffleBtnRef.Opacity(enabled ? 1.0 : 0.35);
             if (auto icon = g_miniPlayerShuffleBtnRef.Content().try_as<TextBlock>()) {
                 icon.Opacity(enabled && g_shuffleEnabled.load() ? 1.0 : 0.40);
             }
@@ -7008,6 +7014,7 @@ static void RefreshMiniPlayerFlyoutUI() {
         if (g_miniPlayerRepeatBtnRef) {
             bool enabled = hasMedia && canRepeat;
             g_miniPlayerRepeatBtnRef.IsEnabled(enabled);
+            g_miniPlayerRepeatBtnRef.Opacity(enabled ? 1.0 : 0.35);
             if (auto icon = g_miniPlayerRepeatBtnRef.Content().try_as<TextBlock>()) {
                 RepeatMode mode = g_repeatMode.load();
                 icon.Text(mode == RepeatMode::One ? L"\uE8ED" :
@@ -7046,8 +7053,9 @@ static void RefreshMiniPlayerFlyoutUI() {
                 Visibility listVisibility = (noMusic || !hasOtherSessions) ? Visibility::Collapsed : Visibility::Visible;
                 sessionList.Visibility(listVisibility);
 
-                uint32_t childCount = sessionList.Children().Size();
-                if (infos.empty() || childCount != infos.size()) {
+                std::vector<std::wstring> ids;
+                for (auto const& info : infos) ids.push_back(info.id);
+                if (ids != g_miniSessionRowIds) {
                     sessionList.Children().Clear();
                     {
                         std::lock_guard<std::mutex> lk(g_miniSessionMtx);
@@ -7055,18 +7063,19 @@ static void RefreshMiniPlayerFlyoutUI() {
                     }
                     g_miniSessionCachedThumbSizes.clear();
                     g_miniSessionCachedThumbSizes.resize(infos.size(), SIZE_MAX);
-                HWND tw = g_taskbarWnd;
-                for (size_t i = 0; i < infos.size(); ++i) {
-                    bool isCurrent = (infos[i].id == currentId);
-                    auto rowBtn = BuildSessionRowButton(infos[i], isCurrent, tw, static_cast<int>(i));
-                    sessionList.Children().Append(rowBtn);
-                    g_miniSessionCachedThumbSizes[i] = infos[i].thumbBytes.size();
-                }
+                    HWND tw = g_taskbarWnd;
+                    for (size_t i = 0; i < infos.size(); ++i) {
+                        bool isCurrent = (infos[i].id == currentId);
+                        auto rowBtn = BuildSessionRowButton(infos[i], isCurrent, tw, static_cast<int>(i));
+                        sessionList.Children().Append(rowBtn);
+                        g_miniSessionCachedThumbSizes[i] = infos[i].thumbBytes.size();
+                    }
+                    g_miniSessionRowIds = std::move(ids);
             } else {
                 bool isLight = IsSystemLightTheme();
                 int hoveredIdx = g_miniSessionHoveredIndex.load();
-                
-                for (uint32_t i = 0; i < childCount && i < infos.size(); ++i) {
+
+                for (uint32_t i = 0; i < infos.size(); ++i) {
                     bool isCurrent = (infos[i].id == currentId);
                     bool wasCurrent = isCurrent;
                     if (i < g_miniSessionCurrentFlags.size() && g_miniSessionCurrentFlags[i]) {
@@ -7314,8 +7323,8 @@ static Button BuildSessionRowButton(const MiniSessionInfo& info, bool isCurrent,
 
         AnimateSessionPill(pill, isCurrent, false);
         if (isCurrent) {
-            pill.Loaded([pill](auto const&, auto const&) {
-                AnimateSessionPill(pill, true, true);
+            pill.Loaded([](auto const& sender, auto const&) {
+                AnimateSessionPill(sender.template as<winrt::Windows::UI::Xaml::Shapes::Rectangle>(), true, true);
             });
         }
 
@@ -7376,21 +7385,20 @@ static Button BuildSessionRowButton(const MiniSessionInfo& info, bool isCurrent,
         : winrt::Windows::UI::Color{0xFF, 0xFF, 0xFF, 0xFF}));
     rowText.Children().Append(rowTitle);
 
-    if (!info.artist.empty()) {
-        TextBlock rowArtist;
-        rowArtist.Text(winrt::hstring(info.artist));
-        rowArtist.FontSize(10.5);
-        rowArtist.Opacity(0.65);
-        rowArtist.TextTrimming(TextTrimming::CharacterEllipsis);
-        rowArtist.TextWrapping(TextWrapping::NoWrap);
-        rowArtist.HorizontalAlignment(HorizontalAlignment::Left);
-        rowArtist.TextAlignment(TextAlignment::Left);
-        rowArtist.Margin({0, 2, 0, 0});
-        rowArtist.Foreground(MakeBrush(isLight
-            ? winrt::Windows::UI::Color{0xFF, 0x50, 0x50, 0x50}
-            : winrt::Windows::UI::Color{0xFF, 0xFF, 0xFF, 0xFF}));
-        rowText.Children().Append(rowArtist);
-    }
+    TextBlock rowArtist;
+    rowArtist.Text(winrt::hstring(info.artist));
+    rowArtist.Visibility(info.artist.empty() ? Visibility::Collapsed : Visibility::Visible);
+    rowArtist.FontSize(10.5);
+    rowArtist.Opacity(0.65);
+    rowArtist.TextTrimming(TextTrimming::CharacterEllipsis);
+    rowArtist.TextWrapping(TextWrapping::NoWrap);
+    rowArtist.HorizontalAlignment(HorizontalAlignment::Left);
+    rowArtist.TextAlignment(TextAlignment::Left);
+    rowArtist.Margin({0, 2, 0, 0});
+    rowArtist.Foreground(MakeBrush(isLight
+        ? winrt::Windows::UI::Color{0xFF, 0x50, 0x50, 0x50}
+        : winrt::Windows::UI::Color{0xFF, 0xFF, 0xFF, 0xFF}));
+    rowText.Children().Append(rowArtist);
 
     if (g_settings.showMiniPlayerBorder) {
         rowArt.BorderBrush(MakeBrush({0xFF, 0xFF, 0x40, 0x00}));
@@ -7795,9 +7803,10 @@ static Grid BuildMiniPlayerFlyoutContent() {
 
         auto isHovered = std::make_shared<bool>(false);
         auto pressLocked = std::make_shared<bool>(false);
-        auto applyState = [btn, isHovered, pressLocked](bool pressed) {
+        auto applyState = [weakBtn = winrt::make_weak(btn), isHovered, pressLocked](bool pressed) {
             try {
-                GoToCommonState(btn, IsHoverEffectEnabled(g_settings.mediaButtonsHoverEffectMode), pressed, *isHovered);
+                if (auto b = weakBtn.get())
+                    GoToCommonState(b, IsHoverEffectEnabled(g_settings.mediaButtonsHoverEffectMode), pressed, *isHovered);
             } catch (...) {}
         };
         auto updateBtnVisualState = [applyState, pressLocked]() {
@@ -8160,7 +8169,8 @@ static bool ComputeScreenPlacementAnchor(FrameworkElement const& rootContent,
             animAxis = 1;
             animSign = 1.0;
         } else {
-            placement = FPM::Top;
+            placement = FPM::Right;
+            anchorX -= 180.0;
             animAxis = 0;
             animSign = 1.0;
         }
@@ -8349,6 +8359,7 @@ static void ShowMiniPlayerFlyout(FrameworkElement const& target) {
                 winrt::Windows::Foundation::IInspectable const&) mutable
             {
                 try { fallbackTimer.Stop(); } catch (...) {}
+                fallbackTimer.Tick(*fallbackToken);
                 doReveal();
             });
             fallbackTimer.Start();
@@ -8461,6 +8472,7 @@ static void ShowMiniPlayerFlyout(FrameworkElement const& target) {
             g_miniPlayerSessionListSepRef = nullptr;
             g_miniPlayerBgOverlayRef = nullptr;
             g_miniSessionCachedThumbSizes.clear();
+            g_miniSessionRowIds.clear();
             if (g_playerButtonStateUpdater) g_playerButtonStateUpdater();
         });
 
