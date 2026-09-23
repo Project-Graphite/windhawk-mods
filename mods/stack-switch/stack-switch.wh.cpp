@@ -2,7 +2,7 @@
 // @id              stack-switch
 // @name            StackSwitch
 // @description     A taskbar button that starts and stops your whole working set - apps, folders, editors, URLs and terminal commands - with per-item toggles, groups and profiles
-// @version         2.2.0
+// @version         2.3.0
 // @author          Amr
 // @license         MIT
 // @github          https://github.com/AmrMsCLL
