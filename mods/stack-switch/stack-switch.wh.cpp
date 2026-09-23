@@ -737,12 +737,14 @@ class TaskQueue {
 
    private:
     void Run() {
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
         for (;;) {
             std::function<void()> task;
             {
                 std::unique_lock<std::mutex> lock(m_mutex);
                 m_condition.wait(lock, [this] { return m_stop || !m_tasks.empty(); });
                 if (m_stop) {
+                    CoUninitialize();
                     return;
                 }
                 task = std::move(m_tasks.front());
@@ -912,7 +914,9 @@ static std::wstring QuoteIfNeeded(std::wstring_view text) {
         text.front() == L'"') {
         return std::wstring(text);
     }
-    return L"\"" + std::wstring(text) + L"\"";
+    std::wstring quoted(text);
+    quoted.append(quoted.size() - 1 - quoted.find_last_not_of(L'\\'), L'\\');
+    return L"\"" + quoted + L"\"";
 }
 
 static std::wstring FileNameOf(std::wstring_view path) {
@@ -1370,10 +1374,13 @@ static bool WrapInWindowsTerminal(const StackItem& item,
     std::wstring args;
     if (ownWindow) {
         args += L"-w new ";
-    } else if (!windowId.empty() && ToLower(windowId) != L"new") {
+    } else if (!windowId.empty()) {
         args += L"-w " + QuoteIfNeeded(windowId) + L" ";
     }
     args += L"new-tab --title " + QuoteIfNeeded(item.name);
+    if (ownWindow) {
+        args += L" --suppressApplicationTitle";
+    }
     if (!workingDir.empty()) {
         args += L" -d " + QuoteIfNeeded(workingDir);
     }
@@ -1403,18 +1410,38 @@ static bool WindowBelongsToProcess(HWND window, PCWSTR exeName) {
     return matches;
 }
 
-static void ApplyTerminalWindowState(const std::wstring& title, int showCommand) {
+static bool IsTerminalWindow(HWND window) {
+    return IsWindowVisible(window) && !GetWindow(window, GW_OWNER) &&
+           WindowBelongsToProcess(window, L"WindowsTerminal.exe");
+}
+
+static std::unordered_set<HWND> TerminalWindows() {
+    std::unordered_set<HWND> windows;
+    EnumWindows(
+        [](HWND window, LPARAM param) CALLBACK -> BOOL {
+            if (IsTerminalWindow(window)) {
+                reinterpret_cast<std::unordered_set<HWND>*>(param)->insert(window);
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&windows));
+    return windows;
+}
+
+static void ApplyTerminalWindowState(const std::wstring& title,
+                                     int showCommand,
+                                     const std::unordered_set<HWND>& existing) {
     struct EnumContext {
         const std::wstring* title;
+        const std::unordered_set<HWND>* existing;
         HWND found;
     };
     for (int attempt = 0; attempt < 24 && !g_unloading; attempt++) {
-        EnumContext context{&title, nullptr};
+        EnumContext context{&title, &existing, nullptr};
         EnumWindows(
             [](HWND window, LPARAM param) CALLBACK -> BOOL {
                 auto* context = reinterpret_cast<EnumContext*>(param);
-                if (!IsWindowVisible(window) || GetWindow(window, GW_OWNER) ||
-                    !WindowBelongsToProcess(window, L"WindowsTerminal.exe")) {
+                if (context->existing->count(window) || !IsTerminalWindow(window)) {
                     return TRUE;
                 }
                 wchar_t text[512] = {};
@@ -3050,6 +3077,10 @@ static void RunLaunchSequence(const std::vector<int>& indices) {
             continue;
         }
 
+        std::unordered_set<HWND> terminalWindows;
+        if (!plan.adjustWindowTitle.empty()) {
+            terminalWindows = TerminalWindows();
+        }
         HANDLE processHandle = nullptr;
         if (!LaunchPlanNow(plan, item.waitForExit ? &processHandle : nullptr)) {
             SetStatusText(L"Failed to start " + item.name);
@@ -3060,7 +3091,8 @@ static void RunLaunchSequence(const std::vector<int>& indices) {
             ApplyTerminalWindowState(plan.adjustWindowTitle,
                                      item.windowState == WindowStateOption::Minimized
                                          ? SW_MINIMIZE
-                                         : SW_MAXIMIZE);
+                                         : SW_MAXIMIZE,
+                                     terminalWindows);
         }
         if (!process.empty()) {
             running[process];
