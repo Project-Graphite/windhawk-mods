@@ -6,6 +6,7 @@
 // @author          AmrMsCLL
 // @github          https://github.com/AmrMsCLL
 // @license         MIT
+// @homepage        https://github.com/Project-Graphite/windhawk-mods
 // @architecture    x86-64
 // @include         explorer.exe
 // @compilerOptions -lole32 -loleaut32 -lruntimeobject -luuid -luser32 -lwindowsapp -lshell32 -lgdi32 -lshlwapi -lwindowscodecs -lshcore -lksuser -lversion
@@ -28,7 +29,7 @@ TaskTune puts media information and controls directly in the Windows 11 taskbar.
 - Compact mini-player with media-session selection
 - Solid, gradient, Acrylic, and blurred-album-art backgrounds
 - WASAPI spectrum visualizer with multiple shapes, color modes, and EQ presets
-- Automatic hiding when no media exists, the taskbar is idle, or an app is full-screen
+- Automatic hiding when no media exists, playback stays paused for a set time, or an app is full-screen
 - Configurable mouse clicks, double-clicks, middle clicks, and wheel actions
 - Accessible control names and tooltips
 
@@ -41,16 +42,13 @@ TaskTune puts media information and controls directly in the Windows 11 taskbar.
 
 After installing the mod, open **Settings** and choose the player position. The default layout shows album art, title, artist, and Previous/Play/Next controls in the system tray area.
 
-Double-click anywhere on the player to open Spotify. Change **App opened by double-click** to launch another app. Main settings control layout and playback, Appearance controls styling, Behavior controls input and hiding, and Audio Apps controls audio-only detection and volume.
+Double-click anywhere on the player to open Spotify. Change **App opened by double-click** to launch another app.
 
 Some media applications expose only part of the Windows media-control API. TaskTune disables or hides unsupported actions according to the **Hide unsupported buttons** setting.
 
 ## Notes
 
 TaskTune runs inside `explorer.exe`. If an experimental layout or another taskbar customization causes a conflict, disable TaskTune from Windhawk and restart Explorer before changing settings.
-
-Created and maintained by [AmrMsCLL](https://github.com/AmrMsCLL) as part of Project Graphite.
-Licensed under the MIT License.
 */
 // ==/WindhawkModReadme==
 
@@ -109,7 +107,7 @@ Licensed under the MIT License.
     - fullHeightHitArea: true
       $name: Full-height invisible hit area
       $description: Extends clicks and hover to the full taskbar height.
-    $name: Media player
+    $name: Media Player
 
   - AlbumArtSetting:
     - showAlbumArt: true
@@ -169,7 +167,7 @@ Licensed under the MIT License.
     - noMediaArtistText: ""
       $name: Artist text when nothing is playing
       $description: Leave blank to hide the idle artist.
-    $name: Text area
+    $name: Text Area
 
   - MediaButtonsSettings:
     - showMediaButtons: true
@@ -258,7 +256,7 @@ Licensed under the MIT License.
       - "album_art_blur": "Blurred album cover"
     - solidColor: "35 35 35"
       $name: Background color (RGB)
-      $description: "Use -1 for system contrast, -2 for album art, or light$dark for themes."
+      $description: "Use -1 -1 -1 for the Windows accent color, -2 -2 -2 for album art, or light$dark for themes."
     - solidColor2: "35 35 35"
       $name: Gradient color 1 (RGB)
     - gradientColor2: "128 128 128"
@@ -282,15 +280,15 @@ Licensed under the MIT License.
       $name: Player hover effect
       $options:
       - "auto":  "Auto (theme changes automatically)"
-      - "black": "Black"
-      - "white": "White"
+      - "black": "Dark taskbar style"
+      - "white": "Light taskbar style"
       - "off":   "Disable hover effect"
     - enableMediaButtonsHoverEffect: "auto"
       $name: Media buttons hover effect
       $options:
       - "auto":  "Auto (theme changes automatically)"
-      - "black": "Black"
-      - "white": "White"
+      - "black": "Dark taskbar style"
+      - "white": "Light taskbar style"
       - "off":   "Disable hover effect"
     - enableHoverAnimation: true
       $name: Smooth hover animation
@@ -314,7 +312,7 @@ Licensed under the MIT License.
       $description: Use one value for all corners or four values for each corner.
     - buttonColor: "0 0 0$255 255 255"
       $name: Media buttons icons color (RGB)
-      $description: "Use -1 for system contrast, -2 for album art, or light$dark for themes."
+      $description: "Use -1 -1 -1 for the Windows accent color, -2 -2 -2 for album art, or light$dark for themes."
     - buttonColorOpacity: 100
       $name: Media buttons icons opacity (0-100)
     $name: Media Buttons Style
@@ -322,7 +320,7 @@ Licensed under the MIT License.
   - TitleTextStyleSettings:
     - titleColor: "0 0 0$255 255 255"
       $name: Title color (RGB)
-      $description: "Use -1 for system contrast, -2 for album art, or light$dark for themes."
+      $description: "Use -1 -1 -1 for the Windows accent color, -2 -2 -2 for album art, or light$dark for themes."
     - titleColorOpacity: 100
       $name: Title opacity (0-100)
     - titleFont: segoe_ui_variable
@@ -378,7 +376,7 @@ Licensed under the MIT License.
   - ArtistTextStyleSettings:
     - artistColor: "0 0 0$255 255 255"
       $name: Artist color (RGB)
-      $description: "Use -1 for system contrast, -2 for album art, or light$dark for themes."
+      $description: "Use -1 -1 -1 for the Windows accent color, -2 -2 -2 for album art, or light$dark for themes."
     - artistColorOpacity: 80
       $name: Artist opacity (0-100)
     - artistFont: segoe_ui_variable
@@ -450,7 +448,7 @@ Licensed under the MIT License.
       - "segoe_mdl2":   "Segoe MDL2 Assets"
     - emptyIconColor: "140 140 140"
       $name: Icon color (RGB)
-      $description: "Use -1 for system accent, -2 for album art, or light$dark for themes."
+      $description: "Use -1 -1 -1 for the Windows accent color, -2 -2 -2 for album art, or light$dark for themes."
     - emptyIconOpacity: 100
       $name: Icon opacity (0-100)
     - albumArtQuality: "medium"
@@ -494,7 +492,7 @@ Licensed under the MIT License.
       - "acrylic": Acrylic
     - vizColor: "0 0 0$255 255 255"
       $name: Bar color (RGB)
-      $description: "For Solid/Acrylic. Use -1 for accent, -2 for album art, or light$dark."
+      $description: "For Solid/Acrylic. Use -1 -1 -1 for accent, -2 -2 -2 for album art, or light$dark."
     - vizColor1: "30 215 96"
       $name: Gradient color 1 (RGB)
     - vizColor2: "0 180 255"
@@ -647,7 +645,7 @@ Licensed under the MIT License.
       - - object: album_art
         - click: mouse_wheel
         - action: switch_sessions
-    $name: Mouse wheel Actions
+    $name: Mouse Wheel Actions
   - hideWhenNoMedia: true
     $name: Hide when no media is playing
   - hideFullscreen: true
@@ -685,7 +683,7 @@ Licensed under the MIT License.
   - enableSmoothPositionAnimation: true
     $name: Enable smooth animations
     $description: Animates movement, visibility, album art, and text changes.
-  $name: Animation Settings media player
+  $name: Animation Settings
 
 - ContextMenuSettings:
   - contextMenuItems: [switch_sessions, open_app]
@@ -723,7 +721,7 @@ Licensed under the MIT License.
     - "mdl2_filled":      "Segoe MDL2 Assets (Filled)"
   - contextMenuIconColor: "0 0 0$255 255 255"
     $name: Context menu icons color (RGB)
-    $description: "Use -1 for system contrast, -2 for album art, light$dark for themes, or blank to inherit."
+    $description: "Use -1 -1 -1 for the Windows accent color, -2 -2 -2 for album art, light$dark for themes, or blank to inherit."
   - contextMenuIconOpacity: 100
     $name: Context menu icons opacity (0-100)
   $name: Context Menu Settings

@@ -13,7 +13,7 @@ taskbar. It uses Windows media sessions for playback control and can fall back t
 - Double-click anywhere on the player to open Spotify or another configured app
 - Solid, gradient, Acrylic, and blurred album-art backgrounds
 - Optional WASAPI spectrum visualizer with configurable shapes, colors, and EQ presets
-- Automatic hiding when media is unavailable, the taskbar is idle, or an app is full-screen
+- Automatic hiding when media is unavailable, playback stays paused for a set time, or an app is full-screen
 - Extensive sizing, spacing, color, typography, animation, and empty-state settings
 
 The overview and usage guide appear on Windhawk's **Details** tab. The complete configuration is available on the **Settings** tab after installation.
@@ -39,6 +39,7 @@ The overview and usage guide appear on Windhawk's **Details** tab. The complete 
 - **Behavior:** clicks, wheel actions, hiding, and the double-click app command.
 - **Audio Apps:** audio-only detection, exclusions, and per-app volume.
 - **Player Menu:** menu placement, animation, background, and session list.
+- **Animation:** smooth movement, visibility, album-art and text transitions.
 - **Context Menu:** items, order, icons, and repeat/shuffle behavior.
 
 The default double-click command is `spotify:`. Replace it with another URI, executable, full path,
