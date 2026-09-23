@@ -1565,7 +1565,6 @@ static int              g_playerColumn    = -1;
 static std::atomic<bool> g_needsUiUpdate{false};
 [[clang::no_destroy]] static FrameworkElement g_trackedElement = nullptr;
 static Thickness g_trackedElementOriginalMargin{};
-static bool g_hasTrackedElementOriginalMargin = false;
 static std::wstring g_trackPosition = L"";
 static winrt::event_token g_layoutUpdateToken{};
 using CTaskBand_GetTaskbarHost_t  = void*(WINAPI*)(void*, void*);
@@ -2520,6 +2519,10 @@ static Brush MakeAlbumBlurBrush(const std::vector<BYTE>& thumbBytes,
     } catch (...) {}
     return MakeBrush({0x00, 0x00, 0x00, 0x00});
 }
+static bool UsesBackgroundBrush() {
+    auto& t = g_settings.backgroundType;
+    return t == L"solid" || t == L"gradient" || t == L"acrylic" || t == L"mica" || t == L"mica_alt";
+}
 static Brush MakeBackgroundBrush() {
     auto& t = g_settings.backgroundType;
     BYTE opacity = (BYTE)((g_settings.solidOpacity / 100.0) * 255);
@@ -2623,6 +2626,8 @@ static constexpr wchar_t kSwitchSessionsBtnName[] = L"FluentMedia_SwitchSessions
 static constexpr wchar_t kControlsPanelName[] = L"FluentMedia_Controls";
 static constexpr wchar_t kVizContainerName[]  = L"FluentMedia_Visualizer";
 static constexpr wchar_t kArtContainerName[]  = L"FluentMedia_ArtContainer";
+static constexpr wchar_t kBackgroundName[]    = L"FluentMedia_Background";
+static constexpr wchar_t kPauseOverlayName[]  = L"PauseIconOverlay";
 static int  g_idleSeconds  = 0;
 static int  g_idleTicks    = 0;
 static std::atomic<bool> g_hiddenByIdle{false};
@@ -5577,7 +5582,6 @@ struct PlayerInstanceState {
     std::function<void()> buttonStateUpdater;
     FrameworkElement      trackedElement{nullptr};
     Thickness             trackedElementOriginalMargin{};
-    bool                  hasTrackedElementOriginalMargin = false;
     std::wstring          trackPosition;
     winrt::event_token    layoutUpdateToken{};
     TextScrollState       titleScroll;
@@ -5602,7 +5606,6 @@ static void SwapPlayerInstanceState(PlayerInstanceState& s) {
     std::swap(s.buttonStateUpdater, g_playerButtonStateUpdater);
     std::swap(s.trackedElement,  g_trackedElement);
     std::swap(s.trackedElementOriginalMargin, g_trackedElementOriginalMargin);
-    std::swap(s.hasTrackedElementOriginalMargin, g_hasTrackedElementOriginalMargin);
     std::swap(s.trackPosition,   g_trackPosition);
     std::swap(s.layoutUpdateToken, g_layoutUpdateToken);
     std::swap(s.titleScroll,     g_titleScroll);
@@ -5972,10 +5975,9 @@ static void RefreshThemeColorsInstance() {
         auto textClr = TextColor();
         auto artistClr = ArtistColor();
         auto buttonClr = ButtonColor();
-        if (auto bgFe = FindChildByName(g_playerGrid, L"FluentMedia_Background")) {
+        if (auto bgFe = FindChildByName(g_playerGrid, kBackgroundName)) {
             if (auto bgBorder = bgFe.try_as<Border>()) {
-                auto& bgType = g_settings.backgroundType;
-                if (bgType == L"album_art_blur") {
+                if (g_settings.backgroundType == L"album_art_blur") {
                     if (!g_cachedThumbnailBytes.empty()) {
                         int w = (int)bgBorder.ActualWidth();
                         int h = (int)bgBorder.ActualHeight();
@@ -5990,7 +5992,7 @@ static void RefreshThemeColorsInstance() {
                     }
                     bgBorder.Visibility(Visibility::Visible);
                     bgBorder.Opacity(g_settings.blurOpacity / 100.0);
-                } else if (bgType == L"solid" || bgType == L"gradient" || bgType == L"acrylic" || bgType == L"mica" || bgType == L"mica_alt") {
+                } else if (UsesBackgroundBrush()) {
                     bgBorder.Background(MakeBackgroundBrush());
                     bgBorder.Visibility(Visibility::Visible);
                     bgBorder.Opacity(1.0);
@@ -6283,6 +6285,15 @@ static TextBlock MakeIconText(const wchar_t* glyph, double sz, winrt::Windows::U
     }
     return t;
 }
+static bool IsPointerInside(PointerRoutedEventArgs const& e, UIElement const& elem) {
+    try {
+        auto pos = e.GetCurrentPoint(elem).Position();
+        auto size = elem.RenderSize();
+        return pos.X >= 0 && pos.X <= size.Width && pos.Y >= 0 && pos.Y <= size.Height;
+    } catch (...) {
+        return false;
+    }
+}
 static Button MakeControlButton(int cmd, bool isPlaying, winrt::Windows::UI::Color iconColor) {
     Button btn;
     try {
@@ -6389,11 +6400,7 @@ static Button MakeControlButton(int cmd, bool isPlaying, winrt::Windows::UI::Col
 
             if (auto elem = sender.template try_as<UIElement>()) {
                 elem.ReleasePointerCapture(e.Pointer());
-                try {
-                    auto bounds = elem.RenderSize();
-                    auto pos = e.GetCurrentPoint(elem).Position();
-                    actuallyHovered = (pos.X >= 0 && pos.X <= bounds.Width && pos.Y >= 0 && pos.Y <= bounds.Height);
-                } catch (...) {}
+                actuallyHovered = IsPointerInside(e, elem);
             }
             *isPressed = false;
             *isHovered = actuallyHovered;
@@ -6409,11 +6416,7 @@ static Button MakeControlButton(int cmd, bool isPlaying, winrt::Windows::UI::Col
 
         btn.PointerCaptureLost([isPressed, isHovered, updateBtnVisualState](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) {
             if (auto elem = sender.template try_as<UIElement>()) {
-                try {
-                    auto bounds = elem.RenderSize();
-                    auto pos = e.GetCurrentPoint(elem).Position();
-                    *isHovered = (pos.X >= 0 && pos.X <= bounds.Width && pos.Y >= 0 && pos.Y <= bounds.Height);
-                } catch (...) { *isHovered = false; }
+                *isHovered = IsPointerInside(e, elem);
             }
             updateBtnVisualState();
         });
@@ -6759,11 +6762,9 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
                     g_playerButtonStateUpdater();
                 }
                 if (g_playerGrid && !g_unloading && !g_applyingSettings) {
-                    if (auto bgFe = FindChildByName(g_playerGrid, L"FluentMedia_Background")) {
+                    if (auto bgFe = FindChildByName(g_playerGrid, kBackgroundName)) {
                         if (auto bgBorder = bgFe.try_as<Border>()) {
-                            auto& bgType = g_settings.backgroundType;
-                            if (bgType == L"acrylic" || bgType == L"solid" || bgType == L"gradient" || 
-                                bgType == L"mica" || bgType == L"mica_alt") {
+                            if (UsesBackgroundBrush()) {
                                 bgBorder.Background(MakeBackgroundBrush());
                                 bgBorder.Visibility(Visibility::Visible);
                                 bgBorder.Opacity(1.0);
@@ -8542,19 +8543,97 @@ static void ShowMiniPlayerFlyout(FrameworkElement const& target) {
     }
 }
 
+struct DoubleClickTracker {
+    ULONGLONG time = 0;
+    winrt::Windows::UI::Input::PointerUpdateKind kind = winrt::Windows::UI::Input::PointerUpdateKind::Other;
+    winrt::Windows::Foundation::Point pos{};
+    bool Register(winrt::Windows::UI::Input::PointerUpdateKind k, winrt::Windows::Foundation::Point p) {
+        ULONGLONG now = GetTickCount64();
+        bool isDouble = k == kind &&
+                        now - time <= GetDoubleClickTime() &&
+                        std::abs(p.X - pos.X) <= GetSystemMetrics(SM_CXDOUBLECLK) / 2.0 &&
+                        std::abs(p.Y - pos.Y) <= GetSystemMetrics(SM_CYDOUBLECLK) / 2.0;
+        time = isDouble ? 0 : now;
+        kind = k;
+        pos = p;
+        return isDouble;
+    }
+};
+static void HandleWheelAction(std::wstring const& action, PointerRoutedEventArgs const& e) {
+    if (g_unloading) return;
+    if (action == L"none") return;
+    int delta = e.GetCurrentPoint(nullptr).Properties().MouseWheelDelta();
+    if (action == L"switch_tracks") {
+        if (delta > 0) SendMediaCommandAsync(1);
+        else if (delta < 0) SendMediaCommandAsync(3);
+        DispatchMediaUpdate();
+    } else if (action == L"switch_tracks_inverted") {
+        if (delta > 0) SendMediaCommandAsync(3);
+        else if (delta < 0) SendMediaCommandAsync(1);
+        DispatchMediaUpdate();
+    } else if (action == L"switch_sessions") {
+        if (delta != 0) SwitchMediaSession();
+    } else if (action == L"system_sound") {
+        SpawnTrackedWorker([delta]() { ChangeSystemVolume(delta > 0); });
+    } else if (action == L"app_sound" || action == L"app_sound_inverted") {
+        bool up = (action == L"app_sound") ? (delta > 0) : (delta < 0);
+        SendMediaCommandAsync(up ? kCmdVolumeUp : kCmdVolumeDown);
+    }
+    e.Handled(true);
+}
+static TextBlock MakeTrackTextBlock(const wchar_t* name, int size, std::wstring const& font,
+                                    std::wstring const& weight, std::wstring const& style,
+                                    int spacing, winrt::Windows::UI::Color color) {
+    TextBlock block;
+    block.Name(name);
+    block.FontSize((double)size);
+    if (!font.empty()) {
+        try {
+            block.FontFamily(Media::FontFamily(font));
+        } catch (...) {}
+    }
+    if (!weight.empty()) {
+        try {
+            block.FontWeight(Markup::XamlBindingHelper::ConvertValue(
+                winrt::Windows::UI::Xaml::Interop::TypeName{
+                    winrt::hstring{L"Windows.UI.Text.FontWeight"},
+                    winrt::Windows::UI::Xaml::Interop::TypeKind::Metadata
+                },
+                winrt::box_value(weight))
+                .as<winrt::Windows::UI::Text::FontWeight>());
+        } catch (...) {}
+    }
+    if (!style.empty()) {
+        try {
+            block.FontStyle(Markup::XamlBindingHelper::ConvertValue(
+                winrt::Windows::UI::Xaml::Interop::TypeName{
+                    winrt::hstring{L"Windows.UI.Text.FontStyle"},
+                    winrt::Windows::UI::Xaml::Interop::TypeKind::Metadata
+                },
+                winrt::box_value(style))
+                .as<winrt::Windows::UI::Text::FontStyle>());
+        } catch (...) {}
+    }
+    if (spacing != 0) {
+        block.CharacterSpacing(spacing);
+    }
+    block.Foreground(MakeBrush(color));
+    block.TextWrapping(TextWrapping::NoWrap);
+    block.TextTrimming(TextTrimming::CharacterEllipsis);
+    block.TextAlignment(g_settings.mirrorLayout ? TextAlignment::Right : TextAlignment::Left);
+    return block;
+}
 static Grid BuildPlayerGrid() {
     try {
         g_vizBars->clear();
         g_vizBrushes->clear();
-        auto textClr = TextColor();
-        auto artistClr = ArtistColor();
         auto buttonClr = ButtonColor();
         auto bgBrush = MakeBackgroundBrush();
         double phMin = (double)g_settings.playerMinHeight;
         double phMax = (double)g_settings.playerMaxHeight;
         bool hasTextOrButtons = g_settings.showTrackTitle || g_settings.showTrackArtist || (g_settings.showMediaButtons && !g_mediaButtons.empty());
         Border backgroundBorder;
-        backgroundBorder.Name(L"FluentMedia_Background");
+        backgroundBorder.Name(kBackgroundName);
         backgroundBorder.CornerRadius({
             g_settings.cornerRadiusTL,
             g_settings.cornerRadiusTR,
@@ -8731,33 +8810,15 @@ static Grid BuildPlayerGrid() {
                 appIconImage.Stretch(Stretch::UniformToFill);
                 appIconImage.Visibility(Visibility::Collapsed);
                 const auto& corner = g_settings.appIconCorner;
-                double margin_right  = 0, margin_bottom = 0;
-                double margin_left   = 0, margin_top    = 0;
-                HorizontalAlignment ha = HorizontalAlignment::Right;
-                VerticalAlignment   va = VerticalAlignment::Bottom;
-                if (corner == L"top_left") {
-                    ha = HorizontalAlignment::Left;
-                    va = VerticalAlignment::Top;
-                } else if (corner == L"top_right") {
-                    ha = HorizontalAlignment::Right;
-                    va = VerticalAlignment::Top;
-                } else if (corner == L"bottom_left") {
-                    ha = HorizontalAlignment::Left;
-                    va = VerticalAlignment::Bottom;
-                } else {
-                    ha = HorizontalAlignment::Right;
-                    va = VerticalAlignment::Bottom;
-                }
-                appIconImage.HorizontalAlignment(ha);
-                appIconImage.VerticalAlignment(va);
-                appIconImage.Margin({margin_left, margin_top, margin_right, margin_bottom});
+                appIconImage.HorizontalAlignment(corner == L"top_left" || corner == L"bottom_left" ? HorizontalAlignment::Left : HorizontalAlignment::Right);
+                appIconImage.VerticalAlignment(corner == L"top_left" || corner == L"top_right" ? VerticalAlignment::Top : VerticalAlignment::Bottom);
                 iconOverlay.Children().Append(appIconImage);
                 Canvas::SetZIndex(iconOverlay, 15);
                 artContainer.Children().Append(iconOverlay);
             }
             if (g_settings.showPauseOverlay) {
                 Border pauseBorder;
-                pauseBorder.Name(L"PauseIconOverlay");
+                pauseBorder.Name(kPauseOverlayName);
                 pauseBorder.HorizontalAlignment(HorizontalAlignment::Stretch);
                 pauseBorder.VerticalAlignment(VerticalAlignment::Stretch);
                 BYTE opacity = (BYTE)((g_settings.pauseOverlayOpacity * 255) / 100);
@@ -8765,9 +8826,6 @@ static Grid BuildPlayerGrid() {
                 pauseBorder.Visibility(Visibility::Collapsed);
                 Canvas::SetZIndex(pauseBorder, 8);
                 TextBlock pauseIcon;
-                pauseIcon.Text(L"");
-                pauseIcon.FontFamily(Media::FontFamily(L"Segoe MDL2 Assets"));
-                pauseIcon.FontSize((double)g_settings.pauseOverlayIconSize);
                 pauseIcon.Foreground(MakeBrush({0xFF, 0xFF, 0xFF, 0xFF}));
                 pauseIcon.HorizontalAlignment(HorizontalAlignment::Center);
                 pauseIcon.VerticalAlignment(VerticalAlignment::Center);
@@ -8783,39 +8841,20 @@ static Grid BuildPlayerGrid() {
                     }
                     e.Handled(true);
                 });
-                auto artDblClickLastTime = std::make_shared<ULONGLONG>(0);
-                auto artDblClickLastKind = std::make_shared<winrt::Windows::UI::Input::PointerUpdateKind>(
-                    winrt::Windows::UI::Input::PointerUpdateKind::Other);
-                auto artDblClickLastPosition = std::make_shared<winrt::Windows::Foundation::Point>();
+                auto artDoubleClick = std::make_shared<DoubleClickTracker>();
                 auto pendingAlbumArtClick = MakePendingPointerAction();
-                artContainer.PointerReleased([artDblClickLastTime, artDblClickLastKind, artDblClickLastPosition, pendingAlbumArtClick](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) mutable {
+                artContainer.PointerReleased([artDoubleClick, pendingAlbumArtClick](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) mutable {
                     bool actuallyHovered = false;
-                    winrt::Windows::Foundation::Point releasePosition{};
                     if (auto elem = sender.template try_as<UIElement>()) {
                         elem.ReleasePointerCapture(e.Pointer());
-                        try {
-                            auto pointerPoint = e.GetCurrentPoint(elem);
-                            auto bounds = elem.RenderSize();
-                            auto pos = pointerPoint.Position();
-                            releasePosition = pos;
-                            actuallyHovered = (pos.X >= 0 && pos.X <= bounds.Width && pos.Y >= 0 && pos.Y <= bounds.Height);
-                        } catch (...) { actuallyHovered = false; }
+                        actuallyHovered = IsPointerInside(e, elem);
                     }
                     if (g_unloading) return;
                     if (actuallyHovered) {
-                        auto kind = e.GetCurrentPoint(nullptr).Properties().PointerUpdateKind();
+                        auto point = e.GetCurrentPoint(nullptr);
+                        auto kind = point.Properties().PointerUpdateKind();
                         auto fe = sender.template try_as<FrameworkElement>();
-                        ULONGLONG now = GetTickCount64();
-                        UINT dblClickMs = GetDoubleClickTime();
-                        bool isDouble = (kind == *artDblClickLastKind) &&
-                                        (now - *artDblClickLastTime) <= dblClickMs &&
-                                        std::abs(releasePosition.X - artDblClickLastPosition->X) <=
-                                            GetSystemMetrics(SM_CXDOUBLECLK) / 2.0 &&
-                                        std::abs(releasePosition.Y - artDblClickLastPosition->Y) <=
-                                            GetSystemMetrics(SM_CYDOUBLECLK) / 2.0;
-                        *artDblClickLastTime = isDouble ? 0 : now;
-                        *artDblClickLastKind = kind;
-                        *artDblClickLastPosition = releasePosition;
+                        bool isDouble = artDoubleClick->Register(kind, point.Position());
                         using Kind = winrt::Windows::UI::Input::PointerUpdateKind;
                         if (kind == Kind::LeftButtonReleased) {
                             RunPointerAction(pendingAlbumArtClick, fe, g_settings.albumArtLeftClick,
@@ -8833,32 +8872,10 @@ static Grid BuildPlayerGrid() {
                 artContainer.Unloaded([pendingAlbumArtClick](auto const&, auto const&) {
                     CancelPendingPointerAction(pendingAlbumArtClick);
                 });
-                artContainer.PointerWheelChanged([](winrt::Windows::Foundation::IInspectable const&, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) {
-                    if (g_unloading) return;
-                    auto action = g_settings.albumArtWheelAction;
-                    if (action == L"none") return;
-                    auto props = e.GetCurrentPoint(nullptr).Properties();
-                    int delta = props.MouseWheelDelta();
-                    if (action == L"switch_tracks") {
-                        if (delta > 0) SendMediaCommandAsync(1);
-                        else if (delta < 0) SendMediaCommandAsync(3);
-                        DispatchMediaUpdate();
-                    } else if (action == L"switch_tracks_inverted") {
-                        if (delta > 0) SendMediaCommandAsync(3);
-                        else if (delta < 0) SendMediaCommandAsync(1);
-                        DispatchMediaUpdate();
-                    } else if (action == L"switch_sessions") {
-                        if (delta != 0) SwitchMediaSession();
-                    } else if (action == L"system_sound") {
-                        SpawnTrackedWorker([delta]() { ChangeSystemVolume(delta > 0); });
-                    } else if (action == L"app_sound" || action == L"app_sound_inverted") {
-                        bool up = (action == L"app_sound") ? (delta > 0) : (delta < 0);
-                        SendMediaCommandAsync(up ? kCmdVolumeUp : kCmdVolumeDown);
-                    }
-                    e.Handled(true);
+                artContainer.PointerWheelChanged([](auto const&, PointerRoutedEventArgs const& e) {
+                    HandleWheelAction(g_settings.albumArtWheelAction, e);
                 });
             }
-            artContainer.Tag(winrt::box_value(winrt::hstring(L"FluentMediaArtContainer")));
             if (albumArtLeft) {
                 Grid::SetColumn(artContainer, 0);
             } else {
@@ -8866,7 +8883,7 @@ static Grid BuildPlayerGrid() {
             }
             panel.Children().Append(artContainer);
         }
-        if (g_settings.showTrackTitle || g_settings.showTrackArtist) {
+        if (hasText) {
             Border textContainer;
             textContainer.VerticalAlignment(VerticalAlignment::Center);
             if (albumArtLeft) {
@@ -8886,9 +8903,7 @@ static Grid BuildPlayerGrid() {
             if (g_settings.textAreaMaxHeight > 0) {
                 textContainer.MaxHeight((double)g_settings.textAreaMaxHeight);
             }
-            double leftMargin = (double)g_settings.textAreaLeftMargin;
-            double rightMargin = (double)g_settings.textAreaRightMargin;
-            textContainer.Margin({leftMargin, 0, rightMargin, 0});
+            textContainer.Margin({(double)g_settings.textAreaLeftMargin, 0, (double)g_settings.textAreaRightMargin, 0});
             if (g_settings.showDebugBorders) {
                 textContainer.BorderBrush(MakeBrush({0xFF, 0x00, 0xFF, 0xFF}));
                 textContainer.BorderThickness({1,1,1,1});
@@ -8903,185 +8918,79 @@ static Grid BuildPlayerGrid() {
                 textStack.HorizontalAlignment(g_settings.mirrorLayout ? HorizontalAlignment::Right : HorizontalAlignment::Left);
             }
             textStack.Spacing((double)g_settings.textSpacing);
-            if (g_settings.showTrackTitle || g_settings.showTrackArtist) {
-                TextBlock titleBlock{nullptr};
-                TextBlock artistBlock{nullptr};
-                if (g_settings.showTrackTitle) {
-                    titleBlock = TextBlock();
-                    titleBlock.Name(kTitleBlockName);
-                    titleBlock.FontSize((double)g_settings.titleFontSize);
-                    std::wstring titleFontName = g_settings.titleFont.empty() ? g_settings.titleFontFamily : g_settings.titleFont;
-                    if (!titleFontName.empty()) {
-                        try {
-                            titleBlock.FontFamily(Media::FontFamily(titleFontName));
-                        } catch (...) {}
-                    }
-                    if (!g_settings.titleFontWeight.empty()) {
-                        try {
-                            auto fontWeight = Markup::XamlBindingHelper::ConvertValue(
-                                winrt::Windows::UI::Xaml::Interop::TypeName{
-                                    winrt::hstring{L"Windows.UI.Text.FontWeight"},
-                                    winrt::Windows::UI::Xaml::Interop::TypeKind::Metadata
-                                },
-                                winrt::box_value(g_settings.titleFontWeight))
-                                .as<winrt::Windows::UI::Text::FontWeight>();
-                            titleBlock.FontWeight(fontWeight);
-                        } catch (...) {}
-                    }
-                    if (!g_settings.titleFontStyle.empty()) {
-                        try {
-                            auto fontStyle = Markup::XamlBindingHelper::ConvertValue(
-                                winrt::Windows::UI::Xaml::Interop::TypeName{
-                                    winrt::hstring{L"Windows.UI.Text.FontStyle"},
-                                    winrt::Windows::UI::Xaml::Interop::TypeKind::Metadata
-                                },
-                                winrt::box_value(g_settings.titleFontStyle))
-                                .as<winrt::Windows::UI::Text::FontStyle>();
-                            titleBlock.FontStyle(fontStyle);
-                        } catch (...) {}
-                    }
-                    if (g_settings.titleCharacterSpacing != 0) {
-                        titleBlock.CharacterSpacing(g_settings.titleCharacterSpacing);
-                    }
-                    titleBlock.Foreground(MakeBrush(textClr));
-                    titleBlock.TextWrapping(TextWrapping::NoWrap);
-                    titleBlock.TextTrimming(TextTrimming::CharacterEllipsis);
-                    titleBlock.TextAlignment(g_settings.mirrorLayout ? TextAlignment::Right : TextAlignment::Left);
+            TextBlock titleBlock{nullptr};
+            TextBlock artistBlock{nullptr};
+            if (g_settings.showTrackTitle) {
+                titleBlock = MakeTrackTextBlock(
+                    kTitleBlockName, g_settings.titleFontSize,
+                    g_settings.titleFont.empty() ? g_settings.titleFontFamily : g_settings.titleFont,
+                    g_settings.titleFontWeight, g_settings.titleFontStyle,
+                    g_settings.titleCharacterSpacing, TextColor());
+            }
+            if (g_settings.showTrackArtist) {
+                artistBlock = MakeTrackTextBlock(
+                    kArtistBlockName, g_settings.artistFontSize,
+                    g_settings.artistFont.empty() ? g_settings.artistFontFamily : g_settings.artistFont,
+                    g_settings.artistFontWeight, g_settings.artistFontStyle,
+                    g_settings.artistCharacterSpacing, ArtistColor());
+            }
+            auto MakeScrollView = [](TextBlock const& block, const wchar_t* viewName, const wchar_t* cloneName) {
+                Canvas scrollView;
+                scrollView.Name(viewName);
+                scrollView.VerticalAlignment(VerticalAlignment::Center);
+                scrollView.HorizontalAlignment(g_settings.mirrorLayout ? HorizontalAlignment::Right : HorizontalAlignment::Left);
+                scrollView.Width(100.0);
+                block.TextTrimming(TextTrimming::None);
+                Canvas::SetLeft(block, 0.0);
+                Canvas::SetTop(block, 0.0);
+                scrollView.Children().Append(block);
+                if (g_settings.scrollMode == L"loop") {
+                    TextBlock clone;
+                    clone.Name(cloneName);
+                    clone.Text(block.Text());
+                    clone.FontSize(block.FontSize());
+                    clone.FontFamily(block.FontFamily());
+                    clone.FontWeight(block.FontWeight());
+                    clone.FontStyle(block.FontStyle());
+                    clone.CharacterSpacing(block.CharacterSpacing());
+                    clone.Foreground(block.Foreground());
+                    clone.TextWrapping(TextWrapping::NoWrap);
+                    clone.TextTrimming(TextTrimming::None);
+                    clone.TextAlignment(block.TextAlignment());
+                    Canvas::SetLeft(clone, 9999.0);
+                    Canvas::SetTop(clone, 0.0);
+                    scrollView.Children().Append(clone);
                 }
-                if (g_settings.showTrackArtist) {
-                    artistBlock = TextBlock();
-                    artistBlock.Name(kArtistBlockName);
-                    artistBlock.FontSize((double)g_settings.artistFontSize);
-                    std::wstring artistFontName = g_settings.artistFont.empty() ? g_settings.artistFontFamily : g_settings.artistFont;
-                    if (!artistFontName.empty()) {
-                        try {
-                            artistBlock.FontFamily(Media::FontFamily(artistFontName));
-                        } catch (...) {}
-                    }
-                    if (!g_settings.artistFontWeight.empty()) {
-                        try {
-                            auto fontWeight = Markup::XamlBindingHelper::ConvertValue(
-                                winrt::Windows::UI::Xaml::Interop::TypeName{
-                                    winrt::hstring{L"Windows.UI.Text.FontWeight"},
-                                    winrt::Windows::UI::Xaml::Interop::TypeKind::Metadata
-                                },
-                                winrt::box_value(g_settings.artistFontWeight))
-                                .as<winrt::Windows::UI::Text::FontWeight>();
-                            artistBlock.FontWeight(fontWeight);
-                        } catch (...) {}
-                    }
-                    if (!g_settings.artistFontStyle.empty()) {
-                        try {
-                            auto fontStyle = Markup::XamlBindingHelper::ConvertValue(
-                                winrt::Windows::UI::Xaml::Interop::TypeName{
-                                    winrt::hstring{L"Windows.UI.Text.FontStyle"},
-                                    winrt::Windows::UI::Xaml::Interop::TypeKind::Metadata
-                                },
-                                winrt::box_value(g_settings.artistFontStyle))
-                                .as<winrt::Windows::UI::Text::FontStyle>();
-                            artistBlock.FontStyle(fontStyle);
-                        } catch (...) {}
-                    }
-                    if (g_settings.artistCharacterSpacing != 0) {
-                        artistBlock.CharacterSpacing(g_settings.artistCharacterSpacing);
-                    }
-                    artistBlock.Foreground(MakeBrush(artistClr));
-                    artistBlock.TextWrapping(TextWrapping::NoWrap);
-                    artistBlock.TextTrimming(TextTrimming::CharacterEllipsis);
-                    artistBlock.TextAlignment(g_settings.mirrorLayout ? TextAlignment::Right : TextAlignment::Left);
-                }
-                auto MakeScrollView = [&](Canvas& scrollView, TextBlock& block, const wchar_t* viewName, const wchar_t* blockName, const wchar_t* cloneName) {
-                    scrollView = Canvas();
-                    scrollView.Name(viewName);
-                    scrollView.VerticalAlignment(VerticalAlignment::Center);
-                    scrollView.HorizontalAlignment(g_settings.mirrorLayout ? HorizontalAlignment::Right : HorizontalAlignment::Left);
-                    scrollView.Width(100.0);
-                    block.Name(blockName);
-                    block.TextTrimming(TextTrimming::None);
-                    block.TextWrapping(TextWrapping::NoWrap);
-                    Canvas::SetLeft(block, 0.0);
-                    Canvas::SetTop(block, 0.0);
-                    scrollView.Children().Append(block);
-                    if (g_settings.scrollMode == L"loop") {
-                        TextBlock clone;
-                        clone.Name(cloneName);
-                        clone.Text(block.Text());
-                        clone.FontSize(block.FontSize());
-                        clone.FontFamily(block.FontFamily());
-                        clone.FontWeight(block.FontWeight());
-                        clone.FontStyle(block.FontStyle());
-                        clone.CharacterSpacing(block.CharacterSpacing());
-                        clone.Foreground(block.Foreground());
-                        clone.TextWrapping(TextWrapping::NoWrap);
-                        clone.TextTrimming(TextTrimming::None);
-                        clone.TextAlignment(block.TextAlignment());
-                        Canvas::SetLeft(clone, 9999.0);
-                        Canvas::SetTop(clone, 0.0);
-                        scrollView.Children().Append(clone);
-                    }
-                    auto geo = winrt::Windows::UI::Xaml::Media::RectangleGeometry();
-                    scrollView.Clip(geo);
-                    block.SizeChanged([scrollView, geo](winrt::Windows::Foundation::IInspectable const&, SizeChangedEventArgs const& e) mutable {
-                        try {
-                            double h = e.NewSize().Height;
-                            if (h < 1.0) h = 16.0;
-                            double w = scrollView.Width();
-                            scrollView.Height(h);
-                            geo.Rect({0, 0, (float)w, (float)h});
-                        } catch (...) {}
-                    });
-                };
-                if (g_settings.swapTitleArtist) {
-                    if (artistBlock) {
-                        if (g_settings.enableArtistScrolling) {
-                            Canvas artistScrollView;
-                            MakeScrollView(artistScrollView, artistBlock, kArtistScrollViewName, kArtistBlockName, kArtistCloneName);
-                            textStack.Children().Append(artistScrollView);
-                        } else {
-                            if (g_settings.enableTitleScrolling && g_settings.textAreaMaxWidth > 0) {
-                                artistBlock.MaxWidth((double)g_settings.textAreaMaxWidth);
-                            }
-                            textStack.Children().Append(artistBlock);
-                        }
-                    }
-                    if (titleBlock) {
-                        if (g_settings.enableTitleScrolling) {
-                            Canvas titleScrollView;
-                            MakeScrollView(titleScrollView, titleBlock, kTitleScrollViewName, kTitleBlockName, kTitleCloneName);
-                            textStack.Children().Append(titleScrollView);
-                        } else {
-                            if (g_settings.enableArtistScrolling && g_settings.textAreaMaxWidth > 0) {
-                                titleBlock.MaxWidth((double)g_settings.textAreaMaxWidth);
-                            }
-                            textStack.Children().Append(titleBlock);
-                        }
-                    }
+                auto geo = winrt::Windows::UI::Xaml::Media::RectangleGeometry();
+                scrollView.Clip(geo);
+                block.SizeChanged([scrollView, geo](winrt::Windows::Foundation::IInspectable const&, SizeChangedEventArgs const& e) mutable {
+                    try {
+                        double h = e.NewSize().Height;
+                        if (h < 1.0) h = 16.0;
+                        double w = scrollView.Width();
+                        scrollView.Height(h);
+                        geo.Rect({0, 0, (float)w, (float)h});
+                    } catch (...) {}
+                });
+                return scrollView;
+            };
+            auto appendTrackText = [&](TextBlock const& block, bool scrolls, bool otherScrolls, const wchar_t* viewName, const wchar_t* cloneName) {
+                if (!block) return;
+                if (scrolls) {
+                    textStack.Children().Append(MakeScrollView(block, viewName, cloneName));
                 } else {
-                    if (titleBlock) {
-                        if (g_settings.enableTitleScrolling) {
-                            Canvas titleScrollView;
-                            MakeScrollView(titleScrollView, titleBlock, kTitleScrollViewName, kTitleBlockName, kTitleCloneName);
-                            textStack.Children().Append(titleScrollView);
-                        } else {
-                            if (g_settings.enableArtistScrolling && g_settings.textAreaMaxWidth > 0) {
-                                titleBlock.MaxWidth((double)g_settings.textAreaMaxWidth);
-                            }
-                            textStack.Children().Append(titleBlock);
-                        }
+                    if (otherScrolls && g_settings.textAreaMaxWidth > 0) {
+                        block.MaxWidth((double)g_settings.textAreaMaxWidth);
                     }
-                    if (artistBlock) {
-                        if (g_settings.enableArtistScrolling) {
-                            Canvas artistScrollView;
-                            MakeScrollView(artistScrollView, artistBlock, kArtistScrollViewName, kArtistBlockName, kArtistCloneName);
-                            textStack.Children().Append(artistScrollView);
-                        } else {
-                            if (g_settings.enableTitleScrolling && g_settings.textAreaMaxWidth > 0) {
-                                artistBlock.MaxWidth((double)g_settings.textAreaMaxWidth);
-                            }
-                            textStack.Children().Append(artistBlock);
-                        }
-                    }
+                    textStack.Children().Append(block);
                 }
+            };
+            if (g_settings.swapTitleArtist) {
+                appendTrackText(artistBlock, g_settings.enableArtistScrolling, g_settings.enableTitleScrolling, kArtistScrollViewName, kArtistCloneName);
+                appendTrackText(titleBlock, g_settings.enableTitleScrolling, g_settings.enableArtistScrolling, kTitleScrollViewName, kTitleCloneName);
+            } else {
+                appendTrackText(titleBlock, g_settings.enableTitleScrolling, g_settings.enableArtistScrolling, kTitleScrollViewName, kTitleCloneName);
+                appendTrackText(artistBlock, g_settings.enableArtistScrolling, g_settings.enableTitleScrolling, kArtistScrollViewName, kArtistCloneName);
             }
             textContainer.Child(textStack);
             Grid::SetColumn(textContainer, 1);
@@ -9104,7 +9013,7 @@ static Grid BuildPlayerGrid() {
                 try {
                     ctrlPanel.Margin({(double)g_settings.mediaButtonsLeftMargin, 0, (double)g_settings.mediaButtonsRightMargin, 0});
                 } catch (...) {
-                    Wh_Log(L"CreatePlayerGrid: Exception setting control panel margin");
+                    Wh_Log(L"BuildPlayerGrid: Exception setting control panel margin");
                 }
             }
             if (g_settings.showDebugBorders) {
@@ -9115,17 +9024,13 @@ static Grid BuildPlayerGrid() {
                     Grid::SetColumn(ctrlDebugBorder, buttonsLeft ? 0 : 3);
                     panel.Children().Append(ctrlDebugBorder);
                 } catch (...) {
-                    Wh_Log(L"CreatePlayerGrid: Exception creating debug border");
+                    Wh_Log(L"BuildPlayerGrid: Exception creating debug border");
                 }
             }
             for (size_t i = 0; i < currentButtons.size(); i++) {
                 try {
                     const auto& btnCfg = currentButtons[i];
                     auto btn = MakeControlButton(btnCfg.cmd, false, buttonClr);
-                    if (!btn) {
-                        Wh_Log(L"CreatePlayerGrid: MakeControlButton returned null for button %zu", i);
-                        continue;
-                    }
                     switch (btnCfg.type) {
                         case MediaButtonType::Previous:
                             btn.Name(kPrevBtnName);
@@ -9151,17 +9056,12 @@ static Grid BuildPlayerGrid() {
                         case MediaButtonType::SwitchSessions:
                             btn.Name(kSwitchSessionsBtnName);
                             break;
-                        default:
-                            Wh_Log(L"CreatePlayerGrid: Unknown button type %d", static_cast<int>(btnCfg.type));
-                            continue;
                     }
                     ctrlPanel.Children().Append(btn);
                 } catch (const winrt::hresult_error& e) {
-                    Wh_Log(L"CreatePlayerGrid: WinRT exception creating button %zu: 0x%08X", i, static_cast<uint32_t>(e.code()));
-                } catch (const std::exception& e) {
-                    Wh_Log(L"CreatePlayerGrid: std::exception creating button %zu", i);
+                    Wh_Log(L"BuildPlayerGrid: WinRT exception creating button %zu: 0x%08X", i, static_cast<uint32_t>(e.code()));
                 } catch (...) {
-                    Wh_Log(L"CreatePlayerGrid: Unknown exception creating button %zu, skipping", i);
+                    Wh_Log(L"BuildPlayerGrid: Unknown exception creating button %zu, skipping", i);
                 }
             }
             if (buttonsLeft) {
@@ -9245,22 +9145,12 @@ static Grid BuildPlayerGrid() {
                 GoToCommonState(playerButton, IsHoverEffectEnabled(g_settings.playerHoverEffectMode), false, false);
             } catch (...) {}
         });
-        wrapper.Loaded([playerButton, playerNormalBg](auto const&, auto const&) {
-            try {
-                SetupPlayerCommonStates(playerButton, playerNormalBg);
-                GoToCommonState(playerButton, IsHoverEffectEnabled(g_settings.playerHoverEffectMode), false, false);
-            } catch (...) {}
-        });
     wrapper.PointerEntered([isHovered, updatePlayerVisualState](auto const&, auto const&) mutable {
         *isHovered = true;
         updatePlayerVisualState();
     });
     wrapper.PointerExited([isHovered, updatePlayerVisualState](auto const& sender, PointerRoutedEventArgs const& e) mutable {
-        if (auto elem = sender.template try_as<UIElement>()) {
-            auto pos = e.GetCurrentPoint(elem).Position();
-            auto size = elem.RenderSize();
-            if (pos.X >= 0 && pos.X <= size.Width && pos.Y >= 0 && pos.Y <= size.Height) return;
-        }
+        if (auto elem = sender.template try_as<UIElement>(); elem && IsPointerInside(e, elem)) return;
         *isHovered = false;
         updatePlayerVisualState();
     });
@@ -9271,27 +9161,17 @@ static Grid BuildPlayerGrid() {
         *isPressed = true;
         updatePlayerVisualState();
     });
-    auto wrapperDblClickLastTime = std::make_shared<ULONGLONG>(0);
-    auto wrapperDblClickLastKind = std::make_shared<winrt::Windows::UI::Input::PointerUpdateKind>(
-        winrt::Windows::UI::Input::PointerUpdateKind::Other);
-    auto wrapperDblClickLastPosition = std::make_shared<winrt::Windows::Foundation::Point>();
+    auto wrapperDoubleClick = std::make_shared<DoubleClickTracker>();
     auto pendingPlayerClick = MakePendingPointerAction();
     wrapper.AddHandler(UIElement::PointerReleasedEvent(), winrt::box_value(
         winrt::Windows::UI::Xaml::Input::PointerEventHandler(
-        [isPressed, isHovered, updatePlayerVisualState, wrapperDblClickLastTime, wrapperDblClickLastKind, wrapperDblClickLastPosition, pendingPlayerClick](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) mutable {
+        [isPressed, isHovered, updatePlayerVisualState, wrapperDoubleClick, pendingPlayerClick](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) mutable {
         bool wasHandled = e.Handled();
         *isPressed = false;
         bool actuallyHovered = false;
-        winrt::Windows::Foundation::Point releasePosition{};
         if (auto elem = sender.template try_as<UIElement>()) {
             elem.ReleasePointerCapture(e.Pointer());
-            try {
-                auto pointerPoint = e.GetCurrentPoint(elem);
-                auto bounds = elem.RenderSize();
-                auto pos = pointerPoint.Position();
-                releasePosition = pos;
-                actuallyHovered = (pos.X >= 0 && pos.X <= bounds.Width && pos.Y >= 0 && pos.Y <= bounds.Height);
-            } catch (...) { actuallyHovered = false; }
+            actuallyHovered = IsPointerInside(e, elem);
         }
         *isHovered = actuallyHovered;
         updatePlayerVisualState();
@@ -9300,19 +9180,10 @@ static Grid BuildPlayerGrid() {
             wasHandled && HasNamedVisualAncestor(e.OriginalSource(), kArtContainerName);
         if (wasHandled && !handledByAlbumArt) return;
         if (actuallyHovered) {
-            auto kind = e.GetCurrentPoint(nullptr).Properties().PointerUpdateKind();
+            auto point = e.GetCurrentPoint(nullptr);
+            auto kind = point.Properties().PointerUpdateKind();
             auto fe = sender.template try_as<FrameworkElement>();
-            ULONGLONG now = GetTickCount64();
-            UINT dblClickMs = GetDoubleClickTime();
-            bool isDouble = (kind == *wrapperDblClickLastKind) &&
-                            (now - *wrapperDblClickLastTime) <= dblClickMs &&
-                            std::abs(releasePosition.X - wrapperDblClickLastPosition->X) <=
-                                GetSystemMetrics(SM_CXDOUBLECLK) / 2.0 &&
-                            std::abs(releasePosition.Y - wrapperDblClickLastPosition->Y) <=
-                                GetSystemMetrics(SM_CYDOUBLECLK) / 2.0;
-            *wrapperDblClickLastTime = isDouble ? 0 : now;
-            *wrapperDblClickLastKind = kind;
-            *wrapperDblClickLastPosition = releasePosition;
+            bool isDouble = wrapperDoubleClick->Register(kind, point.Position());
             using Kind = winrt::Windows::UI::Input::PointerUpdateKind;
             if (kind == Kind::LeftButtonReleased) {
                 if (!handledByAlbumArt || g_settings.albumArtLeftDoubleClick == L"none") {
@@ -9343,39 +9214,12 @@ static Grid BuildPlayerGrid() {
     wrapper.PointerCaptureLost([isPressed, isHovered, updatePlayerVisualState](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) mutable {
         *isPressed = false;
         if (auto elem = sender.template try_as<UIElement>()) {
-            try {
-                auto pointerPoint = e.GetCurrentPoint(elem);
-                auto bounds = elem.RenderSize();
-                auto pos = pointerPoint.Position();
-                *isHovered = (pos.X >= 0 && pos.X <= bounds.Width && pos.Y >= 0 && pos.Y <= bounds.Height);
-            } catch (...) { *isHovered = false; }
+            *isHovered = IsPointerInside(e, elem);
         }
         updatePlayerVisualState();
     });
-        wrapper.Tag(winrt::box_value(winrt::hstring(L"FluentMediaBarWrapper")));
-        wrapper.PointerWheelChanged([](auto const&, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) {
-            if (g_unloading) return;
-            auto action = g_settings.playerWheelAction;
-            if (action == L"none") return;
-            auto props = e.GetCurrentPoint(nullptr).Properties();
-            int delta = props.MouseWheelDelta();
-            if (action == L"switch_tracks") {
-                if (delta > 0) SendMediaCommandAsync(1);
-                else if (delta < 0) SendMediaCommandAsync(3);
-                DispatchMediaUpdate();
-            } else if (action == L"switch_tracks_inverted") {
-                if (delta > 0) SendMediaCommandAsync(3);
-                else if (delta < 0) SendMediaCommandAsync(1);
-                DispatchMediaUpdate();
-            } else if (action == L"switch_sessions") {
-                if (delta != 0) SwitchMediaSession();
-            } else if (action == L"system_sound") {
-                SpawnTrackedWorker([delta]() { ChangeSystemVolume(delta > 0); });
-            } else if (action == L"app_sound" || action == L"app_sound_inverted") {
-                bool up = (action == L"app_sound") ? (delta > 0) : (delta < 0);
-                SendMediaCommandAsync(up ? kCmdVolumeUp : kCmdVolumeDown);
-            }
-            e.Handled(true);
+        wrapper.PointerWheelChanged([](auto const&, PointerRoutedEventArgs const& e) {
+            HandleWheelAction(g_settings.playerWheelAction, e);
         });
         try {
             winrt::Windows::UI::Xaml::Interop::TypeName gridType;
@@ -9507,17 +9351,6 @@ static FrameworkElement FindElementInRepeater(FrameworkElement const& repeater, 
     }
     return nullptr;
 }
-static FrameworkElement FindElementByClassName(FrameworkElement const& parent, const wchar_t* className) {
-    if (!parent) return nullptr;
-    int childCount = VisualTreeHelper::GetChildrenCount(parent);
-    for (int i = 0; i < childCount; i++) {
-        auto child = VisualTreeHelper::GetChild(parent, i).try_as<FrameworkElement>();
-        if (!child) continue;
-        auto childClassName = winrt::get_class_name(child);
-        if (childClassName == className) return child;
-    }
-    return nullptr;
-}
 static FrameworkElement FindNthElementByClassName(FrameworkElement const& parent, const wchar_t* className, int index) {
     if (!parent) return nullptr;
     int foundCount = 0;
@@ -9543,27 +9376,6 @@ static FrameworkElement FindChildByClassName(FrameworkElement const& parent, con
         if (auto found = FindChildByClassName(child, className, depth - 1)) return found;
     }
     return nullptr;
-}
-static double FindLeftmostVisibleChildX(FrameworkElement const& parent, UIElement const& relativeTo, int depth = 3) {
-    if (!parent || !relativeTo || depth < 0) return -1.0;
-    double leftmost = -1.0;
-    int childCount = VisualTreeHelper::GetChildrenCount(parent);
-    for (int i = 0; i < childCount; i++) {
-        auto child = VisualTreeHelper::GetChild(parent, i).try_as<FrameworkElement>();
-        if (!child) continue;
-        try {
-            if (child.Visibility() == Visibility::Visible && child.ActualWidth() > 1.0) {
-                auto transform = child.TransformToVisual(relativeTo);
-                auto point = transform.TransformPoint({0, 0});
-                if (point.X >= 0.0 && (leftmost < 0.0 || point.X < leftmost))
-                    leftmost = point.X;
-            }
-        } catch (...) {}
-        double nested = FindLeftmostVisibleChildX(child, relativeTo, depth - 1);
-        if (nested >= 0.0 && (leftmost < 0.0 || nested < leftmost))
-            leftmost = nested;
-    }
-    return leftmost;
 }
 static FrameworkElement FindTrayElement(FrameworkElement const& trayGrid, FrameworkElement const& root, const wchar_t* name) {
     auto elem = FindChildByName(trayGrid, name);
@@ -9604,34 +9416,20 @@ static int FindTrayInsertionPoint(Panel const& trayPanel,
     }
     return position < 0 ? -1 : position + (after ? 1 : 0);
 }
-static bool IsStartButtonModActive(FrameworkElement const& root) {
-    try {
-        auto rootGrid = FindTaskbarRootGrid(root);
-        if (!rootGrid) return false;
-        auto repeater = FindChildByName(rootGrid, L"TaskbarFrameRepeater");
-        if (!repeater) return false;
-        static const wchar_t* kStartNames[] = {L"StartButton"};
-        auto startButton = FindElementInRepeater(repeater, kStartNames, 1);
-        if (!startButton) return false;
-        auto margin = startButton.Margin();
-        return margin.Right < -10.0;
-    } catch (...) {
-        return false;
-    }
+static bool IsTaskbarEdgePosition(std::wstring_view p) {
+    return p == L"taskbar_left_edge" ||
+           p == L"taskbar_center_edge" ||
+           p == L"taskbar_right_edge";
 }
-static double GetStartButtonAdjustment(FrameworkElement const& root) {
-    try {
-        auto rootGrid = FindTaskbarRootGrid(root);
-        if (!rootGrid) return 0.0;
-        auto repeater = FindChildByName(rootGrid, L"TaskbarFrameRepeater");
-        if (!repeater) return 0.0;
-        static const wchar_t* kStartNames[] = {L"StartButton"};
-        auto startButton = FindElementInRepeater(repeater, kStartNames, 1);
-        if (!startButton) return 0.0;
-        return startButton.ActualWidth();
-    } catch (...) {
-        return 0.0;
-    }
+static bool IsTaskbarTrackingPosition(std::wstring_view p) {
+    return p == L"taskbar_left_start" ||
+           p == L"taskbar_right_start" ||
+           p == L"taskbar_after_search_left" ||
+           p == L"taskbar_after_search_right" ||
+           p == L"taskbar_after_taskview_left" ||
+           p == L"taskbar_after_taskview_right" ||
+           p == L"taskbar_after_widgets_left" ||
+           p == L"taskbar_after_widgets_right";
 }
 static InjectionTarget ResolveInjectionTarget(
     FrameworkElement const& root,
@@ -9703,17 +9501,7 @@ static InjectionTarget ResolveInjectionTarget(
             return {trayPanel, insertAt};
         }
     }
-    if (position == L"taskbar_left_start"  ||
-        position == L"taskbar_right_start" ||
-        position == L"taskbar_after_search_left"||
-        position == L"taskbar_after_search_right"||
-        position == L"taskbar_after_taskview_left"||
-        position == L"taskbar_after_taskview_right"||
-        position == L"taskbar_after_widgets_left"||
-        position == L"taskbar_after_widgets_right"||
-        position == L"taskbar_left_edge"   ||
-        position == L"taskbar_center_edge" ||
-        position == L"taskbar_right_edge")
+    if (IsTaskbarEdgePosition(position) || IsTaskbarTrackingPosition(position))
     {
         auto rootGrid = FindTaskbarRootGrid(root);
         if (!rootGrid) {
@@ -9727,10 +9515,6 @@ static InjectionTarget ResolveInjectionTarget(
     return {};
 }
 static bool InjectPlayerGridIntoTaskbar(HWND hWnd) {
-    if (!hWnd) {
-        Wh_Log(L"InjectPlayerGrid: No taskbar window found");
-        return false;
-    }
     g_curTaskbarWnd = hWnd;
     try {
         auto xamlRoot = GetTaskbarXamlRoot(hWnd);
@@ -9762,8 +9546,6 @@ static bool InjectPlayerGridIntoTaskbar(HWND hWnd) {
         }
         Grid playerGrid = BuildPlayerGrid();
         if (!playerGrid) return false;
-        bool startButtonModActive = IsStartButtonModActive(root);
-        (void)startButtonModActive;
         auto targetPanel = targetParent.try_as<Panel>();
         auto targetGrid = targetParent.try_as<Grid>();
         bool isTrayPanel = (targetParent.Name() == L"SystemTrayFrameGrid");
@@ -9799,185 +9581,113 @@ static bool InjectPlayerGridIntoTaskbar(HWND hWnd) {
             }
         }
         else {
-            if (!targetGrid) return false;
             auto repeater  = FindChildByName(targetGrid, L"TaskbarFrameRepeater");
             auto trayFrame = FindChildByName(targetGrid, L"SystemTrayFrameGrid");
-            bool isEdgePosition = (g_settings.position == L"taskbar_left_edge" ||
-                                g_settings.position == L"taskbar_center_edge" ||
-                                g_settings.position == L"taskbar_right_edge");
-            bool isTrackingPosition = (g_settings.position == L"taskbar_left_start" ||
-                                    g_settings.position == L"taskbar_right_start" ||
-                                    g_settings.position == L"taskbar_after_search_left" ||
-                                    g_settings.position == L"taskbar_after_search_right" ||
-                                    g_settings.position == L"taskbar_after_taskview_left" ||
-                                    g_settings.position == L"taskbar_after_taskview_right" ||
-                                    g_settings.position == L"taskbar_after_widgets_left" ||
-                                    g_settings.position == L"taskbar_after_widgets_right");
-            if (isEdgePosition || isTrackingPosition) {
-                double leftMargin  = (double)g_settings.playerMarginLeft;
-                double rightMargin = (double)g_settings.playerMarginRight;
-                playerGrid.HorizontalAlignment(HorizontalAlignment::Left);
-                if (isEdgePosition) {
-                    if (g_settings.position == L"taskbar_left_edge") {
-                        playerGrid.Margin({leftMargin, 0, rightMargin, 0});
+            double leftMargin  = (double)g_settings.playerMarginLeft;
+            double rightMargin = (double)g_settings.playerMarginRight;
+            playerGrid.HorizontalAlignment(HorizontalAlignment::Left);
+            if (IsTaskbarEdgePosition(g_settings.position)) {
+                if (g_settings.position == L"taskbar_center_edge") {
+                    playerGrid.HorizontalAlignment(HorizontalAlignment::Center);
+                }
+                else if (g_settings.position == L"taskbar_right_edge") {
+                    playerGrid.HorizontalAlignment(HorizontalAlignment::Right);
+                    if (trayFrame) rightMargin += trayFrame.ActualWidth() + 4;
+                }
+                playerGrid.Margin({leftMargin, 0, rightMargin, 0});
+            } else {
+                FrameworkElement targetElem = nullptr;
+                std::wstring trackSide = L"right";
+                if (repeater) {
+                    if (g_settings.position == L"taskbar_left_start") {
+                        targetElem = FindElementInRepeater(repeater, kStartButtonNames, ARRAYSIZE(kStartButtonNames));
+                        trackSide = L"left";
+                    } else if (g_settings.position == L"taskbar_right_start") {
+                        targetElem = FindElementInRepeater(repeater, kStartButtonNames, ARRAYSIZE(kStartButtonNames));
+                        trackSide = L"right";
+                    } else if (g_settings.position == L"taskbar_after_search_left") {
+                        targetElem = FindNthElementByClassName(repeater, L"Taskbar.TaskbarExtensionElement", 0);
+                        trackSide = L"left";
+                    } else if (g_settings.position == L"taskbar_after_search_right") {
+                        targetElem = FindNthElementByClassName(repeater, L"Taskbar.TaskbarExtensionElement", 0);
+                        trackSide = L"right";
+                    } else if (g_settings.position == L"taskbar_after_taskview_left") {
+                        targetElem = FindNthElementByClassName(repeater, L"Taskbar.ExperienceToggleButton", 1);
+                        trackSide = L"left";
+                    } else if (g_settings.position == L"taskbar_after_taskview_right") {
+                        targetElem = FindNthElementByClassName(repeater, L"Taskbar.ExperienceToggleButton", 1);
+                        trackSide = L"right";
+                    } else if (g_settings.position == L"taskbar_after_widgets_left") {
+                        targetElem = FindChildByName(repeater, L"AugmentedEntryPointButton");
+                        if (!targetElem) targetElem = FindChildByClassName(repeater, L"Taskbar.AugmentedEntryPointButton");
+                        trackSide = L"left";
+                    } else if (g_settings.position == L"taskbar_after_widgets_right") {
+                        targetElem = FindChildByName(repeater, L"AugmentedEntryPointButton");
+                        if (!targetElem) targetElem = FindChildByClassName(repeater, L"Taskbar.AugmentedEntryPointButton");
+                        trackSide = L"right";
                     }
-                    else if (g_settings.position == L"taskbar_center_edge") {
-                        playerGrid.HorizontalAlignment(HorizontalAlignment::Center);
-                        playerGrid.Margin({leftMargin, 0, rightMargin, 0});
-                    }
-                    else if (g_settings.position == L"taskbar_right_edge") {
-                        playerGrid.HorizontalAlignment(HorizontalAlignment::Right);
-                        if (trayFrame) rightMargin += trayFrame.ActualWidth() + 4;
-                        playerGrid.Margin({leftMargin, 0, rightMargin, 0});
-                    }
-                } else if (isTrackingPosition) {
-                    FrameworkElement targetElem = nullptr;
-                    std::wstring trackSide = L"right";
-                    if (repeater) {
-                        if (g_settings.position == L"taskbar_left_start") {
-                            targetElem = FindElementInRepeater(repeater, kStartButtonNames, ARRAYSIZE(kStartButtonNames));
-                            trackSide = L"left";
-                        } else if (g_settings.position == L"taskbar_right_start") {
-                            targetElem = FindElementInRepeater(repeater, kStartButtonNames, ARRAYSIZE(kStartButtonNames));
-                            trackSide = L"right";
-                        } else if (g_settings.position == L"taskbar_after_search_left") {
-                            targetElem = FindElementByClassName(repeater, L"Taskbar.TaskbarExtensionElement");
-                            trackSide = L"left";
-                        } else if (g_settings.position == L"taskbar_after_search_right") {
-                            targetElem = FindElementByClassName(repeater, L"Taskbar.TaskbarExtensionElement");
-                            trackSide = L"right";
-                        } else if (g_settings.position == L"taskbar_after_taskview_left") {
-                            targetElem = FindNthElementByClassName(repeater, L"Taskbar.ExperienceToggleButton", 1);
-                            trackSide = L"left";
-                        } else if (g_settings.position == L"taskbar_after_taskview_right") {
-                            targetElem = FindNthElementByClassName(repeater, L"Taskbar.ExperienceToggleButton", 1);
-                            trackSide = L"right";
-                        } else if (g_settings.position == L"taskbar_after_widgets_left") {
-                            targetElem = FindChildByName(repeater, L"AugmentedEntryPointButton");
-                            if (!targetElem) targetElem = FindChildByClassName(repeater, L"Taskbar.AugmentedEntryPointButton");
-                            trackSide = L"left";
-                        } else if (g_settings.position == L"taskbar_after_widgets_right") {
-                            targetElem = FindChildByName(repeater, L"AugmentedEntryPointButton");
-                            if (!targetElem) targetElem = FindChildByClassName(repeater, L"Taskbar.AugmentedEntryPointButton");
-                            trackSide = L"right";
-                        }
-                    }
-                    if (targetElem) {
-                        g_trackedElement = targetElem;
-                        g_trackedElementOriginalMargin = targetElem.Margin();
-                        g_hasTrackedElementOriginalMargin = true;
-                        g_trackPosition = trackSide;
-                        bool startButtonModActiveMod = IsStartButtonModActive(root);
-                        double startButtonOffset = 0.0;
-                        if (startButtonModActiveMod &&
-                            (g_settings.position == L"taskbar_left_start" ||
-                            g_settings.position == L"taskbar_right_start" ||
-                            g_settings.position == L"taskbar_after_taskview_left" ||
-                            g_settings.position == L"taskbar_after_taskview_right")) {
-                            startButtonOffset = GetStartButtonAdjustment(root);
-                        }
-                        PlayerInstanceState* owner = g_currentInstance;
-                        g_layoutUpdateToken = targetGrid.LayoutUpdated(
-                            [targetGrid, startButtonModActiveMod, startButtonOffset, owner](winrt::Windows::Foundation::IInspectable const&, winrt::Windows::Foundation::IInspectable const&) {
-                                if (!IsLivePlayerInstance(owner)) return;
-                                WithPlayerInstance(owner, [&]() {
-                                try {
-                                    if (!g_playerGrid || !g_trackedElement || g_unloading) return;
-                                    UpdateAnchorDebugOverlay(targetGrid, g_trackedElement);
-                                    bool isVisible = (g_playerGrid.Visibility() == Visibility::Visible);
-                                    double w = isVisible ? g_playerGrid.ActualWidth() : 0.0;
-                                    double desiredGap = isVisible ? (w + g_settings.playerMarginLeft + g_settings.playerMarginRight) : 0.0;
-                                    auto m = g_hasTrackedElementOriginalMargin ? g_trackedElementOriginalMargin : g_trackedElement.Margin();
-                                    auto currentMargin = g_trackedElement.Margin();
-                                    bool changedMargin = false;
-                                    if (g_trackPosition == L"far_left") {
-                                        try {
-                                            double originalLeft = g_hasTrackedElementOriginalMargin ? g_trackedElementOriginalMargin.Left : 0.0;
-                                            double currentLeftmost = FindLeftmostVisibleChildX(g_trackedElement, targetGrid, 4);
-                                            double naturalLeft = currentLeftmost >= 0.0
-                                                ? currentLeftmost - (currentMargin.Left - originalLeft)
-                                                : desiredGap;
-                                            double requiredExtra = std::max(0.0, desiredGap - naturalLeft);
-                                            double targetLeft = originalLeft + requiredExtra;
-                                            if (std::abs(currentMargin.Left - targetLeft) > 1.0 ||
-                                                std::abs(currentMargin.Right - m.Right) > 1.0) {
-                                                m.Left = targetLeft;
-                                                changedMargin = true;
-                                            }
-                                        } catch (...) {
-                                            if (g_hasTrackedElementOriginalMargin &&
-                                                (std::abs(currentMargin.Left - m.Left) > 1.0 ||
-                                                std::abs(currentMargin.Right - m.Right) > 1.0)) {
-                                                changedMargin = true;
-                                            }
-                                        }
-                                    } else if (g_trackPosition == L"left") {
-                                        double target = isVisible ? desiredGap : g_trackedElementOriginalMargin.Left;
-                                        if (std::abs(currentMargin.Left - target) > 1.0) { m.Left = target; changedMargin = true; }
-                                    } else {
-                                        double target = isVisible ? desiredGap : g_trackedElementOriginalMargin.Right;
-                                        if (std::abs(currentMargin.Right - target) > 1.0) { m.Right = target; changedMargin = true; }
-                                    }
-                                    if (changedMargin) g_trackedElement.Margin(m);
-                                    if (isVisible) {
-                                        try {
-                                            auto transform = g_trackedElement.TransformToVisual(targetGrid);
-                                            auto point = transform.TransformPoint({0, 0});
-                                            double leftPos = point.X;
-                                            if (g_trackPosition == L"far_left") {
-                                                leftPos = g_settings.playerMarginLeft;
-                                            } else if (g_trackPosition == L"left") {
-                                                leftPos = point.X - desiredGap + g_settings.playerMarginLeft;
-                                                if (startButtonModActiveMod && startButtonOffset > 0) {
-                                                    leftPos += startButtonOffset;
-                                                }
-                                            } else {
-                                                leftPos = point.X + g_trackedElement.ActualWidth() + g_settings.playerMarginLeft;
-                                            }
-                                            auto pm = g_playerGrid.Margin();
-                                            if (std::abs(pm.Left - leftPos) > 1.0) {
-                                                g_playerGrid.Margin({leftPos, 0, 0, 0});
-                                            }
-                                        } catch (...) {}
-                                    }
-                                } catch (...) {
-                                    g_trackedElement = nullptr;
-                                    g_hasTrackedElementOriginalMargin = false;
+                }
+                if (targetElem) {
+                    g_trackedElement = targetElem;
+                    g_trackedElementOriginalMargin = targetElem.Margin();
+                    g_trackPosition = trackSide;
+                    auto startButton = FindElementInRepeater(repeater, kStartButtonNames, 1);
+                    double startButtonOffset =
+                        (startButton && startButton.Margin().Right < -10.0 &&
+                         (g_settings.position == L"taskbar_left_start" ||
+                          g_settings.position == L"taskbar_right_start" ||
+                          g_settings.position == L"taskbar_after_taskview_left" ||
+                          g_settings.position == L"taskbar_after_taskview_right"))
+                            ? startButton.ActualWidth() : 0.0;
+                    PlayerInstanceState* owner = g_currentInstance;
+                    g_layoutUpdateToken = targetGrid.LayoutUpdated(
+                        [targetGrid, startButtonOffset, owner](winrt::Windows::Foundation::IInspectable const&, winrt::Windows::Foundation::IInspectable const&) {
+                            if (!IsLivePlayerInstance(owner)) return;
+                            WithPlayerInstance(owner, [&]() {
+                            try {
+                                if (!g_playerGrid || !g_trackedElement || g_unloading) return;
+                                UpdateAnchorDebugOverlay(targetGrid, g_trackedElement);
+                                bool isVisible = (g_playerGrid.Visibility() == Visibility::Visible);
+                                double w = isVisible ? g_playerGrid.ActualWidth() : 0.0;
+                                double desiredGap = isVisible ? (w + g_settings.playerMarginLeft + g_settings.playerMarginRight) : 0.0;
+                                auto m = g_trackedElementOriginalMargin;
+                                auto currentMargin = g_trackedElement.Margin();
+                                bool changedMargin = false;
+                                if (g_trackPosition == L"left") {
+                                    double target = isVisible ? desiredGap : g_trackedElementOriginalMargin.Left;
+                                    if (std::abs(currentMargin.Left - target) > 1.0) { m.Left = target; changedMargin = true; }
+                                } else {
+                                    double target = isVisible ? desiredGap : g_trackedElementOriginalMargin.Right;
+                                    if (std::abs(currentMargin.Right - target) > 1.0) { m.Right = target; changedMargin = true; }
                                 }
-                                });
+                                if (changedMargin) g_trackedElement.Margin(m);
+                                if (isVisible) {
+                                    try {
+                                        auto transform = g_trackedElement.TransformToVisual(targetGrid);
+                                        auto point = transform.TransformPoint({0, 0});
+                                        double leftPos = g_trackPosition == L"left"
+                                            ? point.X - desiredGap + g_settings.playerMarginLeft + startButtonOffset
+                                            : point.X + g_trackedElement.ActualWidth() + g_settings.playerMarginLeft;
+                                        auto pm = g_playerGrid.Margin();
+                                        if (std::abs(pm.Left - leftPos) > 1.0) {
+                                            g_playerGrid.Margin({leftPos, 0, 0, 0});
+                                        }
+                                    } catch (...) {}
+                                }
+                            } catch (...) {
+                                g_trackedElement = nullptr;
                             }
-                        );
-                    } else {
-                        playerGrid.Margin({leftMargin, 0, rightMargin, 0});
-                    }
-                }
-                Grid::SetColumn(playerGrid, 0);
-                Canvas::SetZIndex(playerGrid, 1000);
-                targetGrid.Children().Append(playerGrid);
-                g_playerColumn = -1;
-            }
-            else {
-                ColumnDefinition newCol;
-                newCol.Width({1.0, GridUnitType::Auto});
-                if (insertAt >= (int)targetGrid.ColumnDefinitions().Size()) {
-                    targetGrid.ColumnDefinitions().Append(newCol);
-                } else {
-                    targetGrid.ColumnDefinitions().InsertAt(insertAt, newCol);
-                    for (uint32_t i = 0; i < targetGrid.Children().Size(); ++i) {
-                        auto child = targetGrid.Children().GetAt(i).try_as<FrameworkElement>();
-                        if (child) {
-                            int childCol = Grid::GetColumn(child);
-                            if (childCol >= insertAt)
-                                Grid::SetColumn(child, childCol + 1);
+                            });
                         }
-                    }
+                    );
+                } else {
+                    playerGrid.Margin({leftMargin, 0, rightMargin, 0});
                 }
-                playerGrid.Margin({(double)g_settings.playerMarginLeft, 0,
-                                (double)g_settings.playerMarginRight, 0});
-                Grid::SetColumn(playerGrid, insertAt);
-                targetGrid.Children().Append(playerGrid);
-                g_playerColumn = insertAt;
             }
+            Grid::SetColumn(playerGrid, 0);
+            Canvas::SetZIndex(playerGrid, 1000);
+            targetGrid.Children().Append(playerGrid);
+            g_playerColumn = -1;
         }
         g_playerGrid      = playerGrid;
         g_injectionParent = targetParent;
@@ -10024,9 +9734,7 @@ static bool InjectPlayerGridIntoTaskbar(HWND hWnd) {
 static std::vector<HWND> CollectTargetTaskbarWnds() {
     std::vector<HWND> result;
     if (!g_settings.showOnAllMonitors) {
-        if (HWND hWnd = g_taskbarWnd ? g_taskbarWnd : FindCurrentProcessTaskbarWnd()) {
-            result.push_back(hWnd);
-        }
+        if (g_taskbarWnd) result.push_back(g_taskbarWnd);
         return result;
     }
     EnumWindows([](HWND hWnd, LPARAM lp) CALLBACK -> BOOL {
@@ -10043,11 +9751,6 @@ static std::vector<HWND> CollectTargetTaskbarWnds() {
     auto primary = std::find(result.begin(), result.end(), g_taskbarWnd);
     if (primary != result.end()) {
         std::iter_swap(result.begin(), primary);
-    }
-    if (result.empty()) {
-        if (HWND hWnd = g_taskbarWnd ? g_taskbarWnd : FindCurrentProcessTaskbarWnd()) {
-            result.push_back(hWnd);
-        }
     }
     return result;
 }
@@ -10092,24 +9795,13 @@ static void RemovePlayerGridInstance() {
             if (targetGrid) {
                 try { targetGrid.LayoutUpdated(g_layoutUpdateToken); } catch (...) {}
             }
-            g_layoutUpdateToken = {};
         }
         
         if (g_trackedElement) {
             try {
-                if (g_hasTrackedElementOriginalMargin) {
-                    g_trackedElement.Margin(g_trackedElementOriginalMargin);
-                } else {
-                    auto m = g_trackedElement.Margin();
-                    if (g_trackPosition == L"left" || g_trackPosition == L"far_left") m.Left = 0;
-                    if (g_trackPosition == L"right") m.Right = 0;
-                    g_trackedElement.Margin(m);
-                }
+                g_trackedElement.Margin(g_trackedElementOriginalMargin);
             } catch (...) {}
-            g_trackedElement = nullptr;
         }
-        g_hasTrackedElementOriginalMargin = false;
-        g_trackPosition = L"";
         auto targetPanel = g_injectionParent.try_as<Panel>();
         auto targetGrid = g_injectionParent.try_as<Grid>();
         if (targetGrid) RemoveAnchorDebugOverlays(targetGrid);
@@ -10125,35 +9817,8 @@ static void RemovePlayerGridInstance() {
             }
             targetGrid.ColumnDefinitions().RemoveAt(g_playerColumn);
         }
-        g_playerGrid      = nullptr;
-        g_injectionParent = nullptr;
-        g_playerColumn    = -1;
-        g_playerToolTip   = nullptr;
-        g_playerButtonStateUpdater = nullptr;
-        g_cachedAlbumTitle.clear();
-        g_cachedAlbumArtist.clear();
-        g_cachedThumbnailBytes.clear();
-        g_cachedPaletteHash = 0;
-        g_blurBgCache.Invalidate();
-        g_cachedAppIconSize = -1;
-        g_scrollCachedTitle.clear();
-        g_scrollCachedArtist.clear();
-        ResetScrollState(g_titleScroll);
-        ResetScrollState(g_artistScroll);
     } catch (...) {
-        g_playerGrid      = nullptr;
-        g_injectionParent = nullptr;
-        g_playerColumn    = -1;
-        g_playerToolTip   = nullptr;
-        g_playerButtonStateUpdater = nullptr;
-        g_cachedAlbumTitle.clear();
-        g_cachedAlbumArtist.clear();
-        g_cachedThumbnailBytes.clear();
-        g_cachedPaletteHash = 0;
-        g_blurBgCache.Invalidate();
-        g_cachedAppIconSize = -1;
-        ResetScrollState(g_titleScroll);
-        ResetScrollState(g_artistScroll);
+        Wh_Log(L"RemovePlayerGridInstance: Exception during removal");
     }
 }
 static void RemovePlayerGrid() {
@@ -10168,6 +9833,7 @@ static void RemovePlayerGrid() {
     ForEachPlayerInstance(&RemovePlayerGridInstance);
     SetCurrentPlayerInstance(nullptr);
     g_playerInstances.clear();
+    g_blurBgCache.Invalidate();
     g_miniPlayerArtRef            = nullptr;
     g_miniPlayerTitleRef          = nullptr;
     g_miniPlayerArtistRef         = nullptr;
@@ -10180,242 +9846,155 @@ static void RemovePlayerGrid() {
     g_miniPlayerSessionListSepRef = nullptr;
     g_miniPlayerBgOverlayRef      = nullptr;
 }
+static bool UpdateTrackText(TextBlock const& tb, std::wstring const& text, bool show, bool scrollEnabled,
+                            TextScrollState& scroll, const wchar_t* viewName, const wchar_t* cloneName,
+                            winrt::Windows::UI::Color color, bool& textChanged) {
+    bool visible = show && !text.empty();
+    try {
+        if (std::wstring(tb.Text()) != text) textChanged = true;
+        tb.Text(winrt::hstring(text));
+        tb.Foreground(MakeBrush(color));
+        tb.Visibility(visible ? Visibility::Visible : Visibility::Collapsed);
+        ToolTipService::SetToolTip(tb, nullptr);
+        if (scrollEnabled && visible) {
+            try {
+                if (auto viewFe = FindChildByName(g_playerGrid, viewName))
+                    viewFe.Visibility(Visibility::Visible);
+            } catch (...) {}
+            if (auto panelFe = FindChildByName(g_playerGrid, kPanelGridName)) {
+                panelFe.UpdateLayout();
+            }
+            tb.UpdateLayout();
+            double textW = tb.DesiredSize().Width;
+            if (auto viewFe = FindChildByName(g_playerGrid, viewName)) {
+                if (auto viewCanvas = viewFe.try_as<Canvas>()) {
+                    double minW = (double)g_settings.textAreaMinWidth;
+                    double maxW = (double)g_settings.textAreaMaxWidth;
+                    double viewW = textW;
+                    if (maxW > 0 && viewW > maxW) viewW = maxW;
+                    double availW = GetAvailableScrollTextAreaWidth();
+                    if (availW > 0.0 && viewW > availW) {
+                        viewW = (minW > 0.0) ? std::max(availW, minW) : availW;
+                    }
+                    if (minW > 0 && viewW < minW) viewW = minW;
+                    if (std::abs(viewCanvas.Width() - viewW) > 0.5) {
+                        viewCanvas.Width(viewW);
+                        try {
+                            if (auto geo = viewCanvas.Clip().try_as<winrt::Windows::UI::Xaml::Media::RectangleGeometry>()) {
+                                auto r = geo.Rect();
+                                geo.Rect({0, 0, (float)viewW, r.Height});
+                            }
+                        } catch (...) {}
+                    }
+                    bool wasActive = scroll.active;
+                    scroll.textWidth = textW;
+                    scroll.viewWidth = viewW;
+                    scroll.active = (textW > viewW + 2.0);
+                    if (!scroll.active) {
+                        scroll.offset = 0.0;
+                        scroll.forward = true;
+                        Canvas::SetLeft(tb, 0.0);
+                    } else if (!wasActive) {
+                        scroll.offset = 0.0;
+                        scroll.forward = true;
+                        if (g_settings.scrollMode == L"loop") {
+                            scroll.pausing  = false;
+                            scroll.pauseTick = 0;
+                        } else {
+                            scroll.pausing  = true;
+                            scroll.pauseTick = g_settings.scrollPauseDuration;
+                        }
+                    }
+                    if (auto cloneFe = FindChildByName(g_playerGrid, cloneName)) {
+                        if (auto clone = cloneFe.try_as<TextBlock>()) {
+                            clone.Text(tb.Text());
+                            clone.Foreground(tb.Foreground());
+                            clone.Visibility(g_settings.scrollMode == L"loop" && scroll.active
+                                ? Visibility::Visible : Visibility::Collapsed);
+                        }
+                    }
+                }
+            }
+        } else {
+            scroll.active = false;
+            scroll.offset = 0.0;
+            if (scrollEnabled) {
+                try {
+                    if (auto viewFe = FindChildByName(g_playerGrid, viewName))
+                        viewFe.Visibility(Visibility::Collapsed);
+                } catch (...) {}
+            }
+        }
+    } catch (...) {}
+    return visible;
+}
+static void ApplyButtonSupport(Button const& btn, bool supported) {
+    btn.IsEnabled(supported);
+    btn.Visibility(supported || !g_settings.hideUnsupportedButtons ? Visibility::Visible : Visibility::Collapsed);
+}
+static Border FindEmptyIconBorder(Grid const& artInnerGrid) {
+    for (uint32_t i = 0; i < artInnerGrid.Children().Size(); ++i) {
+        if (auto border = artInnerGrid.Children().GetAt(i).try_as<Border>()) {
+            if (border.Name() == L"EmptyIconBorder") return border;
+        }
+    }
+    return nullptr;
+}
 static void RefreshPlayerContentsInstance() {
     if (!g_playerGrid || g_unloading || g_applyingSettings) return;
-    std::wstring      title, artist;
-    bool              isPlaying = false, hasMedia = false;
-    std::vector<BYTE> thumbBytes;
-    std::vector<BYTE> appIconBytes;
-    uint64_t          thumbHash = 0;
-    bool              canSkipPrevious = true, canSkipNext = true;
-    bool              canShuffle = true, canRepeat = true, canSeek = true;
+    MediaState media;
     {
         std::lock_guard<std::mutex> lk(g_mediaMtx);
-        title        = g_media.title;
-        artist       = g_media.artist;
-        isPlaying    = g_media.isPlaying;
-        hasMedia     = g_media.hasMedia;
-        thumbBytes   = g_media.thumbnailBytes;
-        thumbHash    = g_media.thumbnailHash;
-        appIconBytes = g_media.appIconBytes;
-        canSkipPrevious = g_media.canSkipPrevious;
-        canSkipNext     = g_media.canSkipNext;
-        canShuffle      = g_media.canShuffle;
-        canRepeat       = g_media.canRepeat;
-        canSeek         = g_media.canSeek;
+        media = g_media;
     }
     bool hasSession = false;
     { std::lock_guard<std::mutex> lk(g_sessionMtx); hasSession = (g_currentSession != nullptr); }
     bool audioAppSource = false;
-    if (!hasMedia &&
-        ApplyAudioAppToDisplay(title, artist, thumbBytes, thumbHash, isPlaying)) {
-        audioAppSource  = true;
-        hasSession      = true;
-        hasMedia        = true;
-        canSkipPrevious = canSkipNext = canShuffle = canRepeat = canSeek = false;
+    if (!media.hasMedia &&
+        ApplyAudioAppToDisplay(media.title, media.artist, media.thumbnailBytes, media.thumbnailHash, media.isPlaying)) {
+        audioAppSource = true;
+        hasSession     = true;
+        media.hasMedia = true;
+        media.canSkipPrevious = media.canSkipNext = media.canShuffle = media.canRepeat = media.canSeek = false;
     }
     g_playerGrid.UpdateLayout();
-    if (title != g_scrollCachedTitle || artist != g_scrollCachedArtist) {
-        g_scrollCachedTitle  = title;
-        g_scrollCachedArtist = artist;
+    if (media.title != g_scrollCachedTitle || media.artist != g_scrollCachedArtist) {
+        g_scrollCachedTitle  = media.title;
+        g_scrollCachedArtist = media.artist;
         ResetScrollState(g_titleScroll);
         ResetScrollState(g_artistScroll);
-        try {
-            if (auto fe = FindChildByName(g_playerGrid, kTitleCloneName))
-                if (auto cl = fe.try_as<TextBlock>())
-                    cl.Visibility(Visibility::Collapsed);
-        } catch (...) {}
-        try {
-            if (auto fe = FindChildByName(g_playerGrid, kArtistCloneName))
-                if (auto cl = fe.try_as<TextBlock>())
-                    cl.Visibility(Visibility::Collapsed);
-        } catch (...) {}
-        try {
-            if (auto fe = FindChildByName(g_playerGrid, kTitleBlockName))
-                if (auto tb = fe.try_as<TextBlock>())
-                    Canvas::SetLeft(tb, 0.0);
-        } catch (...) {}
-        try {
-            if (auto fe = FindChildByName(g_playerGrid, kArtistBlockName))
-                if (auto ab = fe.try_as<TextBlock>())
-                    Canvas::SetLeft(ab, 0.0);
-        } catch (...) {}
+        for (const auto& cloneName : {kTitleCloneName, kArtistCloneName}) {
+            try {
+                if (auto fe = FindChildByName(g_playerGrid, cloneName))
+                    if (auto cl = fe.try_as<TextBlock>())
+                        cl.Visibility(Visibility::Collapsed);
+            } catch (...) {}
+        }
+        for (const auto& blockName : {kTitleBlockName, kArtistBlockName}) {
+            try {
+                if (auto fe = FindChildByName(g_playerGrid, blockName))
+                    if (auto tb = fe.try_as<TextBlock>())
+                        Canvas::SetLeft(tb, 0.0);
+            } catch (...) {}
+        }
     }
     bool titleVisible = false;
     bool artistVisible = false;
     bool trackTextChanged = false;
     if (auto fe = FindChildByName(g_playerGrid, kTitleBlockName))
         if (auto tb = fe.try_as<TextBlock>())
-            try {
-                std::wstring displayTitle = title;
-                if (!hasSession) {
-                    displayTitle = g_settings.noMediaTitleText;
-                } else if (title.empty()) {
-                    displayTitle = g_settings.emptyTitleText;
-                }
-                if (std::wstring(tb.Text()) != displayTitle) trackTextChanged = true;
-                tb.Text(winrt::hstring(displayTitle));
-                tb.Foreground(MakeBrush(TextColor()));
-                bool visible = g_settings.showTrackTitle && !displayTitle.empty();
-                titleVisible = visible;
-                tb.Visibility(visible ? Visibility::Visible : Visibility::Collapsed);
-                ToolTipService::SetToolTip(tb, nullptr);
-                if (g_settings.enableTitleScrolling && visible) {
-                    try {
-                        if (auto viewFe = FindChildByName(g_playerGrid, kTitleScrollViewName))
-                            viewFe.Visibility(Visibility::Visible);
-                    } catch (...) {}
-                    if (auto panelFe = FindChildByName(g_playerGrid, kPanelGridName)) {
-                        panelFe.UpdateLayout();
-                    }
-                    tb.UpdateLayout();
-                    double textW = tb.DesiredSize().Width;
-                    if (auto viewFe = FindChildByName(g_playerGrid, kTitleScrollViewName)) {
-                        if (auto viewCanvas = viewFe.try_as<Canvas>()) {
-                            double minW = (double)g_settings.textAreaMinWidth;
-                            double maxW = (double)g_settings.textAreaMaxWidth;
-                            double viewW = textW;
-                            if (maxW > 0 && viewW > maxW) viewW = maxW;
-                            double availW = GetAvailableScrollTextAreaWidth();
-                            if (availW > 0.0 && viewW > availW) {
-                                viewW = (minW > 0.0) ? std::max(availW, minW) : availW;
-                            }
-                            if (minW > 0 && viewW < minW) viewW = minW;
-                            if (std::abs(viewCanvas.Width() - viewW) > 0.5) {
-                                viewCanvas.Width(viewW);
-                                try {
-                                    if (auto geo = viewCanvas.Clip().try_as<winrt::Windows::UI::Xaml::Media::RectangleGeometry>()) {
-                                        auto r = geo.Rect();
-                                        geo.Rect({0, 0, (float)viewW, r.Height});
-                                    }
-                                } catch (...) {}
-                            }
-                            bool wasActive = g_titleScroll.active;
-                            g_titleScroll.textWidth = textW;
-                            g_titleScroll.viewWidth = viewW;
-                            g_titleScroll.active = (textW > viewW + 2.0);
-                            if (!g_titleScroll.active) {
-                                g_titleScroll.offset = 0.0;
-                                g_titleScroll.forward = true;
-                                Canvas::SetLeft(tb, 0.0);
-                            } else if (!wasActive) {
-                                g_titleScroll.offset = 0.0;
-                                g_titleScroll.forward = true;
-                                if (g_settings.scrollMode == L"loop") {
-                                    g_titleScroll.pausing  = false;
-                                    g_titleScroll.pauseTick = 0;
-                                } else {
-                                    g_titleScroll.pausing  = true;
-                                    g_titleScroll.pauseTick = g_settings.scrollPauseDuration;
-                                }
-                            }
-                            if (auto cloneFe = FindChildByName(g_playerGrid, kTitleCloneName)) {
-                                if (auto clone = cloneFe.try_as<TextBlock>()) {
-                                    clone.Text(tb.Text());
-                                    clone.Foreground(tb.Foreground());
-                                    clone.Visibility(g_settings.scrollMode == L"loop" && g_titleScroll.active
-                                        ? Visibility::Visible : Visibility::Collapsed);
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    g_titleScroll.active = false;
-                    g_titleScroll.offset = 0.0;
-                    if (g_settings.enableTitleScrolling) {
-                        try {
-                            if (auto viewFe = FindChildByName(g_playerGrid, kTitleScrollViewName))
-                                viewFe.Visibility(Visibility::Collapsed);
-                        } catch (...) {}
-                    }
-                }
-            } catch (...) {}
+            titleVisible = UpdateTrackText(
+                tb,
+                !hasSession ? g_settings.noMediaTitleText : media.title.empty() ? g_settings.emptyTitleText : media.title,
+                g_settings.showTrackTitle, g_settings.enableTitleScrolling, g_titleScroll,
+                kTitleScrollViewName, kTitleCloneName, TextColor(), trackTextChanged);
     if (auto fe = FindChildByName(g_playerGrid, kArtistBlockName))
         if (auto ab = fe.try_as<TextBlock>())
-            try {
-                std::wstring displayArtist = artist;
-                if (!hasSession) {
-                    displayArtist = g_settings.noMediaArtistText;
-                } else if (artist.empty()) {
-                    displayArtist = g_settings.emptyArtistText;
-                }
-                if (std::wstring(ab.Text()) != displayArtist) trackTextChanged = true;
-                ab.Text(winrt::hstring(displayArtist));
-                bool visible = g_settings.showTrackArtist && !displayArtist.empty();
-                artistVisible = visible;
-                ab.Visibility(visible ? Visibility::Visible : Visibility::Collapsed);
-                ab.Foreground(MakeBrush(ArtistColor()));
-                ToolTipService::SetToolTip(ab, nullptr);
-                if (g_settings.enableArtistScrolling && visible) {
-                    try {
-                        if (auto viewFe = FindChildByName(g_playerGrid, kArtistScrollViewName))
-                            viewFe.Visibility(Visibility::Visible);
-                    } catch (...) {}
-                    if (auto panelFe = FindChildByName(g_playerGrid, kPanelGridName)) {
-                        panelFe.UpdateLayout();
-                    }
-                    ab.UpdateLayout();
-                    double textW = ab.DesiredSize().Width;
-                    if (auto viewFe = FindChildByName(g_playerGrid, kArtistScrollViewName)) {
-                        if (auto viewCanvas = viewFe.try_as<Canvas>()) {
-                            double minW = (double)g_settings.textAreaMinWidth;
-                            double maxW = (double)g_settings.textAreaMaxWidth;
-                            double viewW = textW;
-                            if (maxW > 0 && viewW > maxW) viewW = maxW;
-                            double availW = GetAvailableScrollTextAreaWidth();
-                            if (availW > 0.0 && viewW > availW) {
-                                viewW = (minW > 0.0) ? std::max(availW, minW) : availW;
-                            }
-                            if (minW > 0 && viewW < minW) viewW = minW;
-                            if (std::abs(viewCanvas.Width() - viewW) > 0.5) {
-                                viewCanvas.Width(viewW);
-                                try {
-                                    if (auto geo = viewCanvas.Clip().try_as<winrt::Windows::UI::Xaml::Media::RectangleGeometry>()) {
-                                        auto r = geo.Rect();
-                                        geo.Rect({0, 0, (float)viewW, r.Height});
-                                    }
-                                } catch (...) {}
-                            }
-                            bool wasActive = g_artistScroll.active;
-                            g_artistScroll.textWidth = textW;
-                            g_artistScroll.viewWidth = viewW;
-                            g_artistScroll.active = (textW > viewW + 2.0);
-                            if (!g_artistScroll.active) {
-                                g_artistScroll.offset = 0.0;
-                                g_artistScroll.forward = true;
-                                Canvas::SetLeft(ab, 0.0);
-                            } else if (!wasActive) {
-                                g_artistScroll.offset = 0.0;
-                                g_artistScroll.forward = true;
-                                if (g_settings.scrollMode == L"loop") {
-                                    g_artistScroll.pausing  = false;
-                                    g_artistScroll.pauseTick = 0;
-                                } else {
-                                    g_artistScroll.pausing  = true;
-                                    g_artistScroll.pauseTick = g_settings.scrollPauseDuration;
-                                }
-                            }
-                            if (auto cloneFe = FindChildByName(g_playerGrid, kArtistCloneName)) {
-                                if (auto clone = cloneFe.try_as<TextBlock>()) {
-                                    clone.Text(ab.Text());
-                                    clone.Foreground(ab.Foreground());
-                                    clone.Visibility(g_settings.scrollMode == L"loop" && g_artistScroll.active
-                                        ? Visibility::Visible : Visibility::Collapsed);
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    g_artistScroll.active = false;
-                    g_artistScroll.offset = 0.0;
-                    if (g_settings.enableArtistScrolling) {
-                        try {
-                            if (auto viewFe = FindChildByName(g_playerGrid, kArtistScrollViewName))
-                                viewFe.Visibility(Visibility::Collapsed);
-                        } catch (...) {}
-                    }
-                }
-            } catch (...) {}
+            artistVisible = UpdateTrackText(
+                ab,
+                !hasSession ? g_settings.noMediaArtistText : media.artist.empty() ? g_settings.emptyArtistText : media.artist,
+                g_settings.showTrackArtist, g_settings.enableArtistScrolling, g_artistScroll,
+                kArtistScrollViewName, kArtistCloneName, ArtistColor(), trackTextChanged);
     if ((g_titleScroll.active || g_artistScroll.active) &&
         (g_settings.enableTitleScrolling || g_settings.enableArtistScrolling)) {
         if (g_scrollDispatcherTimer && !g_scrollDispatcherTimer.IsEnabled()) {
@@ -10436,8 +10015,8 @@ static void RefreshPlayerContentsInstance() {
             try {
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
                     const wchar_t* glyph = audioAppSource
-                        ? (isPlaying ? L"" : L"")
-                        : GetGlyph(2, isPlaying);
+                        ? (media.isPlaying ? L"" : L"")
+                        : GetGlyph(2, media.isPlaying);
                     ct.Text(winrt::hstring(glyph));
                     ct.Foreground(MakeBrush(ButtonColor()));
                 }
@@ -10445,38 +10024,21 @@ static void RefreshPlayerContentsInstance() {
     if (auto fe = FindChildByName(g_playerGrid, kPrevBtnName))
         if (auto btn = fe.try_as<Button>())
             try {
-                bool supported = canSkipPrevious;
-                btn.IsEnabled(supported);
-                if (g_settings.hideUnsupportedButtons) {
-                    btn.Visibility(supported ? Visibility::Visible : Visibility::Collapsed);
-                } else {
-                    btn.Visibility(Visibility::Visible);
-                }
+                bool supported = media.canSkipPrevious;
+                ApplyButtonSupport(btn, supported);
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
-                    const wchar_t* glyph = GetGlyph(1);
-                    ct.Text(winrt::hstring(glyph));
-                    if (!supported && !g_settings.hideUnsupportedButtons) {
-                        ct.Opacity(0.35);
-                        ct.Foreground(MakeBrush(ButtonColor()));
-                    } else {
-                        ct.Opacity(1.0);
-                        ct.Foreground(MakeBrush(ButtonColor()));
-                    }
+                    ct.Text(GetGlyph(1));
+                    ct.Opacity(supported ? 1.0 : 0.35);
+                    ct.Foreground(MakeBrush(ButtonColor()));
                 }
             } catch (...) {}
     if (auto fe = FindChildByName(g_playerGrid, kNextBtnName))
         if (auto btn = fe.try_as<Button>())
             try {
-                bool supported = canSkipNext;
-                btn.IsEnabled(supported);
-                if (g_settings.hideUnsupportedButtons) {
-                    btn.Visibility(supported ? Visibility::Visible : Visibility::Collapsed);
-                } else {
-                    btn.Visibility(Visibility::Visible);
-                }
+                bool supported = media.canSkipNext;
+                ApplyButtonSupport(btn, supported);
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
-                    const wchar_t* glyph = GetGlyph(3);
-                    ct.Text(winrt::hstring(glyph));
+                    ct.Text(GetGlyph(3));
                     ct.Opacity(supported ? 1.0 : 0.35);
                     ct.Foreground(MakeBrush(ButtonColor()));
                 }
@@ -10484,16 +10046,10 @@ static void RefreshPlayerContentsInstance() {
     if (auto fe = FindChildByName(g_playerGrid, kRewindBtnName))
         if (auto btn = fe.try_as<Button>())
             try {
-                bool supported = canSeek;
-                btn.IsEnabled(supported);
-                if (g_settings.hideUnsupportedButtons) {
-                    btn.Visibility(supported ? Visibility::Visible : Visibility::Collapsed);
-                } else {
-                    btn.Visibility(Visibility::Visible);
-                }
+                bool supported = media.canSeek;
+                ApplyButtonSupport(btn, supported);
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
-                    const wchar_t* glyph = GetGlyph(5);
-                    ct.Text(winrt::hstring(glyph));
+                    ct.Text(GetGlyph(5));
                     ct.Opacity(supported ? 1.0 : 0.35);
                     ct.Foreground(MakeBrush(ButtonColor()));
                 }
@@ -10501,16 +10057,10 @@ static void RefreshPlayerContentsInstance() {
     if (auto fe = FindChildByName(g_playerGrid, kForwardBtnName))
         if (auto btn = fe.try_as<Button>())
             try {
-                bool supported = canSeek;
-                btn.IsEnabled(supported);
-                if (g_settings.hideUnsupportedButtons) {
-                    btn.Visibility(supported ? Visibility::Visible : Visibility::Collapsed);
-                } else {
-                    btn.Visibility(Visibility::Visible);
-                }
+                bool supported = media.canSeek;
+                ApplyButtonSupport(btn, supported);
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
-                    const wchar_t* glyph = GetGlyph(6);
-                    ct.Text(winrt::hstring(glyph));
+                    ct.Text(GetGlyph(6));
                     ct.Opacity(supported ? 1.0 : 0.35);
                     ct.Foreground(MakeBrush(ButtonColor()));
                 }
@@ -10518,21 +10068,14 @@ static void RefreshPlayerContentsInstance() {
     if (auto fe = FindChildByName(g_playerGrid, kShuffleBtnName))
         if (auto btn = fe.try_as<Button>())
             try {
-                bool supported = canShuffle;
-                btn.IsEnabled(supported);
-                if (g_settings.hideUnsupportedButtons) {
-                    btn.Visibility(supported ? Visibility::Visible : Visibility::Collapsed);
-                } else {
-                    btn.Visibility(Visibility::Visible);
-                }
+                bool supported = media.canShuffle;
+                ApplyButtonSupport(btn, supported);
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
-                    bool isEnabled = g_shuffleEnabled.load();
-                    const wchar_t* glyph = L"";
-                    ct.Text(winrt::hstring(glyph));
+                    ct.Text(GetGlyph(7));
                     if (!supported && !g_settings.hideUnsupportedButtons) {
                         ct.Opacity(0.35);
                     } else {
-                        ct.Opacity(isEnabled ? 1.0 : 0.4);
+                        ct.Opacity(g_shuffleEnabled.load() ? 1.0 : 0.4);
                     }
                     ct.Foreground(MakeBrush(ButtonColor()));
                 }
@@ -10540,28 +10083,10 @@ static void RefreshPlayerContentsInstance() {
     if (auto fe = FindChildByName(g_playerGrid, kRepeatBtnName))
         if (auto btn = fe.try_as<Button>())
             try {
-                bool supported = canRepeat;
-                btn.IsEnabled(supported);
-                if (g_settings.hideUnsupportedButtons) {
-                    btn.Visibility(supported ? Visibility::Visible : Visibility::Collapsed);
-                } else {
-                    btn.Visibility(Visibility::Visible);
-                }
+                bool supported = media.canRepeat;
+                ApplyButtonSupport(btn, supported);
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
-                    RepeatMode mode = g_repeatMode.load();
-                    const wchar_t* glyph;
-                    switch (mode) {
-                        case RepeatMode::Off:
-                            glyph = L"";
-                            break;
-                        case RepeatMode::All:
-                            glyph = L"";
-                            break;
-                        case RepeatMode::One:
-                            glyph = L"";
-                            break;
-                    }
-                    ct.Text(winrt::hstring(glyph));
+                    ct.Text(GetGlyph(8));
                     ct.Foreground(MakeBrush(ButtonColor()));
                     if (!supported && !g_settings.hideUnsupportedButtons) {
                         ct.Opacity(0.35);
@@ -10574,21 +10099,15 @@ static void RefreshPlayerContentsInstance() {
         if (auto btn = fe.try_as<Button>())
             try {
                 bool supported = g_sessionCount.load() > 1;
-                btn.IsEnabled(supported);
-                if (g_settings.hideUnsupportedButtons) {
-                    btn.Visibility(supported ? Visibility::Visible : Visibility::Collapsed);
-                } else {
-                    btn.Visibility(Visibility::Visible);
-                }
+                ApplyButtonSupport(btn, supported);
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
                     ct.Opacity(supported ? 1.0 : 0.35);
                     ct.Foreground(MakeBrush(ButtonColor()));
                 }
             } catch (...) {}
-    const bool emptyStateOwnsAlbumArt =
-        !(hasSession && hasMedia) && g_settings.emptyStateHideAlbumArt;
+    const bool emptyState = !(hasSession && media.hasMedia);
+    const bool emptyStateOwnsAlbumArt = emptyState && g_settings.emptyStateHideAlbumArt;
     {
-        bool emptyState = !(hasSession && hasMedia);
         auto applyEmptyState = [emptyState](FrameworkElement const& el, bool hideWhenEmpty) {
             if (!el) return;
             try {
@@ -10612,10 +10131,10 @@ static void RefreshPlayerContentsInstance() {
                         g_settings.emptyStateHideAlbumArt);
     }
     if (g_settings.showPauseOverlay && g_settings.showAlbumArt) {
-        if (auto fe = FindChildByName(g_playerGrid, L"PauseIconOverlay"))
+        if (auto fe = FindChildByName(g_playerGrid, kPauseOverlayName))
             if (auto overlay = fe.try_as<Border>()) {
                 try {
-                    bool showPause = !isPlaying && hasMedia && !audioAppSource;
+                    bool showPause = !media.isPlaying && media.hasMedia && !audioAppSource;
                     overlay.Visibility(showPause ? Visibility::Visible : Visibility::Collapsed);
                     if (auto pauseIcon = overlay.Child().try_as<TextBlock>()) {
                         pauseIcon.Text(GetGlyph(2, true));
@@ -10627,14 +10146,8 @@ static void RefreshPlayerContentsInstance() {
                         if (auto artImg = FindChildByName(g_playerGrid, kArtImageName)) {
                             if (auto parent = VisualTreeHelper::GetParent(artImg)) {
                                 if (auto artInnerGrid = parent.try_as<Grid>()) {
-                                    for (uint32_t i = 0; i < artInnerGrid.Children().Size(); ++i) {
-                                        auto child = artInnerGrid.Children().GetAt(i);
-                                        if (auto border = child.try_as<Border>()) {
-                                            if (border.Name() == L"EmptyIconBorder") {
-                                                border.Visibility(Visibility::Collapsed);
-                                                break;
-                                            }
-                                        }
+                                    if (auto border = FindEmptyIconBorder(artInnerGrid)) {
+                                        border.Visibility(Visibility::Collapsed);
                                     }
                                 }
                             }
@@ -10646,14 +10159,14 @@ static void RefreshPlayerContentsInstance() {
     bool paletteChanged = false;
     if (auto fe = FindChildByName(g_playerGrid, kArtImageName))
         if (auto img = fe.try_as<Controls::Image>()) {
-            if (!thumbBytes.empty() && g_settings.showAlbumArt) {
+            if (!media.thumbnailBytes.empty() && g_settings.showAlbumArt) {
                 bool isSameAlbum = (!g_cachedThumbnailBytes.empty() &&
-                                title == g_cachedAlbumTitle &&
-                                artist == g_cachedAlbumArtist &&
-                                thumbBytes == g_cachedThumbnailBytes);
-                size_t newHash = (size_t)thumbHash;
+                                media.title == g_cachedAlbumTitle &&
+                                media.artist == g_cachedAlbumArtist &&
+                                media.thumbnailBytes == g_cachedThumbnailBytes);
+                size_t newHash = (size_t)media.thumbnailHash;
                 if (newHash != g_cachedPaletteHash && newHash != 0) {
-                    g_cachedAlbumPalette = ExtractAlbumPalette(thumbBytes);
+                    g_cachedAlbumPalette = ExtractAlbumPalette(media.thumbnailBytes);
                     g_cachedPaletteHash = newHash;
                     g_vizPaletteColorsDirty = true;
                     paletteChanged = true;
@@ -10661,7 +10174,7 @@ static void RefreshPlayerContentsInstance() {
                 if (!isSameAlbum) {
                     try {
                         IStream* pRawStream = SHCreateMemStream(
-                            thumbBytes.data(), static_cast<UINT>(thumbBytes.size()));
+                            media.thumbnailBytes.data(), static_cast<UINT>(media.thumbnailBytes.size()));
                         if (pRawStream) {
                             winrt::com_ptr<IStream> comStream;
                             comStream.attach(pRawStream);
@@ -10697,28 +10210,16 @@ static void RefreshPlayerContentsInstance() {
                                 img.Source(bmp);
                                 bmp.SetSourceAsync(rasStream);
                                 img.Visibility(Visibility::Visible);
-                                g_cachedAlbumTitle = title;
-                                g_cachedAlbumArtist = artist;
-                                g_cachedThumbnailBytes = thumbBytes;
+                                g_cachedAlbumTitle = media.title;
+                                g_cachedAlbumArtist = media.artist;
+                                g_cachedThumbnailBytes = media.thumbnailBytes;
+                                if (auto artContainer = FindChildByName(g_playerGrid, kArtContainerName)) {
+                                    artContainer.Visibility(Visibility::Visible);
+                                }
                                 if (auto parent = VisualTreeHelper::GetParent(img)) {
                                     if (auto artInnerGrid = parent.try_as<Grid>()) {
-                                        if (auto grandParent = VisualTreeHelper::GetParent(artInnerGrid)) {
-                                            if (auto container = grandParent.try_as<FrameworkElement>()) {
-                                                if (auto greatGrandParent = VisualTreeHelper::GetParent(container)) {
-                                                    if (auto artContainer = greatGrandParent.try_as<Grid>()) {
-                                                        artContainer.Visibility(Visibility::Visible);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        for (uint32_t i = 0; i < artInnerGrid.Children().Size(); ++i) {
-                                            auto child = artInnerGrid.Children().GetAt(i);
-                                            if (auto border = child.try_as<Border>()) {
-                                                if (border.Name() == L"EmptyIconBorder") {
-                                                    border.Visibility(Visibility::Collapsed);
-                                                    break;
-                                                }
-                                            }
+                                        if (auto border = FindEmptyIconBorder(artInnerGrid)) {
+                                            border.Visibility(Visibility::Collapsed);
                                         }
                                     }
                                 }
@@ -10727,26 +10228,17 @@ static void RefreshPlayerContentsInstance() {
                     } catch (...) { try { img.Source(nullptr); } catch (...) {} }
                 } else {
                     img.Visibility(Visibility::Visible);
-                    if (auto parent = VisualTreeHelper::GetParent(img)) {
-                        if (auto container = parent.try_as<FrameworkElement>()) {
-                            if (auto grandParent = VisualTreeHelper::GetParent(container)) {
-                                if (auto greatGrandParent = VisualTreeHelper::GetParent(grandParent)) {
-                                    if (auto artContainer = greatGrandParent.try_as<Grid>()) {
-                                        artContainer.Visibility(Visibility::Visible);
-                                    }
-                                }
-                            }
-                        }
+                    if (auto artContainer = FindChildByName(g_playerGrid, kArtContainerName)) {
+                        artContainer.Visibility(Visibility::Visible);
                     }
                 }
-                if (auto bgFe = FindChildByName(g_playerGrid, L"FluentMedia_Background")) {
+                if (auto bgFe = FindChildByName(g_playerGrid, kBackgroundName)) {
                     if (auto bgBorder = bgFe.try_as<Border>()) {
-                        auto& bgType = g_settings.backgroundType;
-                        if (bgType == L"album_art_blur") {
+                        if (g_settings.backgroundType == L"album_art_blur") {
                             try {
                                 bgBorder.Visibility(Visibility::Visible);
                                 bgBorder.Opacity(g_settings.blurOpacity / 100.0);
-                                auto applyBlur = [bgBorder, thumbBytesSnap = thumbBytes]() {
+                                auto applyBlur = [bgBorder, thumbBytesSnap = media.thumbnailBytes]() {
                                     try {
                                         int w = (int)bgBorder.ActualWidth();
                                         int h = (int)bgBorder.ActualHeight();
@@ -10767,7 +10259,7 @@ static void RefreshPlayerContentsInstance() {
                                         });
                                 }
                             } catch (...) {}
-                        } else if (bgType == L"solid" || bgType == L"gradient" || bgType == L"acrylic" || bgType == L"mica" || bgType == L"mica_alt") {
+                        } else if (UsesBackgroundBrush()) {
                             try {
                                 bgBorder.Background(MakeBackgroundBrush());
                                 bgBorder.Visibility(Visibility::Visible);
@@ -10782,12 +10274,10 @@ static void RefreshPlayerContentsInstance() {
                 g_cachedThumbnailBytes.clear();
                 g_cachedPaletteHash = 0;
                 g_blurBgCache.Invalidate();
-                if (auto bgFe = FindChildByName(g_playerGrid, L"FluentMedia_Background")) {
+                if (auto bgFe = FindChildByName(g_playerGrid, kBackgroundName)) {
                     if (auto bgBorder = bgFe.try_as<Border>()) {
                         try {
-                            auto& bgType = g_settings.backgroundType;
-                            if (bgType == L"solid" || bgType == L"gradient" || bgType == L"acrylic" ||
-                                bgType == L"mica" || bgType == L"mica_alt") {
+                            if (UsesBackgroundBrush()) {
                                 bgBorder.Background(MakeBackgroundBrush());
                                 bgBorder.Visibility(Visibility::Visible);
                                 bgBorder.Opacity(1.0);
@@ -10801,42 +10291,19 @@ static void RefreshPlayerContentsInstance() {
                 try {
                     img.Source(nullptr);
                     img.Visibility(Visibility::Collapsed);
-                    if (g_settings.albumArtEmptyBehavior == L"hide" && thumbBytes.empty()) {
-                        if (auto parent = VisualTreeHelper::GetParent(img)) {
-                            if (auto container = parent.try_as<FrameworkElement>()) {
-                                if (auto grandParent = VisualTreeHelper::GetParent(container)) {
-                                    if (auto greatGrandParent = VisualTreeHelper::GetParent(grandParent)) {
-                                        if (auto artContainer = greatGrandParent.try_as<FrameworkElement>()) {
-                                            artContainer.Visibility(Visibility::Collapsed);
-                                        }
-                                    }
-                                }
-                            }
+                    if (g_settings.albumArtEmptyBehavior == L"hide" && media.thumbnailBytes.empty()) {
+                        if (auto artContainer = FindChildByName(g_playerGrid, kArtContainerName)) {
+                            artContainer.Visibility(Visibility::Collapsed);
                         }
-                    } else if (g_settings.albumArtEmptyBehavior == L"show_icon" && thumbBytes.empty()) {
+                    } else if (g_settings.albumArtEmptyBehavior == L"show_icon" && media.thumbnailBytes.empty()) {
                         if (auto parent = VisualTreeHelper::GetParent(img)) {
                             if (auto artInnerGrid = parent.try_as<Grid>()) {
-                                if (!(emptyStateOwnsAlbumArt)) {
-                                    if (auto grandParent = VisualTreeHelper::GetParent(artInnerGrid)) {
-                                        if (auto container = grandParent.try_as<FrameworkElement>()) {
-                                            if (auto greatGrandParent = VisualTreeHelper::GetParent(container)) {
-                                                if (auto artContainer = greatGrandParent.try_as<Grid>()) {
-                                                    artContainer.Visibility(Visibility::Visible);
-                                                }
-                                            }
-                                        }
+                                if (!emptyStateOwnsAlbumArt) {
+                                    if (auto artContainer = FindChildByName(g_playerGrid, kArtContainerName)) {
+                                        artContainer.Visibility(Visibility::Visible);
                                     }
                                 }
-                                Border iconBorder = nullptr;
-                                for (uint32_t i = 0; i < artInnerGrid.Children().Size(); ++i) {
-                                    auto child = artInnerGrid.Children().GetAt(i);
-                                    if (auto border = child.try_as<Border>()) {
-                                        if (border.Name() == L"EmptyIconBorder") {
-                                            iconBorder = border;
-                                            break;
-                                        }
-                                    }
-                                }
+                                Border iconBorder = FindEmptyIconBorder(artInnerGrid);
                                 if (!iconBorder) {
                                     iconBorder = Border();
                                     iconBorder.Name(L"EmptyIconBorder");
@@ -10883,27 +10350,21 @@ static void RefreshPlayerContentsInstance() {
         }
     if (paletteChanged) {
         try {
-            if (g_settings.backgroundType == L"gradient" ||
-                g_settings.backgroundType == L"solid" ||
-                g_settings.backgroundType == L"acrylic" ||
-                g_settings.backgroundType == L"mica" ||
-                g_settings.backgroundType == L"mica_alt") {
-                if (auto bgFe = FindChildByName(g_playerGrid, L"FluentMedia_Background")) {
+            if (UsesBackgroundBrush()) {
+                if (auto bgFe = FindChildByName(g_playerGrid, kBackgroundName)) {
                     if (auto bgBorder = bgFe.try_as<Border>()) {
                         bgBorder.Background(MakeBackgroundBrush());
                     }
                 }
             }
-            auto textClr = TextColor();
-            auto artistClr = ArtistColor();
             if (auto titleFe = FindChildByName(g_playerGrid, kTitleBlockName)) {
                 if (auto titleBlock = titleFe.try_as<TextBlock>()) {
-                    titleBlock.Foreground(SolidColorBrush(textClr));
+                    titleBlock.Foreground(MakeBrush(TextColor()));
                 }
             }
             if (auto artistFe = FindChildByName(g_playerGrid, kArtistBlockName)) {
                 if (auto artistBlock = artistFe.try_as<TextBlock>()) {
-                    artistBlock.Foreground(SolidColorBrush(artistClr));
+                    artistBlock.Foreground(MakeBrush(ArtistColor()));
                 }
             }
             auto buttonClr = ButtonColor();
@@ -10913,7 +10374,7 @@ static void RefreshPlayerContentsInstance() {
                     if (auto btn = btnFe.try_as<Button>()) {
                         if (auto content = btn.Content()) {
                             if (auto icon = content.try_as<TextBlock>()) {
-                                icon.Foreground(SolidColorBrush(buttonClr));
+                                icon.Foreground(MakeBrush(buttonClr));
                             }
                         }
                     }
@@ -10925,17 +10386,17 @@ static void RefreshPlayerContentsInstance() {
         if (auto fe = FindChildByName(g_playerGrid, kAppIconImageName))
             if (auto img = fe.try_as<Controls::Image>()) {
                 bool sizeChanged = (g_cachedAppIconSize != g_settings.appIconSize);
-                if (sizeChanged && !appIconBytes.empty()) {
+                if (sizeChanged && !media.appIconBytes.empty()) {
                     g_cachedAppIconSize = g_settings.appIconSize;
                     FetchMediaPropertiesAsync();
                 }
-                if (!appIconBytes.empty()) {
+                if (!media.appIconBytes.empty()) {
                     try {
                         int iconSz = g_settings.appIconSize;
                         size_t expectedBytes = (size_t)iconSz * iconSz * 4;
-                        if (appIconBytes.size() != expectedBytes) {
-                            int computed = (int)std::sqrt((double)appIconBytes.size() / 4.0);
-                            if (computed > 0 && (size_t)computed * computed * 4 == appIconBytes.size())
+                        if (media.appIconBytes.size() != expectedBytes) {
+                            int computed = (int)std::sqrt((double)media.appIconBytes.size() / 4.0);
+                            if (computed > 0 && (size_t)computed * computed * 4 == media.appIconBytes.size())
                                 iconSz = computed;
                         }
                         img.Width(iconSz);
@@ -10946,12 +10407,12 @@ static void RefreshPlayerContentsInstance() {
                         auto bufferByteAccess = buf.as<Windows::Storage::Streams::IBufferByteAccess>();
                         BYTE* pixels = nullptr;
                         bufferByteAccess->Buffer(&pixels);
-                        if (appIconBytes.size() >= bytesNeeded && pixels) {
+                        if (media.appIconBytes.size() >= bytesNeeded && pixels) {
                             for (size_t i = 0; i + 3 < bytesNeeded; i += 4) {
-                                pixels[i+0] = appIconBytes[i+2];
-                                pixels[i+1] = appIconBytes[i+1];
-                                pixels[i+2] = appIconBytes[i+0];
-                                pixels[i+3] = appIconBytes[i+3];
+                                pixels[i+0] = media.appIconBytes[i+2];
+                                pixels[i+1] = media.appIconBytes[i+1];
+                                pixels[i+2] = media.appIconBytes[i+0];
+                                pixels[i+3] = media.appIconBytes[i+3];
                             }
                         }
                         buf.Length(static_cast<uint32_t>(bytesNeeded));
@@ -10967,12 +10428,11 @@ static void RefreshPlayerContentsInstance() {
             }
     }
     try {
-        FrameworkElement tooltipHost = g_playerGrid;
-        if (g_settings.showFullTitleOnHover && hasSession && (!title.empty() || !artist.empty())) {
+        if (g_settings.showFullTitleOnHover && hasSession && (!media.title.empty() || !media.artist.empty())) {
             std::wstring tooltipText;
-            if (!title.empty())  tooltipText += title;
-            if (!title.empty() && !artist.empty()) tooltipText += L"\n\n";
-            if (!artist.empty()) tooltipText += artist;
+            if (!media.title.empty())  tooltipText += media.title;
+            if (!media.title.empty() && !media.artist.empty()) tooltipText += L"\n\n";
+            if (!media.artist.empty()) tooltipText += media.artist;
             if (g_playerToolTip) {
                 try {
                     auto content = g_playerToolTip.Content();
@@ -10981,9 +10441,7 @@ static void RefreshPlayerContentsInstance() {
                     }
                     g_playerToolTip.IsEnabled(true);
                 } catch (...) {}
-                if (tooltipHost) {
-                    try { ToolTipService::SetToolTip(tooltipHost, g_playerToolTip); } catch (...) {}
-                }
+                try { ToolTipService::SetToolTip(g_playerGrid, g_playerToolTip); } catch (...) {}
             }
         } else {
             if (g_playerToolTip) {
@@ -10996,9 +10454,7 @@ static void RefreshPlayerContentsInstance() {
                 } catch (...) {}
             }
 
-            if (tooltipHost) {
-                try { ToolTipService::SetToolTip(tooltipHost, nullptr); } catch (...) {}
-            }
+            try { ToolTipService::SetToolTip(g_playerGrid, nullptr); } catch (...) {}
         }
     } catch (...) {}
 }
@@ -11061,16 +10517,7 @@ static void UpdateVisibilityInstance() {
                 if (!wasVisible) AnimatePlayerShow(g_playerGrid);
             }
         } else {
-            bool isTrackingPosition = (g_settings.position == L"taskbar_left_start" ||
-                                    g_settings.position == L"taskbar_right_start" ||
-                                    g_settings.position == L"taskbar_after_search_left" ||
-                                    g_settings.position == L"taskbar_after_search_right" ||
-                                    g_settings.position == L"taskbar_after_taskview_left" ||
-                                    g_settings.position == L"taskbar_after_taskview_right" ||
-                                    g_settings.position == L"taskbar_after_widgets_left" ||
-                                    g_settings.position == L"taskbar_after_widgets_right" ||
-                                    g_settings.position == L"taskbar_far_edge_left");
-            if (hide && isTrackingPosition && g_settings.enableSmoothPositionAnimation) {
+            if (hide && IsTaskbarTrackingPosition(g_settings.position) && g_settings.enableSmoothPositionAnimation) {
                 AnimatePlayerHide(g_playerGrid);
                 PlayerInstanceState* owner = g_currentInstance;
                 SpawnTrackedWorker([owner]() {
@@ -11123,7 +10570,6 @@ static void UpdateVisibilityInstance() {
                             }
                         }
                     }
-                } else {
                 }
                 if (hide) {
                     g_playerGrid.MinWidth(0);
@@ -11238,19 +10684,8 @@ static void WINAPI TrayUI_StartTaskbar_Hook(void* pThis) {
     }
     SetCurrentPlayerInstance(nullptr);
     g_playerInstances.clear();
-    g_playerGrid      = nullptr;
-    g_injectionParent = nullptr;
-    g_playerColumn    = -1;
-    g_trackedElement  = nullptr;
-    g_hasTrackedElementOriginalMargin = false;
-    g_trackPosition   = L"";
-    g_layoutUpdateToken = {};
     g_taskbarWnd = hWnd;
     g_curTaskbarWnd = hWnd;
-    g_cachedAlbumTitle.clear();
-    g_cachedAlbumArtist.clear();
-    g_cachedThumbnailBytes.clear();
-    g_cachedPaletteHash = 0;
     g_cachedAppIconSize = -1;
     g_blurBgCache.Invalidate();
     StopVizTimer();
@@ -11271,26 +10706,19 @@ static void WINAPI TrayUI_StartTaskbar_Hook(void* pThis) {
     }
     auto xamlRoot = GetTaskbarXamlRoot(hWnd);
     if (!xamlRoot) {
-        Wh_Log(L"InjectPlayerGrid: Failed to get XAML root");
+        Wh_Log(L"TrayUI_StartTaskbar_Hook: Failed to get XAML root");
         return;
     }
     auto xamlRootContent = xamlRoot.Content().try_as<FrameworkElement>();
     if (!xamlRootContent) {
-        Wh_Log(L"InjectPlayerGrid: Failed to get XAML root content");
+        Wh_Log(L"TrayUI_StartTaskbar_Hook: Failed to get XAML root content");
         return;
     }
     ApplySettingsWithRetry(xamlRootContent);
 }
 static bool HookTaskbarDllSymbols() {
-    static const wchar_t* const kCandidates[] = {
-        L"taskbar.dll",
-    };
-    HMODULE h = nullptr;
-    for (auto* name : kCandidates) {
-        h = LoadLibraryExW(name, nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-        if (h) break;
-    }
-    if (!h) { return FALSE; }
+    HMODULE h = LoadLibraryExW(L"taskbar.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!h) return false;
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {{LR"(const CTaskBand::`vftable'{for `ITaskListWndSite'})"},
         &CTaskBand_ITaskListWndSite_vftable},
@@ -11308,17 +10736,9 @@ static bool HookTaskbarDllSymbols() {
         &TrayUI_StartTaskbar_Original,
         TrayUI_StartTaskbar_Hook},
     };
-    if (!WindhawkUtils::HookSymbols(h, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks))) {
-        return FALSE;
-    }
-    return TRUE;
+    return WindhawkUtils::HookSymbols(h, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks));
 }
 BOOL Wh_ModInit() {
-    g_unloading = false;
-    g_applyingSettings = false;
-    g_taskbarWnd = nullptr;
-    g_curTaskbarWnd = nullptr;
-    g_needsUiUpdate = false;
     LoadSettings();
     if (!HookTaskbarDllSymbols()) {
         Wh_Log(L"Wh_ModInit: HookTaskbarDllSymbols failed");
@@ -11334,12 +10754,7 @@ void Wh_ModAfterInit() {
     StartAudioAppThread();
     if (g_taskbarWnd) {
         RunFromWindowThread(g_taskbarWnd, [](void*) {
-            g_cachedAlbumTitle.clear();
-            g_cachedAlbumArtist.clear();
-            g_cachedThumbnailBytes.clear();
-            g_cachedPaletteHash = 0;
             g_cachedAppIconSize = -1;
-            g_blurBgCache.Invalidate();
             ApplySettings();
             if (PlayerInstanceCount() > 0) {
                 RefreshPlayerContents();
@@ -11351,6 +10766,16 @@ void Wh_ModAfterInit() {
             }
         }, nullptr);
     }
+}
+static void ReleaseSharedBrushes() {
+    g_mediaHoverBrush   = nullptr;
+    g_mediaPressedBrush = nullptr;
+    g_playerHoverBrush  = nullptr;
+    g_playerPressedBrush = nullptr;
+    g_playerBorderBrush  = nullptr;
+    g_playerBorderPressedBrush = nullptr;
+    g_vizBars.reset();
+    g_vizBrushes.reset();
 }
 void Wh_ModUninit() {
     g_unloading = true;
@@ -11365,40 +10790,15 @@ void Wh_ModUninit() {
                 g_applyRetryTimer = nullptr;
             }
             RemovePlayerGrid();
-            g_mediaHoverBrush   = nullptr;
-            g_mediaPressedBrush = nullptr;
-            g_playerHoverBrush  = nullptr;
-            g_playerPressedBrush = nullptr;
-            g_playerBorderBrush  = nullptr;
-            g_playerBorderPressedBrush = nullptr;
-            g_vizBars.reset();
-            g_vizBrushes.reset();
-            g_miniPlayerArtRef            = nullptr;
-            g_miniPlayerTitleRef          = nullptr;
-            g_miniPlayerArtistRef         = nullptr;
-            g_miniPlayerPlayBtnRef        = nullptr;
-            g_miniPlayerPrevBtnRef        = nullptr;
-            g_miniPlayerNextBtnRef        = nullptr;
-            g_miniPlayerShuffleBtnRef     = nullptr;
-            g_miniPlayerRepeatBtnRef      = nullptr;
+            ReleaseSharedBrushes();
             g_miniPlayerMuteBtnRef        = nullptr;
             g_miniPlayerVolumeSliderRef   = nullptr;
             g_miniPlayerVolumeTextRef     = nullptr;
             g_miniPlayerVolumeRowRef      = nullptr;
-            g_miniPlayerSessionListRef    = nullptr;
-            g_miniPlayerSessionListSepRef = nullptr;
-            g_miniPlayerBgOverlayRef      = nullptr;
             g_fluentMediaButtonStyle      = nullptr;
         }, nullptr);
     else {
-        g_mediaHoverBrush   = nullptr;
-        g_mediaPressedBrush = nullptr;
-        g_playerHoverBrush  = nullptr;
-        g_playerPressedBrush = nullptr;
-        g_playerBorderBrush  = nullptr;
-        g_playerBorderPressedBrush = nullptr;
-        g_vizBars.reset();
-        g_vizBrushes.reset();
+        ReleaseSharedBrushes();
     }
     CleanupAudioDeviceEnumerator();
 }
@@ -11419,11 +10819,6 @@ void Wh_ModSettingsChanged() {
         bool ok = RunFromWindowThread(hWnd, [](void*) {
             try {
                 RemovePlayerGrid();
-                g_cachedAlbumTitle.clear();
-                g_cachedAlbumArtist.clear();
-                g_cachedThumbnailBytes.clear();
-                g_cachedPaletteHash = 0;
-                g_blurBgCache.Invalidate();
                 if (!g_unloading) {
                     g_applyingSettings = false;
                     InjectPlayerGrid();
@@ -11434,8 +10829,6 @@ void Wh_ModSettingsChanged() {
                 Wh_Log(L"Wh_ModSettingsChanged: Exception during RemovePlayerGrid/InjectPlayerGrid");
                 SetCurrentPlayerInstance(nullptr);
                 g_playerInstances.clear();
-                g_playerGrid = nullptr;
-                g_injectionParent = nullptr;
             }
         }, nullptr);
         if (!ok) {
