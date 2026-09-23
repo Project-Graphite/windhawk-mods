@@ -7,7 +7,8 @@ taskbar. It uses Windows media sessions for playback control and can fall back t
 
 - More than 20 taskbar and system-tray placements, including multi-monitor support
 - Album art, title and artist text, configurable transport controls, and scrolling text
-- Configurable rewind/forward interval with accessible control names and tooltips
+- Configurable 1-60 second rewind and forward interval
+- Accessible control names and tooltips
 - Per-application volume and mute controls for media and audio-only applications
 - Session switching, configurable mouse actions, and a compact mini-player
 - Double-click anywhere on the player to open Spotify or another configured app
@@ -46,8 +47,3 @@ The default double-click command is `spotify:`. Replace it with another URI, exe
 or `shell:AppsFolder` ID if needed.
 
 Because the mod runs inside `explorer.exe`, test changes through Windhawk and keep another way to restart Explorer available while developing.
-
-## Project
-
-TaskTune is created and maintained by
-[AmrMsCLL](https://github.com/AmrMsCLL) as part of Project Graphite. It is available under the MIT license.

@@ -10,7 +10,7 @@ It supports applications, folders, URLs, Visual Studio Code workspaces, and comm
 - Groups under collapsible headings
 - Named profiles that change the full selection in one action
 - Per-item delays, a global launch stagger and wait-for-exit behavior
-- Graceful reverse-order shutdown with a force-close fallback
+- Graceful reverse-order shutdown with an optional force close
 - Optional profile launch after signing in
 - Eight taskbar placements, a global hotkey and an optional tray icon
 - Dark and light panel themes that follow the Windows app theme

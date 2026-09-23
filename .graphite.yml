@@ -3,7 +3,7 @@ projects:
     kind: epic
     name: Windhawk Mods
     summary: >
-      A growing collection of native Windows customizations built for Windhawk, the open-source marketplace and framework for modifying programs without replacing system files.
+      Windhawk mods that add a launcher and a media player to the Windows 11 taskbar.
     tags: [cpp, windows, windhawk, win32]
     owner: amrmscll
     authors: [AmrMsCLL]
@@ -29,7 +29,7 @@ projects:
       approach: >
         StackSwitch adds a native taskbar panel with persistent selections, named profiles, grouped items, launch delays and wait-for-exit behavior. It closes the same selection in reverse order and avoids fragile Windows symbol resolution by using a layered child window.
       outcome: >
-        One taskbar action can start or stop a repeatable working environment while optional tools stay disabled until needed, and the integration remains resilient across Windows updates.
+        One taskbar action can start or stop a repeatable working environment while optional tools stay disabled until needed.
       contributions:
         - github: AmrMsCLL
           summary: >
