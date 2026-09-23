@@ -604,6 +604,23 @@ enum class ButtonAlign { Top, Middle, Bottom };
 enum class ButtonStyle { Glyph, GlyphLabel, Label };
 enum class ThemeMode { Auto, Dark, Light };
 enum class TerminalHost { Auto, WindowsTerminal, Shell };
+enum GroupMenuCommand : UINT {
+    kGroupMenuCollapse = 1,
+    kGroupMenuToggleAll,
+    kGroupMenuMoveUp,
+    kGroupMenuMoveDown,
+    kGroupMenuResetOrder,
+};
+enum ItemMenuCommand : UINT {
+    kItemMenuLaunch = 1,
+    kItemMenuToggle,
+    kItemMenuShowInExplorer,
+    kItemMenuCopyTarget,
+    kItemMenuClose,
+    kItemMenuMoveUp,
+    kItemMenuMoveDown,
+    kItemMenuResetOrder,
+};
 
 struct StackItem {
     std::wstring name;
@@ -1580,7 +1597,9 @@ struct Palette {
     gp::Color accentText;
     gp::Color running;
     gp::Color scrollbar;
+    gp::Color toggleOff;
     bool dark = true;
+    bool taskbarLight = false;
 };
 
 static Palette g_palette;
@@ -1591,21 +1610,15 @@ static Palette CurrentPalette() {
     return g_palette;
 }
 
-static bool SystemUsesDarkMode() {
-    HKEY key = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER,
-                      L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\"
-                      L"Personalize",
-                      0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
-        return true;
-    }
+static bool PersonalizeFlag(PCWSTR name) {
     DWORD value = 0;
     DWORD size = sizeof(value);
-    DWORD type = 0;
-    LSTATUS status = RegQueryValueExW(key, L"AppsUseLightTheme", nullptr, &type,
-                                      (LPBYTE)&value, &size);
-    RegCloseKey(key);
-    return status != ERROR_SUCCESS || type != REG_DWORD || value == 0;
+    return RegGetValueW(HKEY_CURRENT_USER,
+                        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\"
+                        L"Personalize",
+                        name, RRF_RT_REG_DWORD, nullptr, &value,
+                        &size) == ERROR_SUCCESS &&
+           value != 0;
 }
 
 static bool ParseHexColor(const std::wstring& text, gp::Color& color) {
@@ -1686,10 +1699,11 @@ static Palette BuildPalette() {
         mode = g_settings.theme;
     }
     bool dark = mode == ThemeMode::Dark ||
-                (mode == ThemeMode::Auto && SystemUsesDarkMode());
+                (mode == ThemeMode::Auto && !PersonalizeFlag(L"AppsUseLightTheme"));
 
     Palette palette;
     palette.dark = dark;
+    palette.taskbarLight = PersonalizeFlag(L"SystemUsesLightTheme");
     palette.accent = ResolveAccent(dark);
     palette.accentHover = Shift(palette.accent, dark ? 0.16 : 0.12);
     palette.accentText = Luminance(palette.accent) > 0.6
@@ -1710,6 +1724,7 @@ static Palette BuildPalette() {
         palette.selection = gp::Color(255, 0x04, 0x39, 0x5E);
         palette.running = gp::Color(255, 0x73, 0xC9, 0x91);
         palette.scrollbar = gp::Color(110, 0x79, 0x79, 0x79);
+        palette.toggleOff = gp::Color(255, 0x5A, 0x5A, 0x5A);
     } else {
         palette.background = gp::Color(249, 0xF8, 0xF8, 0xF8);
         palette.surface = gp::Color(255, 0xFF, 0xFF, 0xFF);
@@ -1724,6 +1739,7 @@ static Palette BuildPalette() {
         palette.selection = gp::Color(255, 0xCF, 0xE3, 0xFA);
         palette.running = gp::Color(255, 0x38, 0x8A, 0x34);
         palette.scrollbar = gp::Color(110, 0x64, 0x64, 0x64);
+        palette.toggleOff = gp::Color(255, 0xC2, 0xC2, 0xC2);
     }
     return palette;
 }
@@ -2409,7 +2425,6 @@ static double g_progressAmount = 0.0;
 static std::vector<double> g_toggleAmount;
 static std::unordered_map<std::wstring, double> g_groupOpenAmount;
 static std::unordered_set<std::wstring> g_collapsedGroups;
-static bool g_animating = false;
 
 static bool Contains(const gp::Rect& rect, POINT point) {
     return rect.Width > 0 && rect.Height > 0 && point.x >= rect.X &&
@@ -2824,6 +2839,10 @@ static int ToggleLeftEdge() {
     return g_layout.list.X + g_layout.list.Width - Scale(14) - Scale(34) - Scale(6);
 }
 
+static int GroupToggleLeftEdge() {
+    return g_layout.list.X + g_layout.list.Width - Scale(14) - Scale(52);
+}
+
 static HitResult HitTest(POINT point) {
     HitResult result;
     if (!Contains(g_layout.content, point)) {
@@ -2862,10 +2881,8 @@ static HitResult HitTest(POINT point) {
                 continue;
             }
             if (row.isGroup) {
-                int toggleAllLeft =
-                    g_layout.list.X + g_layout.list.Width - Scale(14) - Scale(52);
-                result.kind = point.x >= toggleAllLeft ? HitKind::GroupToggleAll
-                                                       : HitKind::GroupHeader;
+                result.kind = point.x >= GroupToggleLeftEdge() ? HitKind::GroupToggleAll
+                                                               : HitKind::GroupHeader;
             } else {
                 result.kind = point.x >= ToggleLeftEdge() ? HitKind::ItemToggle
                                                           : HitKind::Item;
@@ -2928,7 +2945,7 @@ static void ApplyProfile(const std::wstring& profile) {
     }
 }
 
-static void SetGroupEnabled(const std::wstring& group) {
+static void ToggleGroupEnabled(const std::wstring& group) {
     std::vector<std::wstring> keys;
     bool turnOn = false;
     {
@@ -2987,13 +3004,8 @@ static void ReportProgress() {
     }
 }
 
-static void RunLaunchSequence(std::vector<int> indices) {
+static void RunLaunchSequence(const std::vector<int>& indices) {
     g_launchThreadId = GetCurrentThreadId();
-    g_launching = true;
-    g_cancelLaunch = false;
-    g_progressTotal = (int)indices.size();
-    g_progressCurrent = 0;
-
     ProcessMap running = SnapshotProcesses();
 
     for (size_t i = 0; i < indices.size(); i++) {
@@ -3078,21 +3090,9 @@ static void RunLaunchSequence(std::vector<int> indices) {
             break;
         }
     }
-
-    g_progressCurrent = g_progressTotal.load();
-    SetStatusText(g_cancelLaunch ? L"Cancelled" : L"Launched");
-    g_launching = false;
-    if (g_panelWnd) {
-        PostMessageW(g_panelWnd, kMsgLaunchFinished, 0, 0);
-    }
 }
 
-static void RunShutdownSequence(std::vector<int> indices) {
-    g_launching = true;
-    g_cancelLaunch = false;
-    g_progressTotal = (int)indices.size();
-    g_progressCurrent = 0;
-
+static void RunShutdownSequence(const std::vector<int>& indices) {
     int graceMs = 0;
     bool force = false;
     {
@@ -3102,8 +3102,6 @@ static void RunShutdownSequence(std::vector<int> indices) {
     }
 
     ProcessMap processes = SnapshotProcesses();
-    int closed = 0;
-    int stubborn = 0;
 
     for (size_t i = 0; i < indices.size(); i++) {
         if (g_unloading || g_cancelLaunch) {
@@ -3166,40 +3164,29 @@ static void RunShutdownSequence(std::vector<int> indices) {
             alive = StillRunning(pids);
         }
 
-        if (alive.empty()) {
-            closed++;
-        } else {
-            stubborn++;
+        if (!alive.empty()) {
             SetStatusText(L"Could not close " + item.name);
             ReportProgress();
         }
     }
-
-    g_progressCurrent = g_progressTotal.load();
-    wchar_t summary[160];
-    swprintf_s(summary, L"Closed %d, %d still running", closed, stubborn);
-    SetStatusText(g_cancelLaunch ? L"Cancelled" : summary);
-    g_launching = false;
-    if (g_panelWnd) {
-        PostMessageW(g_panelWnd, kMsgLaunchFinished, 0, 0);
-    }
 }
 
-static void StartLaunch(std::vector<int> indices) {
+static void StartSequence(void (*run)(const std::vector<int>&),
+                          std::vector<int> indices) {
     if (indices.empty() || g_launching) {
         return;
     }
-    g_launchQueue.Post([indices = std::move(indices)]() mutable {
-        RunLaunchSequence(std::move(indices));
-    });
-}
-
-static void StartShutdown(std::vector<int> indices) {
-    if (indices.empty() || g_launching) {
-        return;
-    }
-    g_launchQueue.Post([indices = std::move(indices)]() mutable {
-        RunShutdownSequence(std::move(indices));
+    g_launchQueue.Post([run, indices = std::move(indices)]() {
+        g_launching = true;
+        g_cancelLaunch = false;
+        g_progressTotal = (int)indices.size();
+        g_progressCurrent = 0;
+        run(indices);
+        g_progressCurrent = g_progressTotal.load();
+        g_launching = false;
+        if (g_panelWnd) {
+            PostMessageW(g_panelWnd, kMsgLaunchFinished, 0, 0);
+        }
     });
 }
 
@@ -3343,9 +3330,7 @@ static void DrawToggle(Surface& surface,
     gp::Graphics& graphics = *surface.Graphics();
     gp::RectF track = ToRectF(box);
     gp::REAL radius = track.Height / 2;
-    gp::Color off = palette.dark ? gp::Color(255, 0x5A, 0x5A, 0x5A)
-                                 : gp::Color(255, 0xC2, 0xC2, 0xC2);
-    gp::Color trackColor = Blend(off, palette.accent, Ease(amount));
+    gp::Color trackColor = Blend(palette.toggleOff, palette.accent, Ease(amount));
     if (hovered) {
         trackColor = Shift(trackColor, palette.dark ? 0.12 : -0.08);
     }
@@ -3380,13 +3365,9 @@ static void DrawItemIcon(Surface& surface,
                          const gp::Rect& box,
                          const StackItem& item,
                          const Palette& palette) {
-    if (!item.icon.empty()) {
-        std::wstring glyph;
-        if (ParseGlyph(item.icon, glyph) ||
-            item.icon.find(L'\\') == std::wstring::npos) {
-            DrawIconGlyph(surface, box, item.icon, item.type, palette.textDim);
-            return;
-        }
+    if (!item.icon.empty() && item.icon.find(L'\\') == std::wstring::npos) {
+        DrawIconGlyph(surface, box, item.icon, item.type, palette.textDim);
+        return;
     }
     std::wstring key = IconCacheKey(item);
     HICON icon = key.empty() ? nullptr : TryGetCachedIcon(key);
@@ -3425,7 +3406,6 @@ static bool StepAnimations() {
             Approach(entry.second, IsGroupCollapsed(entry.first) ? 0.0 : 1.0, 0.07);
     }
 
-    g_animating = animating;
     return animating;
 }
 
@@ -3446,11 +3426,10 @@ static void PaintPanel() {
     if (!g_panelSurface.Resize(g_layout.window.Width, g_layout.window.Height)) {
         return;
     }
-    g_panelSurface.Clear();
     Surface& surface = g_panelSurface;
     gp::Graphics& graphics = *surface.Graphics();
 
-    double reveal = Ease(max(0.0, min(1.0, g_revealAmount)));
+    double reveal = Ease(g_revealAmount);
     const int pad = Scale(14);
     gp::RectF content = ToRectF(g_layout.content);
     gp::REAL radius = (gp::REAL)Scale(8);
@@ -3518,11 +3497,10 @@ static void PaintPanel() {
                            chip, kTextCenter);
     }
 
-    bool searchFocused = !g_filter.empty();
     FillRoundRect(graphics, ToRectF(g_layout.search), (gp::REAL)Scale(4),
                   palette.surface);
     StrokeRoundRect(graphics, ToRectF(g_layout.search), (gp::REAL)Scale(4),
-                    searchFocused ? palette.accent : palette.border, 1.0f);
+                    !g_filter.empty() ? palette.accent : palette.border, 1.0f);
     surface.RenderText(L"\uE721", IconFont(-3), palette.textDim,
                        gp::Rect(g_layout.search.X, g_layout.search.Y, Scale(28),
                                 g_layout.search.Height),
@@ -3625,8 +3603,7 @@ static void PaintPanel() {
                                  g_hover.index == (int)rowIndex;
             surface.RenderText(
                 L"toggle", UiFont(-3), toggleHovered ? palette.accent : palette.textDim,
-                gp::Rect(g_layout.list.X + g_layout.list.Width - pad - Scale(52), rowTop,
-                         Scale(52), row.height),
+                gp::Rect(GroupToggleLeftEdge(), rowTop, Scale(52), row.height),
                 kTextCenter);
             continue;
         }
@@ -3777,7 +3754,7 @@ static void PaintPanel() {
                  top + (g_panelGrowsUp ? slide : -slide),
                  g_layout.window.Width, g_layout.window.Height,
                  SWP_NOACTIVATE | SWP_NOREDRAW);
-    g_panelSurface.Present(g_panelWnd, (BYTE)(255 * max(0.0, min(1.0, reveal))));
+    g_panelSurface.Present(g_panelWnd, (BYTE)(255 * reveal));
 }
 
 static int DraggedRowIndex() {
@@ -3793,7 +3770,7 @@ static int DraggedRowIndex() {
     return -1;
 }
 
-static void EndDrag(bool persist) {
+static void EndDrag() {
     if (!g_dragActive) {
         return;
     }
@@ -3802,9 +3779,7 @@ static void EndDrag(bool persist) {
     g_dragGroup.clear();
     g_dragCandidate = HitResult{};
     ReleaseCapture();
-    if (persist) {
-        SaveItemOrder();
-    }
+    SaveItemOrder();
 }
 
 static void RefreshPanel() {
@@ -4035,7 +4010,7 @@ static void LaunchSelected() {
             return;
         }
     }
-    StartLaunch(std::move(indices));
+    StartSequence(RunLaunchSequence, std::move(indices));
     if (closeAfter) {
         ClosePanel();
     }
@@ -4044,7 +4019,6 @@ static void LaunchSelected() {
 static void CloseSelected() {
     std::vector<int> indices = RunningSelectedIndices();
     if (indices.empty()) {
-        SetStatusText(L"Nothing selected is running");
         return;
     }
     std::reverse(indices.begin(), indices.end());
@@ -4067,7 +4041,7 @@ static void CloseSelected() {
             return;
         }
     }
-    StartShutdown(std::move(indices));
+    StartSequence(RunShutdownSequence, std::move(indices));
     if (closeAfter) {
         ClosePanel();
     }
@@ -4083,6 +4057,16 @@ static void FocusItemRow(int itemIndex) {
     }
 }
 
+static int TrackPanelMenu(HMENU menu, POINT screenPoint) {
+    g_suppressDeactivate = true;
+    SetForegroundWindow(g_panelWnd);
+    int command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screenPoint.x,
+                                 screenPoint.y, 0, g_panelWnd, nullptr);
+    DestroyMenu(menu);
+    g_suppressDeactivate = false;
+    return command;
+}
+
 static void ShowGroupMenu(int rowIndex, POINT screenPoint) {
     if (rowIndex < 0 || rowIndex >= (int)g_rows.size() || !g_rows[rowIndex].isGroup) {
         return;
@@ -4093,41 +4077,34 @@ static void ShowGroupMenu(int rowIndex, POINT screenPoint) {
     if (!menu) {
         return;
     }
-    AppendMenuW(menu, MF_STRING, 1,
+    AppendMenuW(menu, MF_STRING, kGroupMenuCollapse,
                 IsGroupCollapsed(group) ? L"Expand" : L"Collapse");
-    AppendMenuW(menu, MF_STRING, 2, L"Toggle every item");
+    AppendMenuW(menu, MF_STRING, kGroupMenuToggleAll, L"Toggle every item");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, 3, L"Move group up");
-    AppendMenuW(menu, MF_STRING, 4, L"Move group down");
-    AppendMenuW(menu, MF_STRING, 5, L"Reset order to settings");
+    AppendMenuW(menu, MF_STRING, kGroupMenuMoveUp, L"Move group up");
+    AppendMenuW(menu, MF_STRING, kGroupMenuMoveDown, L"Move group down");
+    AppendMenuW(menu, MF_STRING, kGroupMenuResetOrder, L"Reset order to settings");
 
-    g_suppressDeactivate = true;
-    SetForegroundWindow(g_panelWnd);
-    int command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screenPoint.x,
-                                 screenPoint.y, 0, g_panelWnd, nullptr);
-    DestroyMenu(menu);
-    g_suppressDeactivate = false;
-
-    switch (command) {
-        case 1:
+    switch (TrackPanelMenu(menu, screenPoint)) {
+        case kGroupMenuCollapse:
             SetGroupCollapsed(group, !IsGroupCollapsed(group));
             EnsureAnimationTimer();
             break;
-        case 2:
-            SetGroupEnabled(group);
+        case kGroupMenuToggleAll:
+            ToggleGroupEnabled(group);
             EnsureAnimationTimer();
             break;
-        case 3:
+        case kGroupMenuMoveUp:
             if (MoveGroupBlock(group, -1)) {
                 SaveItemOrder();
             }
             break;
-        case 4:
+        case kGroupMenuMoveDown:
             if (MoveGroupBlock(group, 1)) {
                 SaveItemOrder();
             }
             break;
-        case 5:
+        case kGroupMenuResetOrder:
             ResetItemOrder();
             break;
         default:
@@ -4153,57 +4130,51 @@ static void ShowItemMenu(int rowIndex, POINT screenPoint) {
     if (!menu) {
         return;
     }
-    AppendMenuW(menu, MF_STRING, 1, L"Launch now");
+    AppendMenuW(menu, MF_STRING, kItemMenuLaunch, L"Launch now");
     if (item.running) {
-        AppendMenuW(menu, MF_STRING, 5, L"Close now");
+        AppendMenuW(menu, MF_STRING, kItemMenuClose, L"Close now");
     }
-    AppendMenuW(menu, MF_STRING, 2, item.enabled ? L"Turn off" : L"Turn on");
+    AppendMenuW(menu, MF_STRING, kItemMenuToggle,
+                item.enabled ? L"Turn off" : L"Turn on");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, 6, L"Move up");
-    AppendMenuW(menu, MF_STRING, 7, L"Move down");
-    AppendMenuW(menu, MF_STRING, 8, L"Reset order to settings");
+    AppendMenuW(menu, MF_STRING, kItemMenuMoveUp, L"Move up");
+    AppendMenuW(menu, MF_STRING, kItemMenuMoveDown, L"Move down");
+    AppendMenuW(menu, MF_STRING, kItemMenuResetOrder, L"Reset order to settings");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     if (item.type == ItemType::App || item.type == ItemType::VSCode ||
         item.type == ItemType::Folder) {
-        AppendMenuW(menu, MF_STRING, 3, L"Show in File Explorer");
+        AppendMenuW(menu, MF_STRING, kItemMenuShowInExplorer, L"Show in File Explorer");
     }
-    AppendMenuW(menu, MF_STRING, 4, L"Copy target");
+    AppendMenuW(menu, MF_STRING, kItemMenuCopyTarget, L"Copy target");
 
-    g_suppressDeactivate = true;
-    SetForegroundWindow(g_panelWnd);
-    int command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screenPoint.x,
-                                 screenPoint.y, 0, g_panelWnd, nullptr);
-    DestroyMenu(menu);
-    g_suppressDeactivate = false;
-
-    switch (command) {
-        case 1:
-            StartLaunch({itemIndex});
+    switch (TrackPanelMenu(menu, screenPoint)) {
+        case kItemMenuLaunch:
+            StartSequence(RunLaunchSequence, {itemIndex});
             break;
-        case 2:
+        case kItemMenuToggle:
             SetItemEnabled(itemIndex, !item.enabled);
             EnsureAnimationTimer();
             break;
-        case 3:
+        case kItemMenuShowInExplorer:
             OpenContainingFolder(item);
             break;
-        case 4:
+        case kItemMenuCopyTarget:
             CopyToClipboard(ExpandTokens(item.target));
             break;
-        case 5:
-            StartShutdown({itemIndex});
+        case kItemMenuClose:
+            StartSequence(RunShutdownSequence, {itemIndex});
             break;
-        case 6:
+        case kItemMenuMoveUp:
             if (MoveItemWithinGroup(itemIndex, -1)) {
                 SaveItemOrder();
             }
             break;
-        case 7:
+        case kItemMenuMoveDown:
             if (MoveItemWithinGroup(itemIndex, 1)) {
                 SaveItemOrder();
             }
             break;
-        case 8:
+        case kItemMenuResetOrder:
             ResetItemOrder();
             break;
         default:
@@ -4251,7 +4222,7 @@ static void HandleClick(const HitResult& hit) {
                 break;
             }
             if (hit.index >= 0 && hit.index < (int)g_rows.size()) {
-                StartLaunch({g_rows[hit.index].itemIndex});
+                StartSequence(RunLaunchSequence, {g_rows[hit.index].itemIndex});
                 bool closeAfter = false;
                 {
                     std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
@@ -4271,7 +4242,7 @@ static void HandleClick(const HitResult& hit) {
             break;
         case HitKind::GroupToggleAll:
             if (hit.index >= 0 && hit.index < (int)g_rows.size()) {
-                SetGroupEnabled(g_rows[hit.index].text);
+                ToggleGroupEnabled(g_rows[hit.index].text);
                 EnsureAnimationTimer();
             }
             break;
@@ -4383,12 +4354,12 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
 
         case WM_CAPTURECHANGED:
             g_draggingScrollbar = false;
-            EndDrag(true);
+            EndDrag();
             return 0;
 
         case WM_LBUTTONUP: {
             if (g_dragActive) {
-                EndDrag(true);
+                EndDrag();
                 RefreshPanel();
                 return 0;
             }
@@ -4588,23 +4559,6 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
     return DefWindowProcW(window, message, wParam, lParam);
 }
 
-static bool TaskbarUsesLightTheme() {
-    HKEY key = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER,
-                      L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\"
-                      L"Personalize",
-                      0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
-        return false;
-    }
-    DWORD value = 0;
-    DWORD size = sizeof(value);
-    DWORD type = 0;
-    LSTATUS status = RegQueryValueExW(key, L"SystemUsesLightTheme", nullptr, &type,
-                                      (LPBYTE)&value, &size);
-    RegCloseKey(key);
-    return status == ERROR_SUCCESS && type == REG_DWORD && value != 0;
-}
-
 struct TaskbarAnchors {
     int width = 0;
     int height = 0;
@@ -4700,12 +4654,10 @@ static void PaintButton(HWND window) {
     if (!state.surface.Resize(width, height)) {
         return;
     }
-    state.surface.Clear();
     gp::Graphics& graphics = *state.surface.Graphics();
 
     Palette palette = CurrentPalette();
     bool open = g_panelOpen.load();
-    bool light = TaskbarUsesLightTheme();
 
     ButtonStyle style;
     std::wstring glyphSource;
@@ -4717,7 +4669,8 @@ static void PaintButton(HWND window) {
         label = g_settings.buttonLabel;
     }
 
-    gp::Color base = light ? gp::Color(255, 0, 0, 0) : gp::Color(255, 255, 255, 255);
+    gp::Color base =
+        palette.taskbarLight ? gp::Color(255, 0, 0, 0) : gp::Color(255, 255, 255, 255);
     double lift = 0.08 + 0.10 * state.hover + 0.10 * state.press;
     gp::Color background = open ? palette.accent : Fade(base, lift);
     gp::RectF body(1.0f, 1.0f, (gp::REAL)width - 2, (gp::REAL)height - 2);
@@ -4803,7 +4756,7 @@ static void PositionButton(HWND window) {
         case ButtonPosition::AfterTaskList:
             x = (anchors.hasTaskList ? anchors.taskListRight : 0) + scaledOffset;
             break;
-        default:
+        case ButtonPosition::Right:
             x = anchors.width - size.cx - scaledOffset;
             break;
     }
@@ -4926,7 +4879,7 @@ static void CreateButtonOnTaskbarThread(void* parameter) {
 
 using WindowThreadProc = void (*)(void*);
 
-static bool RunFromWindowThread(HWND window, WindowThreadProc proc, void* parameter) {
+static void RunFromWindowThread(HWND window, WindowThreadProc proc, void* parameter) {
     static const UINT message =
         RegisterWindowMessageW(L"WhStackSwitch_RunFromWindowThread_" WH_MOD_ID);
     struct Payload {
@@ -4935,20 +4888,18 @@ static bool RunFromWindowThread(HWND window, WindowThreadProc proc, void* parame
     };
     DWORD threadId = GetWindowThreadProcessId(window, nullptr);
     if (!threadId) {
-        return false;
+        return;
     }
     if (threadId == GetCurrentThreadId()) {
         proc(parameter);
-        return true;
+        return;
     }
     HHOOK hook = SetWindowsHookExW(
         WH_CALLWNDPROC,
         [](int code, WPARAM wParam, LPARAM lParam) CALLBACK -> LRESULT {
             if (code == HC_ACTION) {
                 auto* call = reinterpret_cast<const CWPSTRUCT*>(lParam);
-                static const UINT inner = RegisterWindowMessageW(
-                    L"WhStackSwitch_RunFromWindowThread_" WH_MOD_ID);
-                if (call->message == inner) {
+                if (call->message == message) {
                     auto* payload = reinterpret_cast<Payload*>(call->lParam);
                     payload->proc(payload->parameter);
                 }
@@ -4957,22 +4908,21 @@ static bool RunFromWindowThread(HWND window, WindowThreadProc proc, void* parame
         },
         nullptr, threadId);
     if (!hook) {
-        return false;
+        return;
     }
     Payload payload{proc, parameter};
     DWORD_PTR result = 0;
     SendMessageTimeoutW(window, message, 0, reinterpret_cast<LPARAM>(&payload),
                         SMTO_ABORTIFHUNG | SMTO_NORMAL, 5000, &result);
     UnhookWindowsHookEx(hook);
-    return true;
 }
 
-static HWND FindTaskbarOfClass(PCWSTR className) {
+static std::vector<HWND> FindOwnWindowsOfClass(PCWSTR className) {
     struct Context {
         PCWSTR className;
-        HWND found;
+        std::vector<HWND> found;
     };
-    Context context{className, nullptr};
+    Context context{className, {}};
     EnumWindows(
         [](HWND window, LPARAM param) CALLBACK -> BOOL {
             auto* context = reinterpret_cast<Context*>(param);
@@ -4982,31 +4932,12 @@ static HWND FindTaskbarOfClass(PCWSTR className) {
                 pid == GetCurrentProcessId() &&
                 GetClassNameW(window, name, ARRAYSIZE(name)) &&
                 wcscmp(name, context->className) == 0) {
-                context->found = window;
-                return FALSE;
+                context->found.push_back(window);
             }
             return TRUE;
         },
         reinterpret_cast<LPARAM>(&context));
     return context.found;
-}
-
-static std::vector<HWND> FindSecondaryTaskbars() {
-    std::vector<HWND> taskbars;
-    EnumWindows(
-        [](HWND window, LPARAM param) CALLBACK -> BOOL {
-            DWORD pid = 0;
-            wchar_t name[48] = {};
-            if (GetWindowThreadProcessId(window, &pid) &&
-                pid == GetCurrentProcessId() &&
-                GetClassNameW(window, name, ARRAYSIZE(name)) &&
-                wcscmp(name, L"Shell_SecondaryTrayWnd") == 0) {
-                reinterpret_cast<std::vector<HWND>*>(param)->push_back(window);
-            }
-            return TRUE;
-        },
-        reinterpret_cast<LPARAM>(&taskbars));
-    return taskbars;
 }
 
 static void CreateTaskbarButtons() {
@@ -5022,11 +4953,12 @@ static void CreateTaskbarButtons() {
     }
 
     std::vector<HWND> taskbars;
-    if (HWND primary = FindTaskbarOfClass(L"Shell_TrayWnd")) {
-        taskbars.push_back(primary);
+    std::vector<HWND> primary = FindOwnWindowsOfClass(L"Shell_TrayWnd");
+    if (!primary.empty()) {
+        taskbars.push_back(primary.front());
     }
     if (secondary) {
-        for (HWND window : FindSecondaryTaskbars()) {
+        for (HWND window : FindOwnWindowsOfClass(L"Shell_SecondaryTrayWnd")) {
             taskbars.push_back(window);
         }
     }
@@ -5113,8 +5045,8 @@ static HICON CreateTrayIcon() {
     surface.RenderText(glyph,
                        GetFont(isGlyph ? IconFontFamily() : family,
                                (int)(size * 0.72), false),
-                       TaskbarUsesLightTheme() ? gp::Color(255, 0, 0, 0)
-                                               : gp::Color(255, 255, 255, 255),
+                       CurrentPalette().taskbarLight ? gp::Color(255, 0, 0, 0)
+                                                     : gp::Color(255, 255, 255, 255),
                        gp::Rect(0, 0, size, size), kTextCenter);
 
     std::vector<BYTE> maskBits((size_t)((size + 15) / 16) * 2 * size, 0);
@@ -5161,29 +5093,36 @@ static HICON CreateTrayIcon() {
     return icon;
 }
 
+static void RemoveTrayIcon() {
+    NOTIFYICONDATAW data{};
+    data.cbSize = sizeof(data);
+    data.hWnd = g_messageWnd;
+    data.uID = kTrayIconId;
+    if (g_trayIconAdded) {
+        Shell_NotifyIconW(NIM_DELETE, &data);
+        g_trayIconAdded = false;
+    }
+    if (g_trayIcon) {
+        DestroyIcon(g_trayIcon);
+        g_trayIcon = nullptr;
+    }
+}
+
 static void UpdateTrayIcon() {
     bool wanted = false;
     {
         std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
         wanted = g_settings.showTrayIcon;
     }
+    if (!wanted) {
+        RemoveTrayIcon();
+        return;
+    }
+
     NOTIFYICONDATAW data{};
     data.cbSize = sizeof(data);
     data.hWnd = g_messageWnd;
     data.uID = kTrayIconId;
-
-    if (!wanted) {
-        if (g_trayIconAdded) {
-            Shell_NotifyIconW(NIM_DELETE, &data);
-            g_trayIconAdded = false;
-        }
-        if (g_trayIcon) {
-            DestroyIcon(g_trayIcon);
-            g_trayIcon = nullptr;
-        }
-        return;
-    }
-
     HICON previous = g_trayIcon;
     g_trayIcon = CreateTrayIcon();
     data.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
@@ -5230,7 +5169,7 @@ static void ShowTrayMenu() {
     } else if (command == 2) {
         OpenWindhawk();
     } else if (command >= 100 && command - 100 < (int)profiles.size()) {
-        StartLaunch(ProfileIndices(profiles[command - 100]));
+        StartSequence(RunLaunchSequence, ProfileIndices(profiles[command - 100]));
     }
 }
 
@@ -5349,7 +5288,7 @@ static LRESULT CALLBACK MessageWndProc(HWND window,
                     profile = g_settings.autoRunProfile;
                 }
                 if (!profile.empty()) {
-                    StartLaunch(ProfileIndices(profile));
+                    StartSequence(RunLaunchSequence, ProfileIndices(profile));
                 }
                 return 0;
             }
@@ -5392,8 +5331,9 @@ static void UnregisterWindowClasses() {
 
 static HWND WaitForTaskbar() {
     for (int attempt = 0; attempt < 200 && !g_unloading; attempt++) {
-        if (HWND taskbar = FindTaskbarOfClass(L"Shell_TrayWnd")) {
-            return taskbar;
+        std::vector<HWND> taskbars = FindOwnWindowsOfClass(L"Shell_TrayWnd");
+        if (!taskbars.empty()) {
+            return taskbars.front();
         }
         Sleep(200);
     }
@@ -5454,18 +5394,7 @@ static void UiThreadMain() {
     UnregisterHotKey(g_messageWnd, kHotkeyId);
     DestroyTaskbarButtons();
 
-    NOTIFYICONDATAW trayData{};
-    trayData.cbSize = sizeof(trayData);
-    trayData.hWnd = g_messageWnd;
-    trayData.uID = kTrayIconId;
-    if (g_trayIconAdded) {
-        Shell_NotifyIconW(NIM_DELETE, &trayData);
-        g_trayIconAdded = false;
-    }
-    if (g_trayIcon) {
-        DestroyIcon(g_trayIcon);
-        g_trayIcon = nullptr;
-    }
+    RemoveTrayIcon();
 
     g_panelSurface.Release();
     DestroyWindow(g_panelWnd);
