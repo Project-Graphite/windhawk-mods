@@ -6298,6 +6298,25 @@ static bool IsPointerInside(PointerRoutedEventArgs const& e, UIElement const& el
         return false;
     }
 }
+static std::wstring MediaCommandLabel(int cmd) {
+    switch (cmd) {
+        case 1: return L"Previous track";
+        case 2: return L"Play or pause";
+        case 3: return L"Next track";
+        case 5: return L"Rewind " + std::to_wstring(g_settings.seekStepSeconds) + L" seconds";
+        case 6: return L"Forward " + std::to_wstring(g_settings.seekStepSeconds) + L" seconds";
+        case 7: return L"Toggle shuffle";
+        case 8: return L"Toggle repeat";
+        case 9: return L"Switch media session";
+    }
+    return {};
+}
+static void SetButtonLabel(Button const& btn, std::wstring const& label) {
+    Automation::AutomationProperties::SetName(btn, label);
+    ToolTip toolTip;
+    toolTip.Content(winrt::box_value(winrt::hstring(label)));
+    ToolTipService::SetToolTip(btn, toolTip);
+}
 static Button MakeControlButton(int cmd, bool isPlaying, winrt::Windows::UI::Color iconColor) {
     Button btn;
     try {
@@ -6325,26 +6344,7 @@ static Button MakeControlButton(int cmd, bool isPlaying, winrt::Windows::UI::Col
         auto iconText = MakeIconText(glyph, (double)g_settings.buttonIconSize, iconColor);
         iconText.Opacity(opacity);
         btn.Content(winrt::box_value(iconText));
-        std::wstring accessibleName;
-        switch (cmd) {
-            case 1: accessibleName = L"Previous track"; break;
-            case 2: accessibleName = L"Play or pause"; break;
-            case 3: accessibleName = L"Next track"; break;
-            case 4: accessibleName = L"Stop"; break;
-            case 5:
-                accessibleName = L"Rewind " + std::to_wstring(g_settings.seekStepSeconds) + L" seconds";
-                break;
-            case 6:
-                accessibleName = L"Forward " + std::to_wstring(g_settings.seekStepSeconds) + L" seconds";
-                break;
-            case 7: accessibleName = L"Toggle shuffle"; break;
-            case 8: accessibleName = L"Toggle repeat"; break;
-            case 9: accessibleName = L"Switch media session"; break;
-        }
-        winrt::Windows::UI::Xaml::Automation::AutomationProperties::SetName(btn, accessibleName);
-        ToolTip toolTip;
-        toolTip.Content(winrt::box_value(winrt::hstring(accessibleName)));
-        ToolTipService::SetToolTip(btn, toolTip);
+        SetButtonLabel(btn, MediaCommandLabel(cmd));
         btn.Click([cmd](auto const&, auto const&) {
             if (!g_unloading) {
                 try {
@@ -6978,6 +6978,10 @@ static void RefreshMiniPlayerFlyoutUI() {
                 g_miniPlayerVolumeSliderRef.Opacity(muted ? 0.45 : 1.0);
             }
             if (g_miniPlayerMuteBtnRef) {
+                const wchar_t* muteLabel = muted ? L"Unmute app" : L"Mute app";
+                if (Automation::AutomationProperties::GetName(g_miniPlayerMuteBtnRef) != muteLabel) {
+                    SetButtonLabel(g_miniPlayerMuteBtnRef, muteLabel);
+                }
                 if (auto icon = g_miniPlayerMuteBtnRef.Content().try_as<TextBlock>()) {
                     icon.Text(winrt::hstring(muted ? L"\uE74F" : L"\uE767"));
                     icon.Opacity(muted ? 1.0 : 0.75);
@@ -7787,6 +7791,7 @@ static Grid BuildMiniPlayerFlyoutContent() {
         if (cmd == 7) iconText.Opacity(g_shuffleEnabled.load() ? 1.0 : 0.40);
         if (cmd == 8) iconText.Opacity(g_repeatMode.load() != RepeatMode::Off ? 1.0 : 0.40);
         btn.Content(winrt::box_value(iconText));
+        SetButtonLabel(btn, MediaCommandLabel(cmd));
 
         if (executeCommand) {
             btn.Click([cmd](auto const&, auto const&) {
@@ -7866,13 +7871,6 @@ static Grid BuildMiniPlayerFlyoutContent() {
     repeatBtn.IsEnabled(hasMedia && canRepeat);
     repeatBtn.Opacity(hasMedia && canRepeat ? 1.0 : 0.35);
 
-    ToolTip shuffleToolTip;
-    shuffleToolTip.Content(winrt::box_value(winrt::hstring(L"Toggle Shuffle")));
-    ToolTipService::SetToolTip(shuffleBtn, shuffleToolTip);
-    ToolTip repeatToolTip;
-    repeatToolTip.Content(winrt::box_value(winrt::hstring(L"Toggle Repeat")));
-    ToolTipService::SetToolTip(repeatBtn, repeatToolTip);
-
     repeatBtn.Click([](auto const&, auto const&) {
         if (g_unloading) return;
         try {
@@ -7940,9 +7938,6 @@ static Grid BuildMiniPlayerFlyoutContent() {
             if (g_unloading) return;
             SendMediaCommandAsync(kCmdToggleMute);
         });
-        ToolTip muteToolTip;
-        muteToolTip.Content(winrt::box_value(winrt::hstring(L"Mute this app")));
-        ToolTipService::SetToolTip(muteBtn, muteToolTip);
         Grid::SetColumn(muteBtn, 0);
         volumeRow.Children().Append(muteBtn);
 
@@ -7953,6 +7948,7 @@ static Grid BuildMiniPlayerFlyoutContent() {
         volumeSlider.Value(100.0);
         volumeSlider.Margin({8, 0, 8, 0});
         volumeSlider.VerticalAlignment(VerticalAlignment::Center);
+        Automation::AutomationProperties::SetName(volumeSlider, L"App volume");
         try { volumeSlider.ThumbToolTipValueConverter(nullptr); } catch (...) {}
         volumeSlider.ValueChanged([](winrt::Windows::Foundation::IInspectable const&,
                                      Controls::Primitives::RangeBaseValueChangedEventArgs const& e) {
