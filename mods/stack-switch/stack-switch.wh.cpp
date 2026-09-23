@@ -286,7 +286,7 @@ between them from your Windows app theme unless **Theme** says otherwise.
 
 Leave **Icon** empty and the item uses its target's real shell icon. Otherwise:
 
-* a Segoe Fluent Icons code point, four to six hex digits, such as `E768`
+* a Segoe Fluent Icons code point, four hex digits, such as `E768`
 * a single emoji
 * a full path to an `.exe` or `.ico` to pull the icon out of
 */
@@ -2256,7 +2256,7 @@ static void DrawIconImage(gp::Graphics& graphics, HICON icon, const gp::Rect& bo
 }
 
 static bool ParseGlyph(const std::wstring& text, std::wstring& glyph) {
-    if (text.size() < 4 || text.size() > 6) {
+    if (text.size() != 4) {
         return false;
     }
     for (wchar_t c : text) {
@@ -2264,9 +2264,8 @@ static bool ParseGlyph(const std::wstring& text, std::wstring& glyph) {
             return false;
         }
     }
-    wchar_t* end = nullptr;
-    unsigned long code = wcstoul(text.c_str(), &end, 16);
-    if (code < 0x20 || code > 0xFFFF) {
+    unsigned long code = wcstoul(text.c_str(), nullptr, 16);
+    if (code < 0x20) {
         return false;
     }
     glyph.assign(1, (wchar_t)code);
@@ -2745,9 +2744,34 @@ static void ComputeLayout() {
     const int width = Scale(g_settings.panelWidth);
     const int pad = Scale(14);
     const int headerHeight = Scale(56);
-    const int chipsHeight = g_settings.profiles.empty() ? 0 : Scale(38);
     const int searchHeight = Scale(44);
     const int footerHeight = Scale(58);
+
+    g_layout.chipRects.clear();
+    g_layout.chipNames.clear();
+    int chipsHeight = 0;
+    if (!g_settings.profiles.empty()) {
+        std::vector<std::wstring> names{L"All"};
+        for (const auto& profile : g_settings.profiles) {
+            names.push_back(profile);
+        }
+        int chipX = shadow + pad;
+        int row = 0;
+        for (const auto& name : names) {
+            int chipWidth =
+                min(MeasureText(name, UiFont(-1)) + Scale(20), width - pad * 2);
+            if (chipX + chipWidth > shadow + width - pad && chipX > shadow + pad) {
+                chipX = shadow + pad;
+                row++;
+            }
+            g_layout.chipRects.push_back(
+                gp::Rect(chipX, shadow + headerHeight + Scale(7) + row * Scale(30),
+                         chipWidth, Scale(24)));
+            g_layout.chipNames.push_back(name);
+            chipX += chipWidth + Scale(6);
+        }
+        chipsHeight = (row + 1) * Scale(30) + Scale(8);
+    }
 
     int listHeight = Scale(g_settings.panelMaxHeight) - headerHeight - chipsHeight -
                      searchHeight - footerHeight;
@@ -2766,28 +2790,8 @@ static void ComputeLayout() {
                  Scale(30), Scale(30));
     y += headerHeight;
 
-    g_layout.chipRects.clear();
-    g_layout.chipNames.clear();
     g_layout.chips = gp::Rect(shadow, y, width, chipsHeight);
-    if (chipsHeight > 0) {
-        std::vector<std::wstring> names{L"All"};
-        for (const auto& profile : g_settings.profiles) {
-            names.push_back(profile);
-        }
-        int chipX = shadow + pad;
-        int chipHeight = Scale(24);
-        int chipY = y + (chipsHeight - chipHeight) / 2;
-        for (const auto& name : names) {
-            int chipWidth = MeasureText(name, UiFont(-1)) + Scale(20);
-            if (chipX + chipWidth > shadow + width - pad) {
-                break;
-            }
-            g_layout.chipRects.push_back(gp::Rect(chipX, chipY, chipWidth, chipHeight));
-            g_layout.chipNames.push_back(name);
-            chipX += chipWidth + Scale(6);
-        }
-        y += chipsHeight;
-    }
+    y += chipsHeight;
 
     int searchBoxHeight = Scale(30);
     g_layout.search = gp::Rect(shadow + pad, y + (searchHeight - searchBoxHeight) / 2,
