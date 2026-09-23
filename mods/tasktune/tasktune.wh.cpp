@@ -929,7 +929,7 @@ struct ModSettings {
     std::wstring artistColor          = L"255 255 255";
     int          artistColorOpacity   = 80;
     std::wstring ignoredProcesses     = L"";
-    std::vector<std::pair<std::wstring, std::wstring>> ignoredProcessMatchers;
+    std::vector<std::wstring> ignoredProcessMatchers;
     bool         enableTreeDump       = false;
     bool         keepMiniPlayerOpen   = false;
     bool         hideMediaSessionsList = false;
@@ -1385,19 +1385,19 @@ static void LoadSettings() {
             while (!item.empty() && iswspace(item.front())) item.erase(item.begin());
             while (!item.empty() && iswspace(item.back())) item.pop_back();
             if (!item.empty()) {
-                item = Lower(std::move(item));
-                fn(item, Lower(Stem(item)));
+                std::wstring stem = Lower(Stem(item));
+                if (!stem.empty()) fn(std::move(stem));
             }
             if (end == std::wstring::npos) break;
             start = end + 1;
         }
     };
     ParseProcessList(g_settings.ignoredProcesses,
-        [](std::wstring item, std::wstring stem) {
-            g_settings.ignoredProcessMatchers.emplace_back(std::move(item), std::move(stem));
+        [](std::wstring stem) {
+            g_settings.ignoredProcessMatchers.push_back(std::move(stem));
         });
     ParseProcessList(g_settings.audioAppIgnore,
-        [](std::wstring, std::wstring stem) {
+        [](std::wstring stem) {
             g_settings.audioAppIgnoredStems.insert(std::move(stem));
         });
     g_settings.keepMiniPlayerOpen   = Wh_GetIntSetting(L"PlayerMenuSettings.keepMiniPlayerOpen") != 0;
@@ -2631,8 +2631,7 @@ static constexpr wchar_t kVizContainerName[]  = L"FluentMedia_Visualizer";
 static constexpr wchar_t kArtContainerName[]  = L"FluentMedia_ArtContainer";
 static constexpr wchar_t kBackgroundName[]    = L"FluentMedia_Background";
 static constexpr wchar_t kPauseOverlayName[]  = L"PauseIconOverlay";
-static int  g_idleSeconds  = 0;
-static int  g_idleTicks    = 0;
+static ULONGLONG g_idleSinceTick = 0;
 static std::atomic<bool> g_hiddenByIdle{false};
 static std::chrono::steady_clock::time_point g_lastMediaTime = std::chrono::steady_clock::now();
 static void SwitchMediaSession();
@@ -3096,12 +3095,18 @@ static void RunPointerAction(const std::shared_ptr<PendingPointerAction>& pendin
                              const std::wstring& singleAction,
                              const std::wstring& doubleAction,
                              bool isDouble,
-                             bool allowSingle) {
-    if (isDouble) {
+                             bool allowSingle,
+                             bool playerHasDoubleAction = false) {
+    bool waitsForDouble = doubleAction != L"none" || playerHasDoubleAction;
+    if (isDouble && waitsForDouble) {
         CancelPendingPointerAction(pending);
         ExecuteMediaAction(doubleAction, source);
     } else if (allowSingle && singleAction != L"none") {
         CancelPendingPointerAction(pending);
+        if (!waitsForDouble) {
+            ExecuteMediaAction(singleAction, source);
+            return;
+        }
         pending->action = singleAction;
         pending->source = source;
         pending->timer.Interval(winrt::Windows::Foundation::TimeSpan{
@@ -3179,15 +3184,8 @@ static void LaunchConfiguredApp() {
 static bool IsIgnoredMediaApp(const std::wstring& appUserModelId) {
     if (g_settings.ignoredProcessMatchers.empty() || appUserModelId.empty()) return false;
     std::wstring appLower = ToLowerCopy(appUserModelId);
-    std::wstring appStemLower = ToLowerCopy(PathFileStem(appUserModelId));
-    for (auto const& [item, stem] : g_settings.ignoredProcessMatchers) {
-        if (appLower == item ||
-            appStemLower == stem ||
-            appLower.find(item) != std::wstring::npos ||
-            appLower.find(stem) != std::wstring::npos) {
-            return true;
-        }
-    }
+    for (auto const& stem : g_settings.ignoredProcessMatchers)
+        if (appLower.find(stem) != std::wstring::npos) return true;
     return false;
 }
 static bool IsBrowserAumid(const std::wstring& appUserModelId) {
@@ -3658,7 +3656,14 @@ static std::wstring WebAppNameFromTitle(const std::wstring& titleLower) {
         {L"udemy",         L"Udemy"},
     };
     for (auto const& app : kWebApps) {
-        if (titleLower.find(app.needle) != std::wstring::npos) return app.name;
+        size_t len = wcslen(app.needle);
+        for (size_t pos = titleLower.find(app.needle); pos != std::wstring::npos;
+             pos = titleLower.find(app.needle, pos + 1)) {
+            bool startOk = pos == 0 || !iswalnum(app.needle[0]) || !iswalnum(titleLower[pos - 1]);
+            bool endOk = pos + len == titleLower.size() || !iswalnum(app.needle[len - 1]) ||
+                         !iswalnum(titleLower[pos + len]);
+            if (startOk && endOk) return app.name;
+        }
     }
     return {};
 }
@@ -5057,13 +5062,6 @@ static DWORD WINAPI TimerThreadProc(void*) {
         HANDLE handles[] = {g_timerStopEvent, hEvent, g_timerUpdateEvent};
         DWORD wait = WaitForMultipleObjects(3, handles, FALSE, 500);
         if (wait == WAIT_OBJECT_0) break;
-        if (g_applyingSettings) continue;
-        HWND hWnd = g_taskbarWnd;
-        if (!hWnd || !IsWindow(hWnd)) {
-            hWnd = FindCurrentProcessTaskbarWnd();
-            g_taskbarWnd = hWnd;
-            if (!hWnd) continue;
-        }
         if (wait == WAIT_OBJECT_0 + 1) {
             if (hKey) {
                 RegNotifyChangeKeyValue(hKey, FALSE, REG_NOTIFY_CHANGE_LAST_SET, hEvent, TRUE);
@@ -5074,9 +5072,15 @@ static DWORD WINAPI TimerThreadProc(void*) {
                     lastThemeWasLight = currentThemeIsLight;
                     g_themeChangePending = true;
                     g_needsUiUpdate = true;
-                    if (g_timerUpdateEvent) SetEvent(g_timerUpdateEvent);
                 }
             }
+        }
+        if (g_applyingSettings) continue;
+        HWND hWnd = g_taskbarWnd;
+        if (!hWnd || !IsWindow(hWnd)) {
+            hWnd = FindCurrentProcessTaskbarWnd();
+            g_taskbarWnd = hWnd;
+            if (!hWnd) continue;
         }
         if (g_themeChangePending.exchange(false)) {
             Sleep(150);
@@ -5092,20 +5096,21 @@ static DWORD WINAPI TimerThreadProc(void*) {
         if (g_settings.idleHideSeconds > 0) {
             bool playing = false;
             { std::lock_guard<std::mutex> lk(g_mediaMtx); playing = g_media.isPlaying; }
+            if (!playing && AudioAppIsCurrentSource()) {
+                AudioAppEntry app;
+                playing = GetCurrentAudioApp(app) && app.audible && !app.muted;
+            }
             if (playing) {
-                g_idleSeconds = 0;
-                g_idleTicks   = 0;
+                g_idleSinceTick = 0;
                 if (g_hiddenByIdle) {
                     g_hiddenByIdle = false;
                     needsUpdate = true;
                 }
             } else {
-                ++g_idleTicks;
-                if (g_idleTicks >= 2) {
-                    g_idleTicks = 0;
-                    ++g_idleSeconds;
-                }
-                if (!g_hiddenByIdle && g_idleSeconds >= g_settings.idleHideSeconds) {
+                ULONGLONG now = GetTickCount64();
+                if (!g_idleSinceTick) g_idleSinceTick = now;
+                if (!g_hiddenByIdle &&
+                    now - g_idleSinceTick >= (ULONGLONG)g_settings.idleHideSeconds * 1000) {
                     g_hiddenByIdle = true;
                     needsUpdate = true;
                 }
@@ -5113,9 +5118,8 @@ static DWORD WINAPI TimerThreadProc(void*) {
         } else {
             if (g_hiddenByIdle) {
                 g_hiddenByIdle = false;
-                g_idleSeconds  = 0;
-                g_idleTicks    = 0;
-                needsUpdate    = true;
+                g_idleSinceTick = 0;
+                needsUpdate = true;
             }
         }
         if (needsUpdate) {
@@ -8353,13 +8357,16 @@ static Grid BuildPlayerGrid() {
                         using Kind = winrt::Windows::UI::Input::PointerUpdateKind;
                         if (kind == Kind::LeftButtonReleased) {
                             RunPointerAction(pendingAlbumArtClick, fe, g_settings.albumArtLeftClick,
-                                             g_settings.albumArtLeftDoubleClick, isDouble, true);
+                                             g_settings.albumArtLeftDoubleClick, isDouble, true,
+                                             g_settings.playerLeftDoubleClick != L"none");
                         } else if (kind == Kind::RightButtonReleased) {
                             RunPointerAction(pendingAlbumArtClick, fe, g_settings.albumArtRightClick,
-                                             g_settings.albumArtRightDoubleClick, isDouble, true);
+                                             g_settings.albumArtRightDoubleClick, isDouble, true,
+                                             g_settings.playerRightDoubleClick != L"none");
                         } else if (kind == Kind::MiddleButtonReleased) {
                             RunPointerAction(pendingAlbumArtClick, fe, g_settings.albumArtMiddleClick,
-                                             g_settings.albumArtMiddleDoubleClick, isDouble, true);
+                                             g_settings.albumArtMiddleDoubleClick, isDouble, true,
+                                             g_settings.playerMiddleDoubleClick != L"none");
                         }
                     }
                     e.Handled(true);
@@ -10020,8 +10027,7 @@ static void UpdateVisibility() {
     } catch (...) {}
 }
 static void ApplySettings() {
-    g_idleSeconds  = 0;
-    g_idleTicks    = 0;
+    g_idleSinceTick = 0;
     g_hiddenByIdle = false;
     try { RemovePlayerGrid(); } catch (...) { Wh_Log(L"ApplySettings: Exception in RemovePlayerGrid"); }
     if (!g_unloading) {
