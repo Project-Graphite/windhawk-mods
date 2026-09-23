@@ -886,11 +886,9 @@ static std::wstring ExpandTokens(std::wstring_view raw) {
         std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
         root = g_settings.rootPath;
     }
-    for (;;) {
-        size_t position = ToLower(text).find(L"{root}");
-        if (position == std::wstring::npos) {
-            break;
-        }
+    for (size_t position = 0;
+         (position = ToLower(text).find(L"{root}", position)) != std::wstring::npos;
+         position += root.size()) {
         text.replace(position, 6, root);
     }
     if (text.find(L'%') == std::wstring::npos) {
@@ -1094,7 +1092,7 @@ static void LoadSettings() {
     loaded.autoRunDelaySeconds = max(0, Wh_GetIntSetting(L"autoRunDelaySeconds"));
     loaded.autoRunOncePerDay = Wh_GetIntSetting(L"autoRunOncePerDay") != 0;
 
-    if (loaded.fontFamily.empty()) {
+    if (loaded.fontFamily.empty() || loaded.fontFamily.size() >= LF_FACESIZE) {
         loaded.fontFamily = L"Segoe UI";
     }
 
