@@ -9095,31 +9095,9 @@ static Grid BuildPlayerGrid() {
             ctrlPanel.VerticalAlignment(VerticalAlignment::Center);
             ctrlPanel.HorizontalAlignment(buttonsLeft ? HorizontalAlignment::Left : HorizontalAlignment::Right);
             std::vector<MediaButtonConfig> currentButtons;
-            try {
+            {
                 std::lock_guard<std::mutex> lock(g_mediaButtonsMutex);
-                if (!g_mediaButtons.empty()) {
-                    currentButtons = g_mediaButtons;
-                } else {
-                    currentButtons = {
-                        {MediaButtonType::Previous, 1},
-                        {MediaButtonType::PlayPause, 2},
-                        {MediaButtonType::Next, 3}
-                    };
-                }
-            } catch (const std::exception& e) {
-                Wh_Log(L"CreatePlayerGrid: Exception accessing media buttons (std::exception), using defaults");
-                currentButtons = {
-                    {MediaButtonType::Previous, 1},
-                    {MediaButtonType::PlayPause, 2},
-                    {MediaButtonType::Next, 3}
-                };
-            } catch (...) {
-                Wh_Log(L"CreatePlayerGrid: Unknown exception accessing media buttons, using defaults");
-                currentButtons = {
-                    {MediaButtonType::Previous, 1},
-                    {MediaButtonType::PlayPause, 2},
-                    {MediaButtonType::Next, 3}
-                };
+                currentButtons = g_mediaButtons;
             }
             bool hasButtons = !currentButtons.empty();
             if (hasButtons) {
@@ -9273,27 +9251,16 @@ static Grid BuildPlayerGrid() {
                 GoToCommonState(playerButton, IsHoverEffectEnabled(g_settings.playerHoverEffectMode), false, false);
             } catch (...) {}
         });
-        panel.PointerEntered([isHovered, updatePlayerVisualState](auto const&, auto const&) {
-            *isHovered = true;
-            updatePlayerVisualState();
-        });
-        panel.PointerExited([wrapper, isHovered, updatePlayerVisualState](auto const&, PointerRoutedEventArgs const& e) {
-            bool stillInside = false;
-            try {
-                auto pos = e.GetCurrentPoint(wrapper).Position();
-                auto bounds = wrapper.RenderSize();
-                stillInside = pos.X >= 0 && pos.X <= bounds.Width && pos.Y >= 0 && pos.Y <= bounds.Height;
-            } catch (...) {}
-            if (!stillInside) {
-                *isHovered = false;
-                updatePlayerVisualState();
-            }
-        });
     wrapper.PointerEntered([isHovered, updatePlayerVisualState](auto const&, auto const&) mutable {
         *isHovered = true;
         updatePlayerVisualState();
     });
-    wrapper.PointerExited([isHovered, updatePlayerVisualState](auto const&, auto const&) mutable {
+    wrapper.PointerExited([isHovered, updatePlayerVisualState](auto const& sender, PointerRoutedEventArgs const& e) mutable {
+        if (auto elem = sender.template try_as<UIElement>()) {
+            auto pos = e.GetCurrentPoint(elem).Position();
+            auto size = elem.RenderSize();
+            if (pos.X >= 0 && pos.X <= size.Width && pos.Y >= 0 && pos.Y <= size.Height) return;
+        }
         *isHovered = false;
         updatePlayerVisualState();
     });
@@ -9331,6 +9298,7 @@ static Grid BuildPlayerGrid() {
         if (g_unloading) return;
         bool handledByAlbumArt =
             wasHandled && HasNamedVisualAncestor(e.OriginalSource(), kArtContainerName);
+        if (wasHandled && !handledByAlbumArt) return;
         if (actuallyHovered) {
             auto kind = e.GetCurrentPoint(nullptr).Properties().PointerUpdateKind();
             auto fe = sender.template try_as<FrameworkElement>();
@@ -9435,18 +9403,14 @@ struct InjectionTarget {
     FrameworkElement parent{nullptr};
     int insertAt = 0;
 };
-static int RemovePlayerGridChildren(Panel const& targetPanel) {
-    if (!targetPanel) return -1;
-    int firstCol = -1;
-    auto targetGrid = targetPanel.try_as<Grid>();
+static void RemovePlayerGridChildren(Panel const& targetPanel) {
+    if (!targetPanel) return;
     for (int i = (int)targetPanel.Children().Size() - 1; i >= 0; --i) {
         auto fe = targetPanel.Children().GetAt(i).try_as<FrameworkElement>();
         if (fe && fe.Name() == kGridName) {
-            if (firstCol < 0 && targetGrid) firstCol = Grid::GetColumn(fe);
             try { targetPanel.Children().RemoveAt(i); } catch (...) {}
         }
     }
-    return firstCol;
 }
 static void RemoveAnchorDebugOverlays(Grid const& targetGrid) {
     if (!targetGrid) return;
@@ -9733,7 +9697,7 @@ static InjectionTarget ResolveInjectionTarget(
         else if (position == L"tray_after_showdesktop_right") {
             insertAt = FindTrayInsertionPoint(
                 trayPanel, root, L"ShowDesktopStack", true);
-            if (insertAt < 0) insertAt = (int)trayPanel.Children().Size();
+            if (insertAt < 0) insertAt = trayPanel.try_as<Grid>() ? (int)trayPanel.as<Grid>().ColumnDefinitions().Size() : (int)trayPanel.Children().Size();
         }
         if (insertAt >= 0) {
             return {trayPanel, insertAt};
@@ -9948,9 +9912,11 @@ static bool InjectPlayerGridIntoTaskbar(HWND hWnd) {
                                             }
                                         }
                                     } else if (g_trackPosition == L"left") {
-                                        if (std::abs(currentMargin.Left - desiredGap) > 1.0) { m.Left = desiredGap; changedMargin = true; }
+                                        double target = isVisible ? desiredGap : g_trackedElementOriginalMargin.Left;
+                                        if (std::abs(currentMargin.Left - target) > 1.0) { m.Left = target; changedMargin = true; }
                                     } else {
-                                        if (std::abs(currentMargin.Right - desiredGap) > 1.0) { m.Right = desiredGap; changedMargin = true; }
+                                        double target = isVisible ? desiredGap : g_trackedElementOriginalMargin.Right;
+                                        if (std::abs(currentMargin.Right - target) > 1.0) { m.Right = target; changedMargin = true; }
                                     }
                                     if (changedMargin) g_trackedElement.Margin(m);
                                     if (isVisible) {
@@ -10146,31 +10112,18 @@ static void RemovePlayerGridInstance() {
         g_trackPosition = L"";
         auto targetPanel = g_injectionParent.try_as<Panel>();
         auto targetGrid = g_injectionParent.try_as<Grid>();
-        int playerCol = -1;
         if (targetGrid) RemoveAnchorDebugOverlays(targetGrid);
-        playerCol = RemovePlayerGridChildren(targetPanel);
-        bool isTrackingPosition = (g_settings.position == L"taskbar_left_edge" ||
-                                g_settings.position == L"taskbar_center_edge" ||
-                                g_settings.position == L"taskbar_right_edge" ||
-                                g_settings.position == L"taskbar_left_start" ||
-                                g_settings.position == L"taskbar_right_start" ||
-                                g_settings.position == L"taskbar_after_search_left" ||
-                                g_settings.position == L"taskbar_after_search_right" ||
-                                g_settings.position == L"taskbar_after_taskview_left" ||
-                                g_settings.position == L"taskbar_after_taskview_right" ||
-                                g_settings.position == L"taskbar_after_widgets_left" ||
-                                g_settings.position == L"taskbar_after_widgets_right");
-        if (targetGrid && !isTrackingPosition && playerCol >= 0 &&
-            playerCol < (int)targetGrid.ColumnDefinitions().Size()) {
+        RemovePlayerGridChildren(targetPanel);
+        if (targetGrid && g_playerColumn >= 0 && g_playerColumn < (int)targetGrid.ColumnDefinitions().Size()) {
             for (uint32_t i = 0; i < targetGrid.Children().Size(); ++i) {
                 auto child = targetGrid.Children().GetAt(i).try_as<FrameworkElement>();
                 if (child) {
                     int childCol = Grid::GetColumn(child);
-                    if (childCol > playerCol)
+                    if (childCol > g_playerColumn)
                         Grid::SetColumn(child, childCol - 1);
                 }
             }
-            targetGrid.ColumnDefinitions().RemoveAt(playerCol);
+            targetGrid.ColumnDefinitions().RemoveAt(g_playerColumn);
         }
         g_playerGrid      = nullptr;
         g_injectionParent = nullptr;
@@ -10791,7 +10744,6 @@ static void RefreshPlayerContentsInstance() {
                         auto& bgType = g_settings.backgroundType;
                         if (bgType == L"album_art_blur") {
                             try {
-                                g_blurBgCache.Invalidate();
                                 bgBorder.Visibility(Visibility::Visible);
                                 bgBorder.Opacity(g_settings.blurOpacity / 100.0);
                                 auto applyBlur = [bgBorder, thumbBytesSnap = thumbBytes]() {
@@ -10799,7 +10751,6 @@ static void RefreshPlayerContentsInstance() {
                                         int w = (int)bgBorder.ActualWidth();
                                         int h = (int)bgBorder.ActualHeight();
                                         if (w <= 0 || h <= 0) return;
-                                        g_blurBgCache.Invalidate();
                                         bgBorder.Background(MakeAlbumBlurBrush(thumbBytesSnap, w, h));
                                         bgBorder.Opacity(g_settings.blurOpacity / 100.0);
                                         bgBorder.Visibility(Visibility::Visible);
@@ -11056,17 +11007,9 @@ static void RefreshPlayerContents() {
     RefreshMiniPlayerFlyoutUI();
 }
 static bool IsFullscreenActive() {
-    using Fn = HRESULT(WINAPI*)(int*);
-    static Fn pfn = nullptr; static bool tried = false;
-    if (!tried) {
-        tried = true;
-        HMODULE h = GetModuleHandleW(L"shell32.dll");
-        if (!h) h = LoadLibraryW(L"shell32.dll");
-        if (h) pfn = (Fn)GetProcAddress(h, (LPCSTR)2573);
-    }
-    if (!pfn) return false;
-    int s = 0;
-    return SUCCEEDED(pfn(&s)) && (s == 2 || s == 3 || s == 4);
+    QUERY_USER_NOTIFICATION_STATE state;
+    return SUCCEEDED(SHQueryUserNotificationState(&state)) &&
+           (state == QUNS_BUSY || state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE);
 }
 static bool g_anyPlayerVisible = false;
 static bool g_anyVisualizerVisible = false;
@@ -11083,7 +11026,7 @@ static void UpdateVisibilityInstance() {
             hasMedia   = true;
             hasSession = true;
         }
-        if (hasMedia || hasSession) {
+        if (hasMedia) {
             g_lastMediaTime = std::chrono::steady_clock::now();
         }
 
@@ -11097,7 +11040,7 @@ static void UpdateVisibilityInstance() {
                 if (elapsed > 2500) {
                     hide = true;
                 } else {
-                    if (!g_unloading && g_timerUpdateEvent) SetEvent(g_timerUpdateEvent);
+                    g_needsUiUpdate = true;
                 }
             }
         }
@@ -11243,6 +11186,7 @@ static void ApplySettings() {
         try { InjectPlayerGrid(); } catch (...) { Wh_Log(L"ApplySettings: Exception in InjectPlayerGrid"); }
     }
 }
+[[clang::no_destroy]] static winrt::Windows::UI::Xaml::DispatcherTimer g_applyRetryTimer{nullptr};
 static void ApplySettingsWithRetry(FrameworkElement xamlRootContent, int retryCount = 0) {
     static constexpr int kMaxRetries = 50;
     auto retry = [&]() {
@@ -11262,6 +11206,7 @@ static void ApplySettingsWithRetry(FrameworkElement xamlRootContent, int retryCo
                 timer.Tick(*tickToken);
                 ApplySettingsWithRetry(xamlRootContent, retryCount + 1);
             });
+        g_applyRetryTimer = timer;
         timer.Start();
     };
     if (g_unloading) {
@@ -11415,6 +11360,10 @@ void Wh_ModUninit() {
     WaitForTrackedWorkers();
     if (g_taskbarWnd)
         RunFromWindowThread(g_taskbarWnd, [](void*) {
+            if (g_applyRetryTimer) {
+                g_applyRetryTimer.Stop();
+                g_applyRetryTimer = nullptr;
+            }
             RemovePlayerGrid();
             g_mediaHoverBrush   = nullptr;
             g_mediaPressedBrush = nullptr;
@@ -11476,7 +11425,9 @@ void Wh_ModSettingsChanged() {
                 g_cachedPaletteHash = 0;
                 g_blurBgCache.Invalidate();
                 if (!g_unloading) {
+                    g_applyingSettings = false;
                     InjectPlayerGrid();
+                    UpdateVisibility();
                     g_needsUiUpdate = true;
                 }
             } catch (...) {
