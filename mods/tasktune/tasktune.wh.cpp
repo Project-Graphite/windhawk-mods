@@ -988,9 +988,21 @@ static void ParseTwoInts(const std::wstring& s, int& a, int& b) {
         b = std::stoi(s.substr(sp + 1));
     } catch (...) {}
 }
-static constexpr int kCmdToggleMute = 20;
-static constexpr int kCmdVolumeUp   = 21;
-static constexpr int kCmdVolumeDown = 22;
+static constexpr int kCmdPrevious      = 1;
+static constexpr int kCmdPlayPause     = 2;
+static constexpr int kCmdNext          = 3;
+static constexpr int kCmdStop          = 4;
+static constexpr int kCmdRewind        = 5;
+static constexpr int kCmdForward       = 6;
+static constexpr int kCmdToggleShuffle = 7;
+static constexpr int kCmdCycleRepeat   = 8;
+static constexpr int kCmdSwitchSession = 9;
+static constexpr int kCmdRepeatOff     = 10;
+static constexpr int kCmdRepeatAll     = 11;
+static constexpr int kCmdRepeatOne     = 12;
+static constexpr int kCmdToggleMute    = 20;
+static constexpr int kCmdVolumeUp      = 21;
+static constexpr int kCmdVolumeDown    = 22;
 enum class MediaButtonType {
     Previous = 1,
     PlayPause = 2,
@@ -1007,14 +1019,14 @@ struct MediaButtonDefinition {
     int cmd;
 };
 static const std::vector<MediaButtonDefinition> g_mediaButtonDefinitions = {
-    {L"prev", MediaButtonType::Previous, 1},
-    {L"play", MediaButtonType::PlayPause, 2},
-    {L"next", MediaButtonType::Next, 3},
-    {L"rewind", MediaButtonType::Rewind, 5},
-    {L"forward", MediaButtonType::Forward, 6},
-    {L"shuffle", MediaButtonType::Shuffle, 7},
-    {L"repeat", MediaButtonType::Repeat, 8},
-    {L"switch_sessions", MediaButtonType::SwitchSessions, 9},
+    {L"prev", MediaButtonType::Previous, kCmdPrevious},
+    {L"play", MediaButtonType::PlayPause, kCmdPlayPause},
+    {L"next", MediaButtonType::Next, kCmdNext},
+    {L"rewind", MediaButtonType::Rewind, kCmdRewind},
+    {L"forward", MediaButtonType::Forward, kCmdForward},
+    {L"shuffle", MediaButtonType::Shuffle, kCmdToggleShuffle},
+    {L"repeat", MediaButtonType::Repeat, kCmdCycleRepeat},
+    {L"switch_sessions", MediaButtonType::SwitchSessions, kCmdSwitchSession},
 };
 struct MediaButtonConfig {
     MediaButtonType type;
@@ -1475,9 +1487,9 @@ static void LoadSettings() {
         try {
             std::lock_guard<std::mutex> lock(g_mediaButtonsMutex);
             g_mediaButtons = {
-                {MediaButtonType::Previous, 1},
-                {MediaButtonType::PlayPause, 2},
-                {MediaButtonType::Next, 3}
+                {MediaButtonType::Previous, kCmdPrevious},
+                {MediaButtonType::PlayPause, kCmdPlayPause},
+                {MediaButtonType::Next, kCmdNext}
             };
         } catch (...) {}
     }
@@ -1508,7 +1520,7 @@ static std::atomic<bool> g_applyingSettings{false};
 static HWND g_taskbarWnd = nullptr;
 static HWND g_curTaskbarWnd = nullptr;
 
-static void ForEachPlayerInstance(void (*fn)());
+template <typename F> static void ForEachPlayerInstance(F&& fn);
 static int  PlayerInstanceCount();
 
 static std::atomic<int> g_activeWorkerThreads{0};
@@ -2660,7 +2672,7 @@ static void SendMediaCommandAsync(int cmd) {
                 winrt::uninit_apartment();
                 return;
             }
-            if (cmd == 2 && AudioAppIsCurrentSource()) {
+            if (cmd == kCmdPlayPause && AudioAppIsCurrentSource()) {
                 AppAudioToggleMute();
                 DispatchMediaUpdate();
                 winrt::uninit_apartment();
@@ -2670,8 +2682,8 @@ static void SendMediaCommandAsync(int cmd) {
             { std::lock_guard<std::mutex> lk(g_sessionMtx); session = g_currentSession; }
             if (session) {
                 switch (cmd) {
-                    case 1: session.TrySkipPreviousAsync().get();    break;
-                    case 2: {
+                    case kCmdPrevious: session.TrySkipPreviousAsync().get(); break;
+                    case kCmdPlayPause: {
                         auto info = session.GetPlaybackInfo();
                         bool isPlaying = info &&
                             info.PlaybackStatus() == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing;
@@ -2681,8 +2693,8 @@ static void SendMediaCommandAsync(int cmd) {
                             session.TryPlayAsync().get();
                         break;
                     }
-                    case 3: session.TrySkipNextAsync().get();        break;
-                    case 4:
+                    case kCmdNext: session.TrySkipNextAsync().get(); break;
+                    case kCmdStop:
                         try {
                             auto result = session.TryStopAsync().get();
                             if (!result) {
@@ -2698,7 +2710,7 @@ static void SendMediaCommandAsync(int cmd) {
                             }
                         }
                         break;
-                    case 5:
+                    case kCmdRewind:
                         try {
                             auto timeline = session.GetTimelineProperties();
                             auto currentPos = timeline.Position();
@@ -2707,7 +2719,7 @@ static void SendMediaCommandAsync(int cmd) {
                             session.TryChangePlaybackPositionAsync(newPos.count()).get();
                         } catch (...) {}
                         break;
-                    case 6:
+                    case kCmdForward:
                         try {
                             auto timeline = session.GetTimelineProperties();
                             auto currentPos = timeline.Position();
@@ -2717,7 +2729,7 @@ static void SendMediaCommandAsync(int cmd) {
                             session.TryChangePlaybackPositionAsync(newPos.count()).get();
                         } catch (...) {}
                         break;
-                    case 7:
+                    case kCmdToggleShuffle:
                         try {
                             bool currentShuffle = g_shuffleEnabled.load();
                             if (session.TryChangeShuffleActiveAsync(!currentShuffle).get()) {
@@ -2726,7 +2738,7 @@ static void SendMediaCommandAsync(int cmd) {
                             }
                         } catch (...) {}
                         break;
-                    case 8:
+                    case kCmdCycleRepeat:
                         try {
                             RepeatMode current = g_repeatMode.load();
                             winrt::Windows::Media::MediaPlaybackAutoRepeatMode mode;
@@ -2752,10 +2764,10 @@ static void SendMediaCommandAsync(int cmd) {
                             }
                         } catch (...) {}
                         break;
-                    case 9:
+                    case kCmdSwitchSession:
                         SwitchMediaSession();
                         break;
-                    case 10:
+                    case kCmdRepeatOff:
                         try {
                             if (session.TryChangeAutoRepeatModeAsync(winrt::Windows::Media::MediaPlaybackAutoRepeatMode::None).get()) {
                                 g_repeatMode = RepeatMode::Off;
@@ -2763,7 +2775,7 @@ static void SendMediaCommandAsync(int cmd) {
                             }
                         } catch (...) {}
                         break;
-                    case 11:
+                    case kCmdRepeatAll:
                         try {
                             if (session.TryChangeAutoRepeatModeAsync(winrt::Windows::Media::MediaPlaybackAutoRepeatMode::List).get()) {
                                 g_repeatMode = RepeatMode::All;
@@ -2771,7 +2783,7 @@ static void SendMediaCommandAsync(int cmd) {
                             }
                         } catch (...) {}
                         break;
-                    case 12:
+                    case kCmdRepeatOne:
                         try {
                             if (session.TryChangeAutoRepeatModeAsync(winrt::Windows::Media::MediaPlaybackAutoRepeatMode::Track).get()) {
                                 g_repeatMode = RepeatMode::One;
@@ -2793,7 +2805,6 @@ struct TextScrollState {
     bool   active    = false;
     bool   pausing   = false;
     int    pauseTick = 0;
-    int    tickMs    = 16;
 };
 static TextScrollState g_titleScroll;
 static TextScrollState g_artistScroll;
@@ -2873,6 +2884,8 @@ static void ChangeSystemVolume(bool increase) {
     }
 }
 static std::wstring ToLowerCopy(std::wstring value);
+static std::wstring PathFileStem(std::wstring path);
+static std::wstring GetProcessImagePath(DWORD pid);
 static std::wstring GetWindowAppUserModelId(HWND hWnd);
 static void ShowMediaContextMenu(FrameworkElement const& target);
 static void ShowMiniPlayerFlyout(FrameworkElement const& target);
@@ -2906,17 +2919,17 @@ static void ExecuteMediaAction(const std::wstring& action, FrameworkElement cons
         SendMediaCommandAsync(kCmdVolumeDown);
         return;
     } else if (action == L"play_pause") {
-        SendMediaCommandAsync(2);
+        SendMediaCommandAsync(kCmdPlayPause);
         DispatchMediaUpdate();
     } else if (action == L"next_track") {
-        SendMediaCommandAsync(3);
+        SendMediaCommandAsync(kCmdNext);
         DispatchMediaUpdate();
     } else if (action == L"prev_track") {
-        SendMediaCommandAsync(1);
+        SendMediaCommandAsync(kCmdPrevious);
         DispatchMediaUpdate();
     } else if (action == L"stop") {
         g_forceSessionRefresh = true;
-        SendMediaCommandAsync(4);
+        SendMediaCommandAsync(kCmdStop);
         DispatchMediaUpdate();
         SpawnTrackedWorker([]() {
             for (DWORD delay : {300, 1200, 2500}) {
@@ -2928,17 +2941,17 @@ static void ExecuteMediaAction(const std::wstring& action, FrameworkElement cons
                 OnSessionsChanged();
             }
         });
-    } else if (action == L"rewind" || action == L"rewind_5s") {
-        SendMediaCommandAsync(5);
+    } else if (action == L"rewind") {
+        SendMediaCommandAsync(kCmdRewind);
         DispatchMediaUpdate();
-    } else if (action == L"forward" || action == L"forward_5s") {
-        SendMediaCommandAsync(6);
+    } else if (action == L"forward") {
+        SendMediaCommandAsync(kCmdForward);
         DispatchMediaUpdate();
     } else if (action == L"toggle_shuffle") {
-        SendMediaCommandAsync(7);
+        SendMediaCommandAsync(kCmdToggleShuffle);
         DispatchMediaUpdate();
     } else if (action == L"toggle_repeat") {
-        SendMediaCommandAsync(8);
+        SendMediaCommandAsync(kCmdCycleRepeat);
         DispatchMediaUpdate();
 } else if (action == L"open_app") {
         SpawnTrackedWorker([]() {
@@ -2967,10 +2980,8 @@ static void ExecuteMediaAction(const std::wstring& action, FrameworkElement cons
                 HWND titleHwnd = nullptr;
             };
             WindowSearch search;
-            search.targetTitle = title;
-            std::transform(search.targetTitle.begin(), search.targetTitle.end(), search.targetTitle.begin(), ::towlower);
-            search.targetAumid = appAumid;
-            std::transform(search.targetAumid.begin(), search.targetAumid.end(), search.targetAumid.begin(), ::towlower);
+            search.targetTitle = ToLowerCopy(title);
+            search.targetAumid = ToLowerCopy(appAumid);
             EnumWindows([](HWND hwnd, LPARAM lParam) CALLBACK -> BOOL {
                 if (!IsWindowVisible(hwnd)) return TRUE;
                 WINDOWINFO wi{};
@@ -2979,55 +2990,27 @@ static void ExecuteMediaAction(const std::wstring& action, FrameworkElement cons
                 if ((wi.dwStyle & WS_CHILD) != 0) return TRUE;
                 auto* s = reinterpret_cast<WindowSearch*>(lParam);
                 if (!s->aumidHwnd && !s->targetAumid.empty()) {
-                    IPropertyStore* pps = nullptr;
-                    if (SUCCEEDED(SHGetPropertyStoreForWindow(hwnd, IID_PPV_ARGS(&pps)))) {
-                        PROPVARIANT var;
-                        PropVariantInit(&var);
-                        if (SUCCEEDED(pps->GetValue(PKEY_AppUserModel_ID, &var)) && var.vt == VT_LPWSTR) {
-                            std::wstring winAumid(var.pwszVal);
-                            std::transform(winAumid.begin(), winAumid.end(), winAumid.begin(), ::towlower);
-                            if (winAumid == s->targetAumid ||
-                                winAumid.find(s->targetAumid) != std::wstring::npos ||
-                                s->targetAumid.find(winAumid) != std::wstring::npos) {
-                                s->aumidHwnd = hwnd;
-                            }
-                        }
-                        PropVariantClear(&var);
-                        pps->Release();
+                    std::wstring winAumid = ToLowerCopy(GetWindowAppUserModelId(hwnd));
+                    if (!winAumid.empty() &&
+                        (winAumid.find(s->targetAumid) != std::wstring::npos ||
+                        s->targetAumid.find(winAumid) != std::wstring::npos)) {
+                        s->aumidHwnd = hwnd;
                     }
                 }
                 if (!s->processHwnd && !s->targetAumid.empty()) {
                     DWORD pid = 0;
                     GetWindowThreadProcessId(hwnd, &pid);
-                    if (pid) {
-                        wchar_t procPath[MAX_PATH]{};
-                        HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-                        if (hProc) {
-                            DWORD sz = MAX_PATH;
-                            QueryFullProcessImageNameW(hProc, 0, procPath, &sz);
-                            CloseHandle(hProc);
-                        }
-                        if (procPath[0]) {
-                            std::wstring stem = procPath;
-                            auto slash = stem.find_last_of(L"\\/");
-                            if (slash != std::wstring::npos) stem = stem.substr(slash + 1);
-                            auto dot = stem.rfind(L'.');
-                            if (dot != std::wstring::npos) stem = stem.substr(0, dot);
-                            std::transform(stem.begin(), stem.end(), stem.begin(), ::towlower);
-                            if (!stem.empty() &&
-                                (s->targetAumid.find(stem) != std::wstring::npos ||
-                                stem.find(s->targetAumid) != std::wstring::npos)) {
-                                s->processHwnd = hwnd;
-                            }
-                        }
+                    std::wstring stem = ToLowerCopy(PathFileStem(GetProcessImagePath(pid)));
+                    if (!stem.empty() &&
+                        (s->targetAumid.find(stem) != std::wstring::npos ||
+                        stem.find(s->targetAumid) != std::wstring::npos)) {
+                        s->processHwnd = hwnd;
                     }
                 }
                 if (!s->titleHwnd && !s->targetTitle.empty()) {
                     wchar_t windowTitle[512];
                     if (GetWindowTextW(hwnd, windowTitle, 512) > 0) {
-                        std::wstring wTitle(windowTitle);
-                        std::transform(wTitle.begin(), wTitle.end(), wTitle.begin(), ::towlower);
-                        if (wTitle.find(s->targetTitle) != std::wstring::npos) {
+                        if (ToLowerCopy(windowTitle).find(s->targetTitle) != std::wstring::npos) {
                             s->titleHwnd = hwnd;
                         }
                     }
@@ -3200,21 +3183,15 @@ static bool IsBrowserAumid(const std::wstring& appUserModelId) {
     return false;
 }
 static std::wstring GetWindowAppUserModelId(HWND hWnd) {
-    static const PROPERTYKEY kAppUserModelIdKey = {
-        {0x9F4C2855, 0x9F79, 0x4B39, {0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3}},
-        5
-    };
+    winrt::com_ptr<IPropertyStore> store;
+    if (FAILED(SHGetPropertyStoreForWindow(hWnd, __uuidof(IPropertyStore), store.put_void()))) return {};
     std::wstring result;
-    IPropertyStore* store = nullptr;
-    if (SUCCEEDED(SHGetPropertyStoreForWindow(hWnd, IID_PPV_ARGS(&store))) && store) {
-        PROPVARIANT pv;
-        PropVariantInit(&pv);
-        if (SUCCEEDED(store->GetValue(kAppUserModelIdKey, &pv)) && pv.vt == VT_LPWSTR && pv.pwszVal) {
-            result = pv.pwszVal;
-        }
-        PropVariantClear(&pv);
-        store->Release();
+    PROPVARIANT pv;
+    PropVariantInit(&pv);
+    if (SUCCEEDED(store->GetValue(PKEY_AppUserModel_ID, &pv)) && pv.vt == VT_LPWSTR && pv.pwszVal) {
+        result = pv.pwszVal;
     }
+    PropVariantClear(&pv);
     return result;
 }
 static bool AppIdMatchesProcess(const std::wstring& appUserModelId, HWND hWnd, DWORD* outPid = nullptr, std::wstring* outProcPath = nullptr) {
@@ -3226,8 +3203,7 @@ static bool AppIdMatchesProcess(const std::wstring& appUserModelId, HWND hWnd, D
     std::wstring appLower = ToLowerCopy(appUserModelId);
     std::wstring windowAumidLower = ToLowerCopy(windowAumid);
     if (!windowAumidLower.empty() &&
-        (appLower == windowAumidLower ||
-        appLower.find(windowAumidLower) != std::wstring::npos ||
+        (appLower.find(windowAumidLower) != std::wstring::npos ||
         windowAumidLower.find(appLower) != std::wstring::npos)) {
         return true;
     }
@@ -3241,11 +3217,9 @@ static bool AppIdMatchesProcess(const std::wstring& appUserModelId, HWND hWnd, D
     if (outProcPath) *outProcPath = procPath;
     std::wstring procLower = ToLowerCopy(PathFileStem(procPath));
     if (procLower.empty()) return false;
-    std::wstring appStemLower = ToLowerCopy(PathFileStem(appUserModelId));
     return appLower.find(procLower) != std::wstring::npos ||
         procLower.find(appLower) != std::wstring::npos ||
-        appStemLower.find(procLower) != std::wstring::npos ||
-        procLower.find(appStemLower) != std::wstring::npos ||
+        procLower.find(ToLowerCopy(PathFileStem(appUserModelId))) != std::wstring::npos ||
         (!windowAumidLower.empty() &&
             (windowAumidLower.find(procLower) != std::wstring::npos ||
             procLower.find(windowAumidLower) != std::wstring::npos));
@@ -3281,8 +3255,6 @@ static std::vector<BYTE> RenderIconToBytes(HICON hIcon, int iconSize) {
     GetDIBits(hdc, hBmp, 0, srcH, src.data(), &bi, DIB_RGB_COLORS);
     DeleteObject(hBmp);
     DeleteDC(hdc);
-    for (int i = 0; i + 3 < (int)src.size(); i += 4)
-        std::swap(src[i], src[i + 2]);
     if (srcW == iconSize && srcH == iconSize)
         return src;
     std::vector<BYTE> dst(iconSize * iconSize * 4, 0);
@@ -3311,6 +3283,21 @@ static std::vector<BYTE> RenderIconToBytes(HICON hIcon, int iconSize) {
     }
     return dst;
 }
+static HICON GetWindowIconNoHang(HWND hWnd) {
+    auto getIconTimeout = [hWnd](WPARAM iconType) -> HICON {
+        DWORD_PTR res = 0;
+        if (SendMessageTimeoutW(hWnd, WM_GETICON, iconType, 0,
+                SMTO_ABORTIFHUNG | SMTO_BLOCK, 100, &res)) {
+            return (HICON)res;
+        }
+        return nullptr;
+    };
+    HICON icon = getIconTimeout(ICON_BIG);
+    if (!icon) icon = getIconTimeout(ICON_SMALL);
+    if (!icon) icon = (HICON)GetClassLongPtrW(hWnd, GCLP_HICON);
+    if (!icon) icon = (HICON)GetClassLongPtrW(hWnd, GCLP_HICONSM);
+    return icon;
+}
 static std::vector<BYTE> FetchAppIconBytes(const std::wstring& appUserModelId, int iconSize) {
     std::vector<BYTE> result;
     if (appUserModelId.empty()) return result;
@@ -3334,157 +3321,93 @@ static std::vector<BYTE> FetchAppIconBytes(const std::wstring& appUserModelId, i
             }
         }
     }
-    {
-        struct EnumCtx {
-            const std::wstring* aumid;
-            HICON  exactIcon = nullptr;
-            HICON  fuzzyIcon = nullptr;
-            DWORD  exactPid  = 0;
-            DWORD  fuzzyPid  = 0;
-            std::wstring exactPath;
-            std::wstring fuzzyPath;
-        };
-        EnumCtx ctx{};
-        ctx.aumid = &appUserModelId;
-        EnumWindows([](HWND hWnd, LPARAM lParam) CALLBACK -> BOOL {
-            if (!IsWindowVisible(hWnd)) return TRUE;
-            auto* c = reinterpret_cast<EnumCtx*>(lParam);
-            if (!c->exactIcon) {
-                IPropertyStore* pps = nullptr;
-                if (SUCCEEDED(SHGetPropertyStoreForWindow(hWnd, IID_PPV_ARGS(&pps)))) {
-                    PROPVARIANT var;
-                    PropVariantInit(&var);
-                    if (SUCCEEDED(pps->GetValue(PKEY_AppUserModel_ID, &var)) && var.vt == VT_LPWSTR) {
-                        std::wstring winAumid  = ToLowerCopy(std::wstring(var.pwszVal));
-                        std::wstring wantAumid = ToLowerCopy(*c->aumid);
-                        if (winAumid == wantAumid) {
-                            auto getIconTimeout = [&](HWND w, WPARAM iconType) -> HICON {
-                                DWORD_PTR res = 0;
-                                if (SendMessageTimeoutW(w, WM_GETICON, iconType, 0,
-                                        SMTO_ABORTIFHUNG | SMTO_BLOCK, 100, &res)) {
-                                    return (HICON)res;
-                                }
-                                return nullptr;
-                            };
-                            HICON icon = getIconTimeout(hWnd, ICON_BIG);
-                            if (!icon) icon = getIconTimeout(hWnd, ICON_SMALL);
-                            if (!icon) icon = (HICON)GetClassLongPtrW(hWnd, GCLP_HICON);
-                            if (!icon) icon = (HICON)GetClassLongPtrW(hWnd, GCLP_HICONSM);
-                            if (icon) {
-                                c->exactIcon = icon;
-                                GetWindowThreadProcessId(hWnd, &c->exactPid);
-                                wchar_t path[MAX_PATH]{};
-                                HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, c->exactPid);
-                                if (hProc) { DWORD sz = MAX_PATH; QueryFullProcessImageNameW(hProc, 0, path, &sz); CloseHandle(hProc); }
-                                c->exactPath = path;
-                                PropVariantClear(&var);
-                                pps->Release();
-                                return FALSE;
-                            }
-                        }
-                    }
-                    PropVariantClear(&var);
-                    pps->Release();
-                }
-            }
-            if (!c->exactIcon && !c->fuzzyIcon) {
-                std::wstring windowAumid = GetWindowAppUserModelId(hWnd);
-                if (windowAumid.empty()) {
-                    DWORD pid = 0;
-                    std::wstring procPath;
-                    if (AppIdMatchesProcess(*c->aumid, hWnd, &pid, &procPath)) {
-                        auto getIconTimeout = [&](HWND w, WPARAM iconType) -> HICON {
-                            DWORD_PTR res = 0;
-                            if (SendMessageTimeoutW(w, WM_GETICON, iconType, 0,
-                                    SMTO_ABORTIFHUNG | SMTO_BLOCK, 100, &res)) {
-                                return (HICON)res;
-                            }
-                            return nullptr;
-                        };
-                        HICON icon = getIconTimeout(hWnd, ICON_BIG);
-                        if (!icon) icon = getIconTimeout(hWnd, ICON_SMALL);
-                        if (!icon) icon = (HICON)GetClassLongPtrW(hWnd, GCLP_HICON);
-                        if (!icon) icon = (HICON)GetClassLongPtrW(hWnd, GCLP_HICONSM);
-                        if (icon) {
-                            c->fuzzyIcon = icon;
-                            c->fuzzyPid  = pid;
-                            c->fuzzyPath = procPath;
-                        } else if (!c->fuzzyPid) {
-                            c->fuzzyPid  = pid;
-                            c->fuzzyPath = procPath;
-                        }
-                    }
-                }
-            }
-            return TRUE;
-        }, reinterpret_cast<LPARAM>(&ctx));
-        if (ctx.exactIcon && Render(ctx.exactIcon, false)) return result;
-        if (ctx.fuzzyIcon) {
-            HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, ctx.fuzzyPid);
-            if (hProc) {
-                DWORD exitCode = 0;
-                if (GetExitCodeProcess(hProc, &exitCode) && exitCode == STILL_ACTIVE) {
-                    CloseHandle(hProc);
-                    if (Render(ctx.fuzzyIcon, false)) return result;
-                } else {
-                    CloseHandle(hProc);
-                }
+    auto tryExePath = [&](const std::wstring& path) -> bool {
+        if (path.empty()) return false;
+        SHFILEINFOW sfi{};
+        if (SHGetFileInfoW(path.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_LARGEICON) && sfi.hIcon)
+            return Render(sfi.hIcon, true);
+        if (SHGetFileInfoW(path.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_SMALLICON) && sfi.hIcon)
+            return Render(sfi.hIcon, true);
+        return false;
+    };
+    auto tryExtractIconEx = [&](const std::wstring& path) -> bool {
+        if (path.empty()) return false;
+        HICON hL = nullptr, hS = nullptr;
+        if (ExtractIconExW(path.c_str(), 0, &hL, &hS, 1)) {
+            HICON chosen = hL ? hL : hS;
+            if (chosen) {
+                bool ok = Render(chosen, false);
+                if (hL) DestroyIcon(hL);
+                if (hS) DestroyIcon(hS);
+                if (ok) return true;
             }
         }
-        auto resolvePid = [](DWORD pid) -> std::wstring {
-            if (!pid) return {};
-            wchar_t path[MAX_PATH]{};
-            HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-            if (hProc) { DWORD sz = MAX_PATH; QueryFullProcessImageNameW(hProc, 0, path, &sz); CloseHandle(hProc); }
-            return path;
-        };
-        auto tryExePath = [&](const std::wstring& path) -> bool {
-            if (path.empty()) return false;
-            SHFILEINFOW sfi{};
-            if (SHGetFileInfoW(path.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_LARGEICON) && sfi.hIcon)
-                return Render(sfi.hIcon, true);
-            if (SHGetFileInfoW(path.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_SMALLICON) && sfi.hIcon)
-                return Render(sfi.hIcon, true);
-            return false;
-        };
-        auto tryExtractIconEx = [&](const std::wstring& path) -> bool {
-            if (path.empty()) return false;
-            HICON hL = nullptr, hS = nullptr;
-            if (ExtractIconExW(path.c_str(), 0, &hL, &hS, 1)) {
-                HICON chosen = hL ? hL : hS;
-                if (chosen) {
-                    bool ok = Render(chosen, false);
-                    if (hL) DestroyIcon(hL);
-                    if (hS) DestroyIcon(hS);
-                    if (ok) return true;
-                }
+        return false;
+    };
+    struct EnumCtx {
+        const std::wstring* aumid;
+        std::wstring aumidLower;
+        HICON  exactIcon = nullptr;
+        HICON  fuzzyIcon = nullptr;
+        DWORD  fuzzyPid  = 0;
+        std::wstring exactPath;
+        std::wstring fuzzyPath;
+    };
+    EnumCtx ctx{};
+    ctx.aumid = &appUserModelId;
+    ctx.aumidLower = ToLowerCopy(appUserModelId);
+    EnumWindows([](HWND hWnd, LPARAM lParam) CALLBACK -> BOOL {
+        if (!IsWindowVisible(hWnd)) return TRUE;
+        auto* c = reinterpret_cast<EnumCtx*>(lParam);
+        std::wstring windowAumid = GetWindowAppUserModelId(hWnd);
+        if (!windowAumid.empty()) {
+            if (ToLowerCopy(windowAumid) != c->aumidLower) return TRUE;
+            HICON icon = GetWindowIconNoHang(hWnd);
+            if (!icon) return TRUE;
+            DWORD pid = 0;
+            GetWindowThreadProcessId(hWnd, &pid);
+            c->exactIcon = icon;
+            c->exactPath = GetProcessImagePath(pid);
+            return FALSE;
+        }
+        if (c->fuzzyIcon) return TRUE;
+        DWORD pid = 0;
+        std::wstring procPath;
+        if (AppIdMatchesProcess(*c->aumid, hWnd, &pid, &procPath)) {
+            HICON icon = GetWindowIconNoHang(hWnd);
+            if (icon) {
+                c->fuzzyIcon = icon;
+                c->fuzzyPid  = pid;
+                c->fuzzyPath = procPath;
+            } else if (!c->fuzzyPid) {
+                c->fuzzyPid  = pid;
+                c->fuzzyPath = procPath;
             }
-            return false;
-        };
-        std::wstring ep = ctx.exactPath.empty() ? resolvePid(ctx.exactPid) : ctx.exactPath;
-        std::wstring fp = ctx.fuzzyPath.empty() ? resolvePid(ctx.fuzzyPid) : ctx.fuzzyPath;
-        if (tryExePath(ep))        return result;
-        if (tryExePath(fp))        return result;
-        if (tryExtractIconEx(ep))  return result;
-        if (tryExtractIconEx(fp))  return result;
+        }
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&ctx));
+    if (ctx.exactIcon && Render(ctx.exactIcon, false)) return result;
+    if (ctx.fuzzyIcon) {
+        HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, ctx.fuzzyPid);
+        if (hProc) {
+            DWORD exitCode = 0;
+            if (GetExitCodeProcess(hProc, &exitCode) && exitCode == STILL_ACTIVE) {
+                CloseHandle(hProc);
+                if (Render(ctx.fuzzyIcon, false)) return result;
+            } else {
+                CloseHandle(hProc);
+            }
+        }
     }
+    if (tryExePath(ctx.exactPath))        return result;
+    if (tryExePath(ctx.fuzzyPath))        return result;
+    if (tryExtractIconEx(ctx.exactPath))  return result;
+    if (tryExtractIconEx(ctx.fuzzyPath))  return result;
     if (appUserModelId.find(L".exe") != std::wstring::npos) {
         std::wstring exePath = appUserModelId;
         if (exePath.size() >= 2 && exePath.front() == L'"' && exePath.back() == L'"')
             exePath = exePath.substr(1, exePath.size() - 2);
-        SHFILEINFOW sfi{};
-        if (SHGetFileInfoW(exePath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_LARGEICON) && sfi.hIcon)
-            if (Render(sfi.hIcon, true)) return result;
-        HICON hL = nullptr, hS = nullptr;
-        if (ExtractIconExW(exePath.c_str(), 0, &hL, &hS, 1)) {
-            HICON chosen = hL ? hL : hS;
-            if (chosen) {
-                Render(chosen, false);
-                if (hL) DestroyIcon(hL);
-                if (hS) DestroyIcon(hS);
-                if (!result.empty()) return result;
-            }
-        }
+        if (tryExePath(exePath) || tryExtractIconEx(exePath)) return result;
     }
     return result;
 }
@@ -3786,50 +3709,42 @@ static bool RenderIconToStraightBGRA(HICON hIcon, int size, std::vector<BYTE>& o
     return anyVisible;
 }
 static std::vector<BYTE> EncodeBGRAToPng(const std::vector<BYTE>& pixels, UINT size) {
-    std::vector<BYTE> result;
-    if (pixels.size() < (size_t)size * size * 4) return result;
-    IWICImagingFactory* factory = nullptr;
+    if (pixels.size() < (size_t)size * size * 4) return {};
+    winrt::com_ptr<IWICImagingFactory> factory;
     if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-                                IID_PPV_ARGS(&factory))) || !factory) {
-        return result;
+                                __uuidof(IWICImagingFactory), factory.put_void()))) {
+        return {};
     }
-    IStream* stream = nullptr;
-    if (SUCCEEDED(CreateStreamOnHGlobal(nullptr, TRUE, &stream)) && stream) {
-        IWICBitmapEncoder* encoder = nullptr;
-        if (SUCCEEDED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder))) {
-            if (SUCCEEDED(encoder->Initialize(stream, WICBitmapEncoderNoCache))) {
-                IWICBitmapFrameEncode* frame = nullptr;
-                IPropertyBag2* props = nullptr;
-                if (SUCCEEDED(encoder->CreateNewFrame(&frame, &props))) {
-                    WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;
-                    if (SUCCEEDED(frame->Initialize(props)) &&
-                        SUCCEEDED(frame->SetSize(size, size)) &&
-                        SUCCEEDED(frame->SetPixelFormat(&format)) &&
-                        SUCCEEDED(frame->WritePixels(size, size * 4, (UINT)pixels.size(),
-                                                     const_cast<BYTE*>(pixels.data()))) &&
-                        SUCCEEDED(frame->Commit()) &&
-                        SUCCEEDED(encoder->Commit())) {
-                        HGLOBAL hGlobal = nullptr;
-                        if (SUCCEEDED(GetHGlobalFromStream(stream, &hGlobal)) && hGlobal) {
-                            STATSTG stat{};
-                            SIZE_T bytes = SUCCEEDED(stream->Stat(&stat, STATFLAG_NONAME)) ? (SIZE_T)stat.cbSize.QuadPart : 0;
-                            void* data = GlobalLock(hGlobal);
-                            if (data && bytes) {
-                                result.assign(static_cast<BYTE*>(data),
-                                              static_cast<BYTE*>(data) + bytes);
-                            }
-                            if (data) GlobalUnlock(hGlobal);
-                        }
-                    }
-                    if (props) props->Release();
-                    frame->Release();
-                }
-            }
-            encoder->Release();
-        }
-        stream->Release();
+    winrt::com_ptr<IStream> stream;
+    if (FAILED(CreateStreamOnHGlobal(nullptr, TRUE, stream.put()))) return {};
+    winrt::com_ptr<IWICBitmapEncoder> encoder;
+    if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.put())) ||
+        FAILED(encoder->Initialize(stream.get(), WICBitmapEncoderNoCache))) {
+        return {};
     }
-    factory->Release();
+    winrt::com_ptr<IWICBitmapFrameEncode> frame;
+    winrt::com_ptr<IPropertyBag2> props;
+    WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;
+    if (FAILED(encoder->CreateNewFrame(frame.put(), props.put())) ||
+        FAILED(frame->Initialize(props.get())) ||
+        FAILED(frame->SetSize(size, size)) ||
+        FAILED(frame->SetPixelFormat(&format)) ||
+        FAILED(frame->WritePixels(size, size * 4, (UINT)pixels.size(),
+                                  const_cast<BYTE*>(pixels.data()))) ||
+        FAILED(frame->Commit()) ||
+        FAILED(encoder->Commit())) {
+        return {};
+    }
+    STATSTG stat{};
+    HGLOBAL hGlobal = nullptr;
+    if (FAILED(stream->Stat(&stat, STATFLAG_NONAME)) ||
+        FAILED(GetHGlobalFromStream(stream.get(), &hGlobal))) {
+        return {};
+    }
+    auto* data = static_cast<BYTE*>(GlobalLock(hGlobal));
+    if (!data) return {};
+    std::vector<BYTE> result(data, data + stat.cbSize.QuadPart);
+    GlobalUnlock(hGlobal);
     return result;
 }
 static HICON LoadLargestExecutableIcon(const std::wstring& exePath, int& outSize) {
@@ -3837,25 +3752,21 @@ static HICON LoadLargestExecutableIcon(const std::wstring& exePath, int& outSize
     if (exePath.empty()) return nullptr;
     SHFILEINFOW sfi{};
     if (SHGetFileInfoW(exePath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_SYSICONINDEX)) {
-        IImageList* imageList = nullptr;
         for (int listId : {SHIL_EXTRALARGE, SHIL_LARGE}) {
-            if (SUCCEEDED(SHGetImageList(listId, IID_PPV_ARGS(&imageList))) && imageList) {
-                HICON icon = nullptr;
-                if (SUCCEEDED(imageList->GetIcon(sfi.iIcon, ILD_TRANSPARENT, &icon)) && icon) {
-                    int cx = 32, cy = 32;
-                    if (SUCCEEDED(imageList->GetIconSize(&cx, &cy)) && cx > 0) outSize = cx;
-                    imageList->Release();
-                    return icon;
-                }
-                imageList->Release();
-                imageList = nullptr;
+            winrt::com_ptr<IImageList> imageList;
+            HICON icon = nullptr;
+            if (FAILED(SHGetImageList(listId, __uuidof(IImageList), imageList.put_void())) ||
+                FAILED(imageList->GetIcon(sfi.iIcon, ILD_TRANSPARENT, &icon)) || !icon) {
+                continue;
             }
+            int cx = 32, cy = 32;
+            if (SUCCEEDED(imageList->GetIconSize(&cx, &cy)) && cx > 0) outSize = cx;
+            return icon;
         }
     }
     SHFILEINFOW large{};
     if (SHGetFileInfoW(exePath.c_str(), 0, &large, sizeof(large),
                        SHGFI_ICON | SHGFI_LARGEICON) && large.hIcon) {
-        outSize = 32;
         return large.hIcon;
     }
     return nullptr;
@@ -3879,25 +3790,24 @@ static bool IsIgnoredAudioApp(const std::wstring& exeStemLower) {
     if (IsIgnoredMediaApp(exeStemLower)) return true;
     return g_settings.audioAppIgnoredStems.contains(exeStemLower);
 }
-static std::vector<AudioAppEntry> EnumerateAudioAppSessions() {
-    std::vector<AudioAppEntry> entries;
+static void ForEachRenderAudioSession(
+    const std::function<void(IAudioSessionControl*, IAudioSessionControl2*)>& fn)
+{
     InitAudioDeviceEnumerator();
     std::lock_guard<std::mutex> lk(g_deviceEnumeratorMtx);
-    if (!g_pDeviceEnumerator) return entries;
+    if (!g_pDeviceEnumerator) return;
     winrt::com_ptr<IMMDevice> device;
     if (FAILED(g_pDeviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, device.put())))
-        return entries;
+        return;
     winrt::com_ptr<IAudioSessionManager2> manager;
     if (FAILED(device->Activate(XIID_IAudioSessionManager2, CLSCTX_ALL, nullptr,
                                 manager.put_void()))) {
-        return entries;
+        return;
     }
     winrt::com_ptr<IAudioSessionEnumerator> sessions;
-    if (FAILED(manager->GetSessionEnumerator(sessions.put()))) return entries;
+    if (FAILED(manager->GetSessionEnumerator(sessions.put()))) return;
     int count = 0;
-    if (FAILED(sessions->GetCount(&count))) return entries;
-    if (count > 0) entries.reserve((size_t)count);
-    const DWORD ownPid = GetCurrentProcessId();
+    if (FAILED(sessions->GetCount(&count))) return;
     for (int i = 0; i < count; ++i) {
         winrt::com_ptr<IAudioSessionControl> control;
         if (FAILED(sessions->GetSession(i, control.put()))) continue;
@@ -3905,13 +3815,20 @@ static std::vector<AudioAppEntry> EnumerateAudioAppSessions() {
         if (FAILED(control->QueryInterface(__uuidof(IAudioSessionControl2), control2.put_void())))
             continue;
         if (control2->IsSystemSoundsSession() == S_OK) continue;
+        fn(control.get(), control2.get());
+    }
+}
+static std::vector<AudioAppEntry> EnumerateAudioAppSessions() {
+    std::vector<AudioAppEntry> entries;
+    const DWORD ownPid = GetCurrentProcessId();
+    ForEachRenderAudioSession([&](IAudioSessionControl* control, IAudioSessionControl2* control2) {
         DWORD pid = 0;
-        if (FAILED(control2->GetProcessId(&pid)) || !pid || pid == ownPid) continue;
+        if (FAILED(control2->GetProcessId(&pid)) || !pid || pid == ownPid) return;
         AudioSessionState state = AudioSessionStateInactive;
-        if (SUCCEEDED(control->GetState(&state)) && state == AudioSessionStateExpired) continue;
+        if (SUCCEEDED(control->GetState(&state)) && state == AudioSessionStateExpired) return;
         std::wstring exePath = GetProcessImagePath(pid);
         std::wstring exeStem = ToLowerCopy(PathFileStem(exePath));
-        if (IsIgnoredAudioApp(exeStem)) continue;
+        if (IsIgnoredAudioApp(exeStem)) return;
         float volume = 1.0f;
         BOOL  muted  = FALSE;
         winrt::com_ptr<ISimpleAudioVolume> simpleVolume;
@@ -3936,7 +3853,7 @@ static std::vector<AudioAppEntry> EnumerateAudioAppSessions() {
                 existing->volume = volume;
                 existing->muted  = muted != FALSE;
             }
-            continue;
+            return;
         }
         AudioAppEntry entry;
         entry.pid     = pid;
@@ -3946,7 +3863,7 @@ static std::vector<AudioAppEntry> EnumerateAudioAppSessions() {
         entry.muted   = muted != FALSE;
         entry.peak    = peak;
         entries.push_back(std::move(entry));
-    }
+    });
     return entries;
 }
 static void ResolveAudioAppNames(AudioAppEntry& entry) {
@@ -3961,15 +3878,6 @@ static void ResolveAudioAppNames(AudioAppEntry& entry) {
         }
     }
     if (IsBrowserExeStem(entry.exeStem)) {
-        static std::wstring cachedStem, cachedName, cachedDetail;
-        static ULONGLONG    cachedTick = 0;
-        ULONGLONG now = GetTickCount64();
-        if (cachedStem == entry.exeStem && now - cachedTick < 2500) {
-            if (!cachedName.empty()) entry.displayName = cachedName;
-            entry.detail = cachedDetail;
-            if (entry.detail == entry.displayName) entry.detail.clear();
-            return;
-        }
         auto titles = CollectWindowTitlesForExe(entry.exeStem);
         std::wstring webAppName, webAppTitle;
         auto consider = [&](const std::wstring& title) {
@@ -4072,34 +3980,12 @@ static AppVolumeTarget ResolveAppVolumeTarget() {
     }
     return target;
 }
-static bool ForEachTargetAudioSession(
+static void ForEachTargetAudioSession(
     const AppVolumeTarget& target,
     const std::function<void(IAudioSessionControl*, ISimpleAudioVolume*)>& fn)
 {
-    if (target.empty()) return false;
-    InitAudioDeviceEnumerator();
-    std::lock_guard<std::mutex> lk(g_deviceEnumeratorMtx);
-    if (!g_pDeviceEnumerator) return false;
-    winrt::com_ptr<IMMDevice> device;
-    if (FAILED(g_pDeviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, device.put())))
-        return false;
-    winrt::com_ptr<IAudioSessionManager2> manager;
-    if (FAILED(device->Activate(XIID_IAudioSessionManager2, CLSCTX_ALL, nullptr,
-                                manager.put_void()))) {
-        return false;
-    }
-    winrt::com_ptr<IAudioSessionEnumerator> sessions;
-    if (FAILED(manager->GetSessionEnumerator(sessions.put()))) return false;
-    int count = 0;
-    if (FAILED(sessions->GetCount(&count))) return false;
-    bool matched = false;
-    for (int i = 0; i < count; ++i) {
-        winrt::com_ptr<IAudioSessionControl> control;
-        if (FAILED(sessions->GetSession(i, control.put()))) continue;
-        winrt::com_ptr<IAudioSessionControl2> control2;
-        if (FAILED(control->QueryInterface(__uuidof(IAudioSessionControl2), control2.put_void())))
-            continue;
-        if (control2->IsSystemSoundsSession() == S_OK) continue;
+    if (target.empty()) return;
+    ForEachRenderAudioSession([&](IAudioSessionControl* control, IAudioSessionControl2* control2) {
         bool isMatch = false;
         DWORD pid = 0;
         if (SUCCEEDED(control2->GetProcessId(&pid)) && pid) {
@@ -4117,16 +4003,14 @@ static bool ForEachTargetAudioSession(
                 CoTaskMemFree(sessionId);
             }
         }
-        if (!isMatch) continue;
+        if (!isMatch) return;
         winrt::com_ptr<ISimpleAudioVolume> simpleVolume;
         if (FAILED(control->QueryInterface(__uuidof(ISimpleAudioVolume),
                                            simpleVolume.put_void()))) {
-            continue;
+            return;
         }
-        fn(control.get(), simpleVolume.get());
-        matched = true;
-    }
-    return matched;
+        fn(control, simpleVolume.get());
+    });
 }
 static bool AppAudioGetState(float* outVolume, bool* outMuted) {
     float volume = 0.0f;
@@ -4167,9 +4051,8 @@ static bool AppAudioAdjustVolume(float delta) {
     return AppAudioSetVolume(current + delta);
 }
 static bool AppAudioToggleMute() {
-    float current = 0.0f;
-    bool  muted   = false;
-    if (!AppAudioGetState(&current, &muted)) return false;
+    bool muted = false;
+    if (!AppAudioGetState(nullptr, &muted)) return false;
     bool newMuted = !muted;
     auto target = ResolveAppVolumeTarget();
     bool changed = false;
@@ -4205,17 +4088,7 @@ static void QueueAppVolume(int percent) {
 static void PollAudioAppSelection(bool& changed);
 static void PollAudioApps() {
     bool changed = false;
-    if (g_settings.enableAudioApps) {
-        PollAudioAppSelection(changed);
-    } else {
-        std::lock_guard<std::mutex> lk(g_audioAppMtx);
-        if (g_audioAppHasCurrent) changed = true;
-        g_audioAppHasCurrent = false;
-        g_audioAppCurrent = AudioAppEntry{};
-        g_audioAppIconKey.clear();
-        g_audioAppIconPng.clear();
-        g_audioAppIconHash = 0;
-    }
+    if (g_settings.enableAudioApps) PollAudioAppSelection(changed);
     float volume = 0.0f;
     bool  muted  = false;
     int   percent = -1;
@@ -4391,138 +4264,125 @@ static void FetchMediaPropertiesAsync() {
     SpawnTrackedWorker([gen = ++g_mediaPropsFetchGen]() {
         if (g_unloading) return;
         winrt::init_apartment(winrt::apartment_type::multi_threaded);
+        GlobalSystemMediaTransportControlsSession session{nullptr};
+        std::wstring aumid;
+        {
+            std::lock_guard<std::mutex> lk(g_sessionMtx);
+            session = g_currentSession;
+        }
+        if (!session) {
+            winrt::uninit_apartment();
+            return;
+        }
         try {
-            GlobalSystemMediaTransportControlsSession session{nullptr};
-            std::wstring aumid;
+            aumid = std::wstring(session.SourceAppUserModelId());
+        } catch (...) {
+            winrt::uninit_apartment();
+            return;
+        }
+        try {
+            auto props = session.TryGetMediaPropertiesAsync().get();
+            if (!props) {
+                winrt::uninit_apartment();
+                return;
+            }
+            std::vector<BYTE> thumbBytes;
+            uint64_t          thumbHash = 0;
+            uint64_t          thumbStreamSize = 0;
+            if (auto thumbRef = props.Thumbnail()) {
+                try {
+                    auto stream = thumbRef.OpenReadAsync().get();
+                    if (stream) {
+                        UINT64 sz = stream.Size();
+                        thumbStreamSize = sz;
+                        if (sz > 0 && sz < 4 * 1024 * 1024) {
+                            DataReader reader(stream);
+                            reader.LoadAsync((UINT32)sz).get();
+                            thumbBytes.resize((size_t)sz);
+                            reader.ReadBytes(winrt::array_view<BYTE>(thumbBytes));
+                            reader.DetachStream();
+                            for (size_t i = 0; i < thumbBytes.size(); i += 1024)
+                                thumbHash = thumbHash * 31 + thumbBytes[i];
+                        }
+                    }
+                } catch (...) { thumbBytes.clear(); thumbStreamSize = 0; }
+            }
+
+            {
+                bool isBrowserSession = IsBrowserAumid(aumid);
+                std::wstring titleArtistKey =
+                    std::wstring(props.Title()) + L"\x1f" + std::wstring(props.Artist());
+                bool suspectMatch = false;
+                {
+                    std::lock_guard<std::mutex> lk(g_mediaMtx);
+                    bool     trackChanged = (titleArtistKey != g_lastTitleArtistKey);
+                    uint64_t prevArtSize  = g_media.thumbnailStreamSize;
+                    uint64_t prevArtHash  = g_media.thumbnailHash;
+                    g_lastTitleArtistKey = titleArtistKey;
+
+                    if (trackChanged) {
+                        g_suspectArtSize  = isBrowserSession ? prevArtSize : 0;
+                        g_suspectArtHash  = isBrowserSession ? prevArtHash : 0;
+                        g_artDelayPending = isBrowserSession && prevArtSize > 0;
+                    }
+
+                    if (g_artDelayPending && isBrowserSession) {
+                        bool matchesSuspect = thumbStreamSize > 0 &&
+                                              thumbStreamSize == g_suspectArtSize &&
+                                              (g_suspectArtHash == 0 || thumbHash == g_suspectArtHash);
+                        if (matchesSuspect) {
+                            suspectMatch = true;
+                        } else {
+                            g_artDelayPending = false;
+                        }
+                    }
+                }
+                if (suspectMatch) {
+                    thumbBytes.clear();
+                    thumbHash = 0;
+                    thumbStreamSize = 0;
+                }
+            }
+            std::vector<BYTE> appIconBytes;
+            std::wstring      appIconKey;
+            bool forceIconRefresh = false;
+            {
+                std::lock_guard<std::mutex> lk(g_mediaMtx);
+                appIconKey = g_media.appIconKey;
+                appIconBytes = g_media.appIconBytes;
+            }
             {
                 std::lock_guard<std::mutex> lk(g_sessionMtx);
-                session = g_currentSession;
+                forceIconRefresh = g_userSwitchedSession;
             }
-            if (!session) {
-                winrt::uninit_apartment();
-                return;
+            if (g_settings.showAppIcon && (aumid != appIconKey || appIconBytes.empty() || forceIconRefresh)) {
+                appIconBytes = FetchAppIconBytes(aumid, g_settings.appIconSize);
+                appIconKey   = aumid;
             }
-            try {
-                aumid = std::wstring(session.SourceAppUserModelId());
-            } catch (...) {
-                winrt::uninit_apartment();
-                return;
-            }
-            try {
-                auto props = session.TryGetMediaPropertiesAsync().get();
-                if (!props) {
+            {
+                std::lock_guard<std::mutex> lk(g_mediaMtx);
+                if (gen != g_mediaPropsFetchGen.load()) {
                     winrt::uninit_apartment();
                     return;
                 }
-                std::vector<BYTE> thumbBytes;
-                uint64_t          thumbHash = 0;
-                uint64_t          thumbStreamSize = 0;
-                if (auto thumbRef = props.Thumbnail()) {
-                    try {
-                        auto stream = thumbRef.OpenReadAsync().get();
-                        if (stream) {
-                            UINT64 sz = stream.Size();
-                            thumbStreamSize = sz;
-                            if (sz > 0 && sz < 4 * 1024 * 1024) {
-                                DataReader reader(stream);
-                                reader.LoadAsync((UINT32)sz).get();
-                                thumbBytes.resize((size_t)sz);
-                                reader.ReadBytes(winrt::array_view<BYTE>(thumbBytes));
-                                reader.DetachStream();
-                                for (size_t i = 0; i < thumbBytes.size(); i += 1024)
-                                    thumbHash = thumbHash * 31 + thumbBytes[i];
-                            }
-                        }
-                    } catch (...) { thumbBytes.clear(); thumbStreamSize = 0; }
+                g_media.title          = std::wstring(props.Title());
+                g_media.artist         = std::wstring(props.Artist());
+                g_media.hasMedia       = !g_media.title.empty() || !g_media.artist.empty();
+                g_media.thumbnailBytes = std::move(thumbBytes);
+                g_media.thumbnailHash  = thumbHash;
+                g_media.thumbnailStreamSize = thumbStreamSize;
+                g_media.appUserModelId = aumid;
+                if (g_settings.showAppIcon) {
+                    g_media.appIconBytes   = std::move(appIconBytes);
+                    g_media.appIconKey     = appIconKey;
                 }
-
-                {
-                    bool isBrowserSession = IsBrowserAumid(aumid);
-                    std::wstring titleArtistKey =
-                        std::wstring(props.Title()) + L"\x1f" + std::wstring(props.Artist());
-                    bool suspectMatch = false;
-                    {
-                        std::lock_guard<std::mutex> lk(g_mediaMtx);
-                        bool     trackChanged = (titleArtistKey != g_lastTitleArtistKey);
-                        uint64_t prevArtSize  = g_media.thumbnailStreamSize;
-                        uint64_t prevArtHash  = g_media.thumbnailHash;
-                        g_lastTitleArtistKey = titleArtistKey;
-
-                        if (trackChanged) {
-                            g_suspectArtSize  = isBrowserSession ? prevArtSize : 0;
-                            g_suspectArtHash  = isBrowserSession ? prevArtHash : 0;
-                            g_artDelayPending = isBrowserSession && prevArtSize > 0;
-                        }
-
-                        if (g_artDelayPending && isBrowserSession) {
-                            bool matchesSuspect = thumbStreamSize > 0 &&
-                                                  thumbStreamSize == g_suspectArtSize &&
-                                                  (g_suspectArtHash == 0 || thumbHash == g_suspectArtHash);
-                            if (matchesSuspect) {
-                                suspectMatch = true;
-                            } else {
-                                g_artDelayPending = false;
-                            }
-                        }
-
-                        if (!suspectMatch && isBrowserSession &&
-                            thumbStreamSize == 0 && prevArtSize > 0) {
-                            suspectMatch = true;
-                        }
-                    }
-                    if (suspectMatch) {
-                        thumbBytes.clear();
-                        thumbHash = 0;
-                        thumbStreamSize = 0;
-                    }
-                }
-                std::vector<BYTE> appIconBytes;
-                std::wstring      appIconKey;
-                bool forceIconRefresh = false;
-                {
-                    std::lock_guard<std::mutex> lk(g_mediaMtx);
-                    appIconKey = g_media.appIconKey;
-                    appIconBytes = g_media.appIconBytes;
-                }
-                {
-                    std::lock_guard<std::mutex> lk(g_sessionMtx);
-                    forceIconRefresh = g_userSwitchedSession;
-                }
-                if (g_settings.showAppIcon && (aumid != appIconKey || appIconBytes.empty() || forceIconRefresh)) {
-                    try {
-                        appIconBytes = FetchAppIconBytes(aumid, g_settings.appIconSize);
-                        appIconKey   = aumid;
-                    } catch (...) {
-                    }
-                }
-                {
-                    std::lock_guard<std::mutex> lk(g_mediaMtx);
-                    if (gen != g_mediaPropsFetchGen.load()) {
-                        winrt::uninit_apartment();
-                        return;
-                    }
-                    try {
-                        g_media.title          = std::wstring(props.Title());
-                        g_media.artist         = std::wstring(props.Artist());
-                        g_media.hasMedia       = !g_media.title.empty() || !g_media.artist.empty();
-                        g_media.thumbnailBytes = std::move(thumbBytes);
-                        g_media.thumbnailHash  = thumbHash;
-                        g_media.thumbnailStreamSize = thumbStreamSize;
-                        g_media.appUserModelId = aumid;
-                        if (g_settings.showAppIcon) {
-                            g_media.appIconBytes   = std::move(appIconBytes);
-                            g_media.appIconKey     = appIconKey;
-                        }
-                    } catch (...) {
-                    }
-                }
-                if (forceIconRefresh) {
-                    std::lock_guard<std::mutex> lk(g_sessionMtx);
-                    g_userSwitchedSession = false;
-                }
-            } catch (...) {
             }
-        } catch (...) {}
+            if (forceIconRefresh) {
+                std::lock_guard<std::mutex> lk(g_sessionMtx);
+                g_userSwitchedSession = false;
+            }
+        } catch (...) {
+        }
         DispatchMediaUpdate();
         winrt::uninit_apartment();
     });
@@ -4531,75 +4391,69 @@ static void FetchPlaybackInfoAsync() {
     SpawnTrackedWorker([gen = ++g_playbackFetchGen]() {
         if (g_unloading) return;
         winrt::init_apartment(winrt::apartment_type::multi_threaded);
-        try {
-            GlobalSystemMediaTransportControlsSession session{nullptr};
-            { std::lock_guard<std::mutex> lk(g_sessionMtx); session = g_currentSession; }
-            if (session) {
-                try {
-                    auto info = session.GetPlaybackInfo();
-                    if (!info) {
+        GlobalSystemMediaTransportControlsSession session{nullptr};
+        { std::lock_guard<std::mutex> lk(g_sessionMtx); session = g_currentSession; }
+        if (session) {
+            try {
+                auto info = session.GetPlaybackInfo();
+                if (!info) {
+                    winrt::uninit_apartment();
+                    return;
+                }
+                auto status = info.PlaybackStatus();
+                bool playing = (status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing);
+                bool wasPlaying = false;
+                {
+                    std::lock_guard<std::mutex> lk(g_mediaMtx);
+                    if (gen != g_playbackFetchGen.load()) {
                         winrt::uninit_apartment();
                         return;
                     }
-                    auto status = info.PlaybackStatus();
-                    bool playing = (status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing);
-                    bool wasPlaying = false;
-                    {
-                        std::lock_guard<std::mutex> lk(g_mediaMtx);
-                        if (gen != g_playbackFetchGen.load()) {
-                            winrt::uninit_apartment();
-                            return;
-                        }
-                        wasPlaying = g_media.isPlaying;
-                        g_media.isPlaying = playing;
+                    wasPlaying = g_media.isPlaying;
+                    g_media.isPlaying = playing;
+                }
+                if (wasPlaying && !playing && !g_unloading) OnSessionsChanged();
+                try {
+                    auto shuffleRef = info.IsShuffleActive();
+                    if (shuffleRef) {
+                        g_shuffleEnabled = shuffleRef.Value();
                     }
-                    if (playing != wasPlaying) {
-                        if (!playing && wasPlaying) {
-                            if (!g_unloading) OnSessionsChanged();
-                        }
-                    }
-                    try {
-                        auto shuffleRef = info.IsShuffleActive();
-                        if (shuffleRef) {
-                            g_shuffleEnabled = shuffleRef.Value();
-                        }
-                    } catch (...) {}
-                    try {
-                        auto repeatRef = info.AutoRepeatMode();
-                        if (repeatRef) {
-                            using RM = winrt::Windows::Media::MediaPlaybackAutoRepeatMode;
-                            auto v = repeatRef.Value();
-                            if (v == RM::Track) g_repeatMode = RepeatMode::One;
-                            else if (v == RM::List) g_repeatMode = RepeatMode::All;
-                            else g_repeatMode = RepeatMode::Off;
-                        } else {
-                            g_repeatMode = RepeatMode::Off;
-                        }
-                    } catch (...) {
+                } catch (...) {}
+                try {
+                    auto repeatRef = info.AutoRepeatMode();
+                    if (repeatRef) {
+                        using RM = winrt::Windows::Media::MediaPlaybackAutoRepeatMode;
+                        auto v = repeatRef.Value();
+                        if (v == RM::Track) g_repeatMode = RepeatMode::One;
+                        else if (v == RM::List) g_repeatMode = RepeatMode::All;
+                        else g_repeatMode = RepeatMode::Off;
+                    } else {
                         g_repeatMode = RepeatMode::Off;
                     }
-                    try {
-                        auto controls = info.Controls();
-                        if (controls) {
-                            bool canPrev   = controls.IsPreviousEnabled();
-                            bool canNext   = controls.IsNextEnabled();
-                            bool canShuf   = controls.IsShuffleEnabled();
-                            bool canRep    = controls.IsRepeatEnabled();
-                            bool canSeek   = controls.IsPlaybackPositionEnabled();
-                            {
-                                std::lock_guard<std::mutex> lk(g_mediaMtx);
-                                g_media.canSkipPrevious = canPrev;
-                                g_media.canSkipNext     = canNext;
-                                g_media.canShuffle      = canShuf;
-                                g_media.canRepeat       = canRep;
-                                g_media.canSeek         = canSeek;
-                            }
-                        }
-                    } catch (...) {}
                 } catch (...) {
+                    g_repeatMode = RepeatMode::Off;
                 }
+                try {
+                    auto controls = info.Controls();
+                    if (controls) {
+                        bool canPrev   = controls.IsPreviousEnabled();
+                        bool canNext   = controls.IsNextEnabled();
+                        bool canShuf   = controls.IsShuffleEnabled();
+                        bool canRep    = controls.IsRepeatEnabled();
+                        bool canSeek   = controls.IsPlaybackPositionEnabled();
+                        {
+                            std::lock_guard<std::mutex> lk(g_mediaMtx);
+                            g_media.canSkipPrevious = canPrev;
+                            g_media.canSkipNext     = canNext;
+                            g_media.canShuffle      = canShuf;
+                            g_media.canRepeat       = canRep;
+                            g_media.canSeek         = canSeek;
+                        }
+                    }
+                } catch (...) {}
+            } catch (...) {
             }
-        } catch (...) {}
+        }
         DispatchMediaUpdate();
         winrt::uninit_apartment();
     });
@@ -4632,10 +4486,7 @@ static GlobalSystemMediaTransportControlsSession PickBestSession() {
     if (!mgr) return nullptr;
     try {
         auto sessions = mgr.GetSessions();
-        int sessionCount = (int)sessions.Size();
-        if (sessionCount == 0) {
-            return nullptr;
-        }
+        if (sessions.Size() == 0) return nullptr;
         using S = GlobalSystemMediaTransportControlsSessionPlaybackStatus;
         GlobalSystemMediaTransportControlsSession current{nullptr};
         bool userSwitched = false;
@@ -4682,7 +4533,7 @@ static GlobalSystemMediaTransportControlsSession PickBestSession() {
         if (currentExists && currentPlaying) {
             return current;
         }
-        if (playingFirst && playingFirst != current) {
+        if (playingFirst) {
             return playingFirst;
         }
         if (currentExists) {
@@ -4831,6 +4682,7 @@ static void StopMediaThread() {
 static HANDLE g_timerThread    = nullptr;
 static HANDLE g_timerStopEvent = nullptr;
 static HANDLE g_timerUpdateEvent = nullptr;
+static constexpr int kTickTimerMs = 16;
 struct TickTimer {
     winrt::Windows::UI::Xaml::DispatcherTimer timer{nullptr};
     winrt::event_token token{};
@@ -4845,7 +4697,7 @@ static void StartTickTimer(TickTimer& t) {
             if (!t.timer) {
                 t.timer = winrt::Windows::UI::Xaml::DispatcherTimer();
                 t.timer.Interval(
-                    winrt::Windows::Foundation::TimeSpan{std::chrono::milliseconds(16)});
+                    winrt::Windows::Foundation::TimeSpan{std::chrono::milliseconds(kTickTimerMs)});
                 t.token = t.timer.Tick(t.onTick);
             }
             t.timer.Start();
@@ -4881,7 +4733,7 @@ static void ScrollTimerTick(winrt::Windows::Foundation::IInspectable const&,
 static void TickScrollState(TextScrollState& s, int stepPx, int pauseMs, const std::wstring& mode) {
     if (!s.active) return;
     if (s.pausing) {
-        s.pauseTick -= s.tickMs;
+        s.pauseTick -= kTickTimerMs;
         if (s.pauseTick <= 0) {
             s.pausing = false;
             s.pauseTick = 0;
@@ -4916,22 +4768,21 @@ static void TickScrollState(TextScrollState& s, int stepPx, int pauseMs, const s
     }
 }
 static void UpdateScrollTransforms();
-static bool g_scrollTickAnyActive = false;
-static void ScrollTickCurrentInstance() {
-    if (!(g_titleScroll.active || g_artistScroll.active)) return;
-    g_scrollTickAnyActive = true;
+static bool ScrollTickCurrentInstance() {
+    if (!(g_titleScroll.active || g_artistScroll.active)) return false;
     int stepPx = std::max(1, g_settings.scrollSpeed);
     int pauseMs = g_settings.scrollPauseDuration;
     TickScrollState(g_titleScroll, stepPx, pauseMs, g_settings.scrollMode);
     TickScrollState(g_artistScroll, stepPx, pauseMs, g_settings.scrollMode);
     UpdateScrollTransforms();
+    return true;
 }
 static void ScrollTimerTick(winrt::Windows::Foundation::IInspectable const&,
                             winrt::Windows::Foundation::IInspectable const&) {
     if (g_unloading || g_applyingSettings) return;
-    g_scrollTickAnyActive = false;
-    ForEachPlayerInstance(&ScrollTickCurrentInstance);
-    if (!g_scrollTickAnyActive) {
+    bool anyActive = false;
+    ForEachPlayerInstance([&anyActive] { anyActive |= ScrollTickCurrentInstance(); });
+    if (!anyActive) {
         if (g_scrollTimer.timer) {
             try { g_scrollTimer.timer.Stop(); } catch (...) {}
         }
@@ -4972,76 +4823,51 @@ static double GetAvailableScrollTextAreaWidth() {
             if (i == 1) continue;
             used += cols.GetAt(i).ActualWidth();
         }
-        double leftMargin  = (double)g_settings.textAreaLeftMargin;
-        double rightMargin = (double)g_settings.textAreaRightMargin;
-        double available = total - used - leftMargin - rightMargin;
-        if (available < 0.0) available = 0.0;
-        return available;
+        return std::max(0.0, total - used - g_settings.textAreaLeftMargin - g_settings.textAreaRightMargin);
     } catch (...) {
         return 0.0;
     }
 }
+static void ApplyScrollOffset(const wchar_t* viewName, const wchar_t* blockName,
+                              const wchar_t* cloneName, const TextScrollState& s, bool isLoop) {
+    try {
+        if (auto fe = FindChildByName(g_playerGrid, viewName)) {
+            if (auto cv = fe.try_as<Canvas>()) {
+                int n = VisualTreeHelper::GetChildrenCount(cv);
+                for (int i = 0; i < n; i++) {
+                    auto child = VisualTreeHelper::GetChild(cv, i);
+                    if (auto tb = child.try_as<TextBlock>()) {
+                        auto name = tb.Name();
+                        if (name == blockName) {
+                            Canvas::SetLeft(tb, -s.offset);
+                        } else if (isLoop && name == cloneName) {
+                            Canvas::SetLeft(tb, s.textWidth + g_settings.loopGap - s.offset);
+                        }
+                    }
+                }
+            }
+        }
+    } catch (...) {}
+}
 static void UpdateScrollTransforms() {
-    if (!g_playerGrid || (!g_settings.enableTitleScrolling && !g_settings.enableArtistScrolling)) return;
+    if (!g_playerGrid) return;
     bool isLoop = (g_settings.scrollMode == L"loop");
-    if (g_settings.enableTitleScrolling) {
-        try {
-            if (auto fe = FindChildByName(g_playerGrid, kTitleScrollViewName)) {
-                if (auto cv = fe.try_as<Canvas>()) {
-                    int n = VisualTreeHelper::GetChildrenCount(cv);
-                    for (int i = 0; i < n; i++) {
-                        auto child = VisualTreeHelper::GetChild(cv, i);
-                        if (auto tb = child.try_as<TextBlock>()) {
-                            auto name = tb.Name();
-                            if (name == kTitleBlockName) {
-                                Canvas::SetLeft(tb, -g_titleScroll.offset);
-                            } else if (isLoop && name == kTitleCloneName) {
-                                double gap = g_titleScroll.textWidth + g_settings.loopGap;
-                                Canvas::SetLeft(tb, gap - g_titleScroll.offset);
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (...) {}
-    }
-    if (g_settings.enableArtistScrolling) {
-        try {
-            if (auto fe = FindChildByName(g_playerGrid, kArtistScrollViewName)) {
-                if (auto cv = fe.try_as<Canvas>()) {
-                    int n = VisualTreeHelper::GetChildrenCount(cv);
-                    for (int i = 0; i < n; i++) {
-                        auto child = VisualTreeHelper::GetChild(cv, i);
-                        if (auto ab = child.try_as<TextBlock>()) {
-                            auto name = ab.Name();
-                            if (name == kArtistBlockName) {
-                                Canvas::SetLeft(ab, -g_artistScroll.offset);
-                            } else if (isLoop && name == kArtistCloneName) {
-                                double gap = g_artistScroll.textWidth + g_settings.loopGap;
-                                Canvas::SetLeft(ab, gap - g_artistScroll.offset);
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (...) {}
-    }
+    if (g_settings.enableTitleScrolling)
+        ApplyScrollOffset(kTitleScrollViewName, kTitleBlockName, kTitleCloneName, g_titleScroll, isLoop);
+    if (g_settings.enableArtistScrolling)
+        ApplyScrollOffset(kArtistScrollViewName, kArtistBlockName, kArtistCloneName, g_artistScroll, isLoop);
 }
 static void DispatchMediaUpdate() {
-    bool unloading = g_unloading;
-    bool applyingSettings = g_applyingSettings;
-    if (unloading || applyingSettings) {
-        return;
-    }
+    if (g_unloading || g_applyingSettings) return;
     g_needsUiUpdate = true;
     if (g_timerUpdateEvent) {
         SetEvent(g_timerUpdateEvent);
     }
 
-    if (g_miniPlayerFlyoutOpen && g_taskbarWnd) {
+    HWND tw = g_taskbarWnd;
+    if (g_miniPlayerFlyoutOpen && tw) {
         if (!g_settings.hideMediaSessionsList)
-            FetchMiniSessionInfosAsync(g_taskbarWnd);
-        HWND tw = g_taskbarWnd;
+            FetchMiniSessionInfosAsync(tw);
         RunFromWindowThread(tw, [](void*) {
             if (g_miniPlayerFlyoutOpen) RefreshMiniPlayerFlyoutUI();
         }, nullptr);
@@ -5319,9 +5145,6 @@ static void VizCaptureThreadProc() {
     UINT32 sampleRate = 48000, channels = 2;
     bool isFloat = true;
     g_VizDeviceChanged.store(false, std::memory_order_relaxed);
-    if (VizInitAudioClient(pEnum.get(), pClient, pCapture, sampleRate, channels,
-                        isFloat, g_hCaptureEvent))
-        BuildLogBins(sampleRate);
     static constexpr int RING_CAP = VIZ_FFT_SIZE * 4;
     std::vector<float> ringBuf(RING_CAP, 0.f);
     int ringHead = 0, ringCount = 0;
@@ -5530,24 +5353,20 @@ static void UpdateVisualizerPeaks() {
                 float dist = fabsf((float)i - center) / std::max(1.f, center);
                 float energy = sampleBands(dist);
                 float taper = 1.6f - dist * 0.9f;
-                target = std::max(
-                    0.f, std::min(1.f, (energy + masterPeak * (0.2f - dist * 0.12f)) *
-                                        taper));
+                target = (energy + masterPeak * (0.2f - dist * 0.12f)) * taper;
                 break;
             }
             case VizShape::Mirror: {
                 float mirT = 1.f - fabsf((float)i - center) / std::max(1.f, center);
                 float energy = sampleBands(mirT);
-                target = std::max(
-                    0.f, std::min(1.f, (energy + masterPeak * (0.1f + mirT * 0.12f)) *
-                                        1.3f));
+                target = (energy + masterPeak * (0.1f + mirT * 0.12f)) * 1.3f;
                 break;
             }
             case VizShape::Wave: {
                 float phase = (float)i * (2.f * VIZ_PI / (float)vizBars);
                 float wave = 0.55f + 0.45f * sinf(t * 3.5f - phase);
                 float energy = sampleBands(freqT);
-                target = std::max(0.f, std::min(1.f, energy * wave + masterPeak * 0.15f));
+                target = energy * wave + masterPeak * 0.15f;
                 break;
             }
             case VizShape::Breathe: {
@@ -5555,11 +5374,10 @@ static void UpdateVisualizerPeaks() {
                     float k = (masterPeak > g_VizBreatheEnv) ? 0.04f : 0.015f;
                     g_VizBreatheEnv += (masterPeak - g_VizBreatheEnv) * k;
                 }
-                float rate = 0.55f + VIZ_SEEDS[i % VIZ_BARS_MAX] * 0.18f;
+                float rate = 0.55f + VIZ_SEEDS[i] * 0.18f;
                 float inhale =
-                    0.5f + 0.5f * sinf(t * rate + VIZ_SEEDS[i % VIZ_BARS_MAX] * 1.2f);
-                target = std::max(0.f, std::min(1.f,
-                                                inhale * (0.12f + g_VizBreatheEnv * 0.88f)));
+                    0.5f + 0.5f * sinf(t * rate + VIZ_SEEDS[i] * 1.2f);
+                target = inhale * (0.12f + g_VizBreatheEnv * 0.88f);
                 break;
             }
         }
@@ -5655,8 +5473,8 @@ static void WithPlayerInstance(PlayerInstanceState* inst, F&& fn) {
     SetCurrentPlayerInstance(previous);
 }
 
-static void ForEachPlayerInstance(void (*fn)()) {
-    if (!fn) return;
+template <typename F>
+static void ForEachPlayerInstance(F&& fn) {
     std::vector<PlayerInstanceState*> snapshot;
     snapshot.reserve(g_playerInstances.size());
     for (auto& owned : g_playerInstances) snapshot.push_back(owned.get());
@@ -5672,10 +5490,11 @@ static void ForEachPlayerInstance(void (*fn)()) {
 
 static winrt::Windows::UI::Color VizLerpColor(winrt::Windows::UI::Color a,
                                             winrt::Windows::UI::Color b, float t) {
-    auto L = [](BYTE x, BYTE y, float tt) -> BYTE {
+    auto lerpChannel = [](BYTE x, BYTE y, float tt) -> BYTE {
         return (BYTE)((int)x + (int)((float)((int)y - (int)x) * tt));
     };
-    return winrt::Windows::UI::Color{255, L(a.R, b.R, t), L(a.G, b.G, t), L(a.B, b.B, t)};
+    return winrt::Windows::UI::Color{255, lerpChannel(a.R, b.R, t), lerpChannel(a.G, b.G, t),
+                                     lerpChannel(a.B, b.B, t)};
 }
 static winrt::Windows::UI::Color VizEnsureContrast(winrt::Windows::UI::Color c) {
     const int kLumaThreshold = 90;
@@ -5703,31 +5522,18 @@ static double VizZoneHeight() {
         h = std::min(h, (double)g_settings.playerMaxHeight);
     return h;
 }
-static double                  g_VizFrameHeight[VIZ_BARS_MAX] = {};
-static winrt::Windows::UI::Color g_VizFrameColor[VIZ_BARS_MAX] = {};
-static int                     g_VizFrameBarCount = 0;
-static void VizApplyFrameToCurrentInstance() {
-    int barCount = std::min((int)g_vizBars->size(), g_VizFrameBarCount);
-    for (int i = 0; i < barCount; i++) {
-        try {
-            (*g_vizBars)[i].Height(g_VizFrameHeight[i]);
-            if (i < (int)g_vizBrushes->size() && (*g_vizBrushes)[i])
-                (*g_vizBrushes)[i].Color(g_VizFrameColor[i]);
-        } catch (...) {}
-    }
-}
 static void VizApplyFrame() {
     if (!g_settings.vizEnabled)
         return;
     UpdateVisualizerPeaks();
-    float attack = 0.55f, decay = 0.18f;
+    float attack = 0.f, decay = 0.f;
     float sensBoost = std::max(0.f, (g_settings.vizSensitivity - 100) / 200.f) * 0.12f;
     switch (g_settings.vizShape) {
         case VizShape::Stereo:  attack = 0.72f; decay = 0.22f + sensBoost; break;
         case VizShape::Mirror:  attack = 0.52f; decay = 0.20f + sensBoost; break;
         case VizShape::Wave:    attack = 0.34f; decay = 0.17f + sensBoost; break;
         case VizShape::Breathe: attack = 0.20f; decay = 0.11f + sensBoost; break;
-        default:                decay += sensBoost; break;
+        case VizShape::Mountain: break;
     }
     int barCount = std::clamp(g_settings.vizBars, 1, VIZ_BARS_MAX);
     double zoneH = VizZoneHeight();
@@ -5758,11 +5564,8 @@ static void VizApplyFrame() {
         g_vizPaletteColorsDirty = false;
         g_vizBaseColorDirty = false;
     }
-    const auto& pal0   = g_cachedVizPal0;
-    const auto& pal1   = g_cachedVizPal1;
-    const auto& cg0    = g_cachedVizCg0;
-    const auto& cg1    = g_cachedVizCg1;
-    const auto& acrCol = g_cachedVizAcrCol;
+    double heights[VIZ_BARS_MAX];
+    winrt::Windows::UI::Color colors[VIZ_BARS_MAX];
     for (int i = 0; i < barCount; i++) {
         float tgt = g_VizTarget[i], cur = g_VizPeak[i];
         float a = attack, d = decay;
@@ -5774,27 +5577,33 @@ static void VizApplyFrame() {
         }
         float next = cur + (tgt - cur) * ((tgt > cur) ? a : d);
         g_VizPeak[i] = (fabsf(next - cur) > 0.0005f) ? next : tgt;
-        float fac = std::max(0.f, g_VizPeak[i]);
-        double bh = idleHidden
+        float fac = g_VizPeak[i];
+        heights[i] = idleHidden
             ? (fac * maxBH)
             : (minBH + idlePx + fac * range);
-        winrt::Windows::UI::Color c = baseCol;
+        colors[i] = baseCol;
         if (g_settings.vizColorMode == VizColorMode::DynamicGradient) {
             float t = (float)i / std::max(1, barCount - 1);
             float freqT = std::min(1.f, t * 0.6f + fac * 0.4f);
-            c = VizLerpColor(pal0, pal1, freqT);
+            colors[i] = VizLerpColor(g_cachedVizPal0, g_cachedVizPal1, freqT);
         } else if (g_settings.vizColorMode == VizColorMode::CustomGradient) {
             float t = (barCount > 1) ? (float)i / (barCount - 1) : 0.f;
-            c = VizLerpColor(cg0, cg1, t);
+            colors[i] = VizLerpColor(g_cachedVizCg0, g_cachedVizCg1, t);
         } else if (g_settings.vizColorMode == VizColorMode::Acrylic) {
             BYTE aa = (BYTE)std::max(30, std::min(180, (int)(150.f * fac + 30.f)));
-            c = winrt::Windows::UI::Color{aa, acrCol.R, acrCol.G, acrCol.B};
+            colors[i] = winrt::Windows::UI::Color{aa, g_cachedVizAcrCol.R, g_cachedVizAcrCol.G,
+                                                  g_cachedVizAcrCol.B};
         }
-        g_VizFrameHeight[i] = bh;
-        g_VizFrameColor[i]  = c;
     }
-    g_VizFrameBarCount = barCount;
-    ForEachPlayerInstance(&VizApplyFrameToCurrentInstance);
+    ForEachPlayerInstance([&] {
+        for (int i = 0, n = std::min((int)g_vizBars->size(), barCount); i < n; i++) {
+            try {
+                (*g_vizBars)[i].Height(heights[i]);
+                if (i < (int)g_vizBrushes->size() && (*g_vizBrushes)[i])
+                    (*g_vizBrushes)[i].Color(colors[i]);
+            } catch (...) {}
+        }
+    });
 }
 static void VizTimerTick(winrt::Windows::Foundation::IInspectable const&,
                         winrt::Windows::Foundation::IInspectable const&) {
@@ -6143,10 +5952,10 @@ static const wchar_t* GetGlyphWithStyle(int cmd, const std::wstring& style, bool
     bool isFluent = IsFluentIconStyle(style);
     bool isFilled = (style == L"fluent_filled" || style == L"mdl2_filled");
     switch (cmd) {
-        case 1:
+        case kCmdPrevious:
             if (isFilled) return L"\uF8AC";
             return L"\uE892";
-        case 2:
+        case kCmdPlayPause:
             if (isPlaying) {
                 if (isFluent && isFilled) return L"\uE62E";
                 if (!isFluent && isFilled) return L"\uF8AE";
@@ -6155,24 +5964,24 @@ static const wchar_t* GetGlyphWithStyle(int cmd, const std::wstring& style, bool
                 if (isFilled) return L"\uF5B0";
                 return L"\uE768";
             }
-        case 3:
+        case kCmdNext:
             if (isFilled) return L"\uF8AD";
             return L"\uE893";
-        case 5:
+        case kCmdRewind:
             if (isFilled) return L"\uE627";
             return L"\uEB9E";
-        case 6:
+        case kCmdForward:
             if (isFilled) return L"\uE628";
             return L"\uEB9D";
-        case 7:
+        case kCmdToggleShuffle:
             return L"\uE8B1";
-        case 8:
+        case kCmdCycleRepeat:
             return RepeatModeGlyph(g_repeatMode.load());
-        case 9:
+        case kCmdSwitchSession:
             return L"\uE974";
-        case 10: return RepeatModeGlyph(RepeatMode::Off);
-        case 11: return RepeatModeGlyph(RepeatMode::All);
-        case 12: return RepeatModeGlyph(RepeatMode::One);
+        case kCmdRepeatOff: return RepeatModeGlyph(RepeatMode::Off);
+        case kCmdRepeatAll: return RepeatModeGlyph(RepeatMode::All);
+        case kCmdRepeatOne: return RepeatModeGlyph(RepeatMode::One);
     }
     return L"";
 }
@@ -6200,14 +6009,14 @@ static bool IsPointerInside(PointerRoutedEventArgs const& e, UIElement const& el
 }
 static std::wstring MediaCommandLabel(int cmd) {
     switch (cmd) {
-        case 1: return L"Previous track";
-        case 2: return L"Play or pause";
-        case 3: return L"Next track";
-        case 5: return L"Rewind " + std::to_wstring(g_settings.seekStepSeconds) + L" seconds";
-        case 6: return L"Forward " + std::to_wstring(g_settings.seekStepSeconds) + L" seconds";
-        case 7: return L"Toggle shuffle";
-        case 8: return L"Toggle repeat";
-        case 9: return L"Switch media session";
+        case kCmdPrevious: return L"Previous track";
+        case kCmdPlayPause: return L"Play or pause";
+        case kCmdNext: return L"Next track";
+        case kCmdRewind: return L"Rewind " + std::to_wstring(g_settings.seekStepSeconds) + L" seconds";
+        case kCmdForward: return L"Forward " + std::to_wstring(g_settings.seekStepSeconds) + L" seconds";
+        case kCmdToggleShuffle: return L"Toggle shuffle";
+        case kCmdCycleRepeat: return L"Toggle repeat";
+        case kCmdSwitchSession: return L"Switch media session";
     }
     return {};
 }
@@ -6233,7 +6042,7 @@ static Button MakeControlButton(int cmd, bool isPlaying, winrt::Windows::UI::Col
         btn.VerticalAlignment(VerticalAlignment::Center);
         btn.HorizontalAlignment(HorizontalAlignment::Center);
         auto iconText = MakeIconText(GetGlyph(cmd, isPlaying), (double)g_settings.buttonIconSize, iconColor);
-        iconText.Opacity(cmd == 7 && !g_shuffleEnabled.load() ? 0.4 : 1.0);
+        iconText.Opacity(cmd == kCmdToggleShuffle && !g_shuffleEnabled.load() ? 0.4 : 1.0);
         btn.Content(winrt::box_value(iconText));
         SetButtonLabel(btn, MediaCommandLabel(cmd));
         btn.Click([cmd](auto const&, auto const&) {
@@ -6376,36 +6185,36 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
                         (curRepeat == RepeatMode::All) ? L"Repeat all" :
                         (curRepeat == RepeatMode::One) ? L"Repeat one" : L"Repeat off";
                     double repeatOpacity = canRepeat ? (curRepeat != RepeatMode::Off ? 1.0 : 0.4) : 0.4;
-                    menu.Items().Append(MakeMediaContextMenuItem(8, repeatLabel, canRepeat, repeatOpacity));
+                    menu.Items().Append(MakeMediaContextMenuItem(kCmdCycleRepeat, repeatLabel, canRepeat, repeatOpacity));
                 } else {
                     MenuFlyoutSubItem repeatSubMenu;
                     repeatSubMenu.Text(L"Repeat");
-                    repeatSubMenu.Icon(MakeContextMenuIcon(GetGlyphWithStyle(8, ContextMenuIconStyle()), canRepeat ? 1.0 : 0.4));
+                    repeatSubMenu.Icon(MakeContextMenuIcon(GetGlyphWithStyle(kCmdCycleRepeat, ContextMenuIconStyle()), canRepeat ? 1.0 : 0.4));
                     repeatSubMenu.IsEnabled(canRepeat);
-                    repeatSubMenu.Items().Append(MakeMediaContextMenuItem(10, L"Repeat off", canRepeat, curRepeat == RepeatMode::Off ? 1.0 : 0.5));
-                    repeatSubMenu.Items().Append(MakeMediaContextMenuItem(11, L"Repeat all", canRepeat, curRepeat == RepeatMode::All ? 1.0 : 0.5));
-                    repeatSubMenu.Items().Append(MakeMediaContextMenuItem(12, L"Repeat one", canRepeat, curRepeat == RepeatMode::One ? 1.0 : 0.5));
+                    repeatSubMenu.Items().Append(MakeMediaContextMenuItem(kCmdRepeatOff, L"Repeat off", canRepeat, curRepeat == RepeatMode::Off ? 1.0 : 0.5));
+                    repeatSubMenu.Items().Append(MakeMediaContextMenuItem(kCmdRepeatAll, L"Repeat all", canRepeat, curRepeat == RepeatMode::All ? 1.0 : 0.5));
+                    repeatSubMenu.Items().Append(MakeMediaContextMenuItem(kCmdRepeatOne, L"Repeat one", canRepeat, curRepeat == RepeatMode::One ? 1.0 : 0.5));
                     menu.Items().Append(repeatSubMenu);
                 }
             } else if (item == L"shuffle") {
                 if (g_settings.contextMenuShuffleStyle == L"toggle") {
                     const wchar_t* shuffleLabel = shuffleEnabled ? L"Shuffle on" : L"Shuffle off";
                     double shuffleOpacity = canShuffle ? (shuffleEnabled ? 1.0 : 0.4) : 0.4;
-                    menu.Items().Append(MakeMediaContextMenuItem(7, shuffleLabel, canShuffle, shuffleOpacity));
+                    menu.Items().Append(MakeMediaContextMenuItem(kCmdToggleShuffle, shuffleLabel, canShuffle, shuffleOpacity));
                 } else {
                     MenuFlyoutSubItem shuffleSubMenu;
                     shuffleSubMenu.Text(L"Shuffle");
-                    shuffleSubMenu.Icon(MakeContextMenuIcon(GetGlyphWithStyle(7, ContextMenuIconStyle()), canShuffle ? 1.0 : 0.4));
+                    shuffleSubMenu.Icon(MakeContextMenuIcon(GetGlyphWithStyle(kCmdToggleShuffle, ContextMenuIconStyle()), canShuffle ? 1.0 : 0.4));
                     shuffleSubMenu.IsEnabled(canShuffle);
                     MenuFlyoutItem shuffleOffItem;
                     shuffleOffItem.Text(L"Shuffle off");
                     shuffleOffItem.IsEnabled(canShuffle);
-                    shuffleOffItem.Icon(MakeContextMenuIcon(GetGlyphWithStyle(7, ContextMenuIconStyle()), !shuffleEnabled ? 1.0 : 0.5));
+                    shuffleOffItem.Icon(MakeContextMenuIcon(GetGlyphWithStyle(kCmdToggleShuffle, ContextMenuIconStyle()), !shuffleEnabled ? 1.0 : 0.5));
                     shuffleOffItem.Click([](winrt::Windows::Foundation::IInspectable const&, RoutedEventArgs const&) {
                         if (g_unloading) return;
                         try {
                             if (g_shuffleEnabled.load()) {
-                                SendMediaCommandAsync(7);
+                                SendMediaCommandAsync(kCmdToggleShuffle);
                                 DispatchMediaUpdate();
                             }
                         } catch (...) {}
@@ -6413,12 +6222,12 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
                     MenuFlyoutItem shuffleOnItem;
                     shuffleOnItem.Text(L"Shuffle on");
                     shuffleOnItem.IsEnabled(canShuffle);
-                    shuffleOnItem.Icon(MakeContextMenuIcon(GetGlyphWithStyle(7, ContextMenuIconStyle()), shuffleEnabled ? 1.0 : 0.5));
+                    shuffleOnItem.Icon(MakeContextMenuIcon(GetGlyphWithStyle(kCmdToggleShuffle, ContextMenuIconStyle()), shuffleEnabled ? 1.0 : 0.5));
                     shuffleOnItem.Click([](winrt::Windows::Foundation::IInspectable const&, RoutedEventArgs const&) {
                         if (g_unloading) return;
                         try {
                             if (!g_shuffleEnabled.load()) {
-                                SendMediaCommandAsync(7);
+                                SendMediaCommandAsync(kCmdToggleShuffle);
                                 DispatchMediaUpdate();
                             }
                         } catch (...) {}
@@ -6429,16 +6238,16 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
                 }
             } else if (item == L"forward") {
                 std::wstring label = L"Forward " + std::to_wstring(g_settings.seekStepSeconds) + L"s";
-                menu.Items().Append(MakeMediaContextMenuItem(6, label.c_str(), canSeek, canSeek ? 1.0 : 0.4));
+                menu.Items().Append(MakeMediaContextMenuItem(kCmdForward, label.c_str(), canSeek, canSeek ? 1.0 : 0.4));
             } else if (item == L"rewind") {
                 std::wstring label = L"Rewind " + std::to_wstring(g_settings.seekStepSeconds) + L"s";
-                menu.Items().Append(MakeMediaContextMenuItem(5, label.c_str(), canSeek, canSeek ? 1.0 : 0.4));
+                menu.Items().Append(MakeMediaContextMenuItem(kCmdRewind, label.c_str(), canSeek, canSeek ? 1.0 : 0.4));
             } else if (item == L"next") {
-                menu.Items().Append(MakeMediaContextMenuItem(3, L"Next track", canSkipNext, canSkipNext ? 1.0 : 0.4));
+                menu.Items().Append(MakeMediaContextMenuItem(kCmdNext, L"Next track", canSkipNext, canSkipNext ? 1.0 : 0.4));
             } else if (item == L"prev") {
-                menu.Items().Append(MakeMediaContextMenuItem(1, L"Previous track", canSkipPrevious, canSkipPrevious ? 1.0 : 0.4));
+                menu.Items().Append(MakeMediaContextMenuItem(kCmdPrevious, L"Previous track", canSkipPrevious, canSkipPrevious ? 1.0 : 0.4));
             } else if (item == L"switch_sessions") {
-                menu.Items().Append(MakeMediaContextMenuItem(9, L"Switch sessions", g_sessionCount.load() > 1, g_sessionCount.load() > 1 ? 1.0 : 0.4));
+                menu.Items().Append(MakeMediaContextMenuItem(kCmdSwitchSession, L"Switch sessions", g_sessionCount.load() > 1, g_sessionCount.load() > 1 ? 1.0 : 0.4));
             } else if (item == L"open_app") {
                 menu.Items().Append(MakeActionContextMenuItem(L"\uE8A7", L"Open media app", []() {
                     ExecuteMediaAction(L"open_app");
@@ -6710,7 +6519,7 @@ static void RefreshMiniPlayerFlyoutUI() {
             if (auto icon = g_miniPlayerPlayBtnRef.Content().try_as<TextBlock>()) {
                 const wchar_t* glyph = audioAppSource
                     ? (isPlaying ? L"\uE767" : L"\uE74F")
-                    : GetGlyphWithStyle(2, L"fluent_filled", isPlaying);
+                    : GetGlyphWithStyle(kCmdPlayPause, L"fluent_filled", isPlaying);
                 icon.Text(winrt::hstring(glyph));
             }
         }
@@ -7366,10 +7175,10 @@ static Grid BuildMiniPlayerFlyoutContent() {
         btn.HorizontalAlignment(HorizontalAlignment::Center);
 
         const wchar_t* glyph = L"";
-        if (cmd == 1) glyph = L"\uE622";
-        else if (cmd == 3) glyph = L"\uE623";
-        else if (cmd == 7) glyph = L"\uE8B1";
-        else if (cmd == 8) glyph = RepeatModeGlyph(g_repeatMode.load());
+        if (cmd == kCmdPrevious) glyph = L"\uE622";
+        else if (cmd == kCmdNext) glyph = L"\uE623";
+        else if (cmd == kCmdToggleShuffle) glyph = L"\uE8B1";
+        else if (cmd == kCmdCycleRepeat) glyph = RepeatModeGlyph(g_repeatMode.load());
 
         TextBlock iconText;
         iconText.Text(winrt::hstring(glyph));
@@ -7378,8 +7187,8 @@ static Grid BuildMiniPlayerFlyoutContent() {
         iconText.Foreground(MakeBrush(iconClr));
         iconText.HorizontalAlignment(HorizontalAlignment::Center);
         iconText.VerticalAlignment(VerticalAlignment::Center);
-        if (cmd == 7) iconText.Opacity(g_shuffleEnabled.load() ? 1.0 : 0.40);
-        if (cmd == 8) iconText.Opacity(g_repeatMode.load() != RepeatMode::Off ? 1.0 : 0.40);
+        if (cmd == kCmdToggleShuffle) iconText.Opacity(g_shuffleEnabled.load() ? 1.0 : 0.40);
+        if (cmd == kCmdCycleRepeat) iconText.Opacity(g_repeatMode.load() != RepeatMode::Off ? 1.0 : 0.40);
         btn.Content(winrt::box_value(iconText));
         SetButtonLabel(btn, MediaCommandLabel(cmd));
 
@@ -7437,11 +7246,11 @@ static Grid BuildMiniPlayerFlyoutContent() {
         return btn;
     };
 
-    Button shuffleBtn = MakeBigBtn(7);
-    Button prevBtn    = MakeBigBtn(1);
-    Button playBtn    = MakeBigBtn(2);
-    Button nextBtn    = MakeBigBtn(3);
-    Button repeatBtn  = MakeBigBtn(8);
+    Button shuffleBtn = MakeBigBtn(kCmdToggleShuffle);
+    Button prevBtn    = MakeBigBtn(kCmdPrevious);
+    Button playBtn    = MakeBigBtn(kCmdPlayPause);
+    Button nextBtn    = MakeBigBtn(kCmdNext);
+    Button repeatBtn  = MakeBigBtn(kCmdCycleRepeat);
 
     controlsRow.Children().Append(shuffleBtn);
     controlsRow.Children().Append(prevBtn);
@@ -8087,12 +7896,12 @@ static void HandleWheelAction(std::wstring const& action, PointerRoutedEventArgs
     if (action == L"none") return;
     int delta = e.GetCurrentPoint(nullptr).Properties().MouseWheelDelta();
     if (action == L"switch_tracks") {
-        if (delta > 0) SendMediaCommandAsync(1);
-        else if (delta < 0) SendMediaCommandAsync(3);
+        if (delta > 0) SendMediaCommandAsync(kCmdPrevious);
+        else if (delta < 0) SendMediaCommandAsync(kCmdNext);
         DispatchMediaUpdate();
     } else if (action == L"switch_tracks_inverted") {
-        if (delta > 0) SendMediaCommandAsync(3);
-        else if (delta < 0) SendMediaCommandAsync(1);
+        if (delta > 0) SendMediaCommandAsync(kCmdNext);
+        else if (delta < 0) SendMediaCommandAsync(kCmdPrevious);
         DispatchMediaUpdate();
     } else if (action == L"switch_sessions") {
         if (delta != 0) SwitchMediaSession();
@@ -9442,7 +9251,7 @@ static void RefreshPlayerContentsInstance() {
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
                     const wchar_t* glyph = audioAppSource
                         ? (media.isPlaying ? L"\uE767" : L"\uE74F")
-                        : GetGlyph(2, media.isPlaying);
+                        : GetGlyph(kCmdPlayPause, media.isPlaying);
                     ct.Text(winrt::hstring(glyph));
                     ct.Foreground(MakeBrush(ButtonColor()));
                 }
@@ -9453,7 +9262,7 @@ static void RefreshPlayerContentsInstance() {
                 bool supported = media.canSkipPrevious;
                 ApplyButtonSupport(btn, supported);
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
-                    ct.Text(GetGlyph(1));
+                    ct.Text(GetGlyph(kCmdPrevious));
                     ct.Opacity(supported ? 1.0 : 0.35);
                     ct.Foreground(MakeBrush(ButtonColor()));
                 }
@@ -9464,7 +9273,7 @@ static void RefreshPlayerContentsInstance() {
                 bool supported = media.canSkipNext;
                 ApplyButtonSupport(btn, supported);
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
-                    ct.Text(GetGlyph(3));
+                    ct.Text(GetGlyph(kCmdNext));
                     ct.Opacity(supported ? 1.0 : 0.35);
                     ct.Foreground(MakeBrush(ButtonColor()));
                 }
@@ -9475,7 +9284,7 @@ static void RefreshPlayerContentsInstance() {
                 bool supported = media.canSeek;
                 ApplyButtonSupport(btn, supported);
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
-                    ct.Text(GetGlyph(5));
+                    ct.Text(GetGlyph(kCmdRewind));
                     ct.Opacity(supported ? 1.0 : 0.35);
                     ct.Foreground(MakeBrush(ButtonColor()));
                 }
@@ -9486,7 +9295,7 @@ static void RefreshPlayerContentsInstance() {
                 bool supported = media.canSeek;
                 ApplyButtonSupport(btn, supported);
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
-                    ct.Text(GetGlyph(6));
+                    ct.Text(GetGlyph(kCmdForward));
                     ct.Opacity(supported ? 1.0 : 0.35);
                     ct.Foreground(MakeBrush(ButtonColor()));
                 }
@@ -9497,7 +9306,7 @@ static void RefreshPlayerContentsInstance() {
                 bool supported = media.canShuffle;
                 ApplyButtonSupport(btn, supported);
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
-                    ct.Text(GetGlyph(7));
+                    ct.Text(GetGlyph(kCmdToggleShuffle));
                     if (!supported && !g_settings.hideUnsupportedButtons) {
                         ct.Opacity(0.35);
                     } else {
@@ -9512,7 +9321,7 @@ static void RefreshPlayerContentsInstance() {
                 bool supported = media.canRepeat;
                 ApplyButtonSupport(btn, supported);
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
-                    ct.Text(GetGlyph(8));
+                    ct.Text(GetGlyph(kCmdCycleRepeat));
                     ct.Foreground(MakeBrush(ButtonColor()));
                     if (!supported && !g_settings.hideUnsupportedButtons) {
                         ct.Opacity(0.35);
@@ -9563,7 +9372,7 @@ static void RefreshPlayerContentsInstance() {
                     bool showPause = !media.isPlaying && media.hasMedia && !audioAppSource;
                     overlay.Visibility(showPause ? Visibility::Visible : Visibility::Collapsed);
                     if (auto pauseIcon = overlay.Child().try_as<TextBlock>()) {
-                        pauseIcon.Text(GetGlyph(2, true));
+                        pauseIcon.Text(GetGlyph(kCmdPlayPause, true));
                         pauseIcon.FontFamily(Media::FontFamily(IsFluentIconStyle(g_settings.iconStyle) ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets"));
                         pauseIcon.FontSize((double)g_settings.pauseOverlayIconSize);
                     }
@@ -9812,12 +9621,7 @@ static void RefreshPlayerContentsInstance() {
                         BYTE* pixels = nullptr;
                         bufferByteAccess->Buffer(&pixels);
                         if (media.appIconBytes.size() >= bytesNeeded && pixels) {
-                            for (size_t i = 0; i + 3 < bytesNeeded; i += 4) {
-                                pixels[i+0] = media.appIconBytes[i+2];
-                                pixels[i+1] = media.appIconBytes[i+1];
-                                pixels[i+2] = media.appIconBytes[i+0];
-                                pixels[i+3] = media.appIconBytes[i+3];
-                            }
+                            memcpy(pixels, media.appIconBytes.data(), bytesNeeded);
                         }
                         buf.Length(static_cast<uint32_t>(bytesNeeded));
                         wb.Invalidate();
