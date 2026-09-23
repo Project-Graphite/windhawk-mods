@@ -3277,8 +3277,8 @@ static std::vector<BYTE> RenderIconToBytes(HICON hIcon, int iconSize) {
     bi.bmiHeader.biBitCount    = 32;
     bi.bmiHeader.biCompression = BI_RGB;
     std::vector<BYTE> src(srcW * srcH * 4, 0);
-    GetDIBits(hdc, hBmp, 0, srcH, src.data(), &bi, DIB_RGB_COLORS);
     SelectObject(hdc, hOld);
+    GetDIBits(hdc, hBmp, 0, srcH, src.data(), &bi, DIB_RGB_COLORS);
     DeleteObject(hBmp);
     DeleteDC(hdc);
     for (int i = 0; i + 3 < (int)src.size(); i += 4)
@@ -3811,7 +3811,8 @@ static std::vector<BYTE> EncodeBGRAToPng(const std::vector<BYTE>& pixels, UINT s
                         SUCCEEDED(encoder->Commit())) {
                         HGLOBAL hGlobal = nullptr;
                         if (SUCCEEDED(GetHGlobalFromStream(stream, &hGlobal)) && hGlobal) {
-                            SIZE_T bytes = GlobalSize(hGlobal);
+                            STATSTG stat{};
+                            SIZE_T bytes = SUCCEEDED(stream->Stat(&stat, STATFLAG_NONAME)) ? (SIZE_T)stat.cbSize.QuadPart : 0;
                             void* data = GlobalLock(hGlobal);
                             if (data && bytes) {
                                 result.assign(static_cast<BYTE*>(data),
@@ -5380,13 +5381,15 @@ static void VizCaptureThreadProc() {
             }
             if (FAILED(hrBuf))
                 break;
-            if (!(flags & AUDCLNT_BUFFERFLAGS_SILENT) && pData && numFrames > 0) {
+            bool silent = (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0;
+            if (pData && numFrames > 0) {
                 if (isFloat) {
                     float* src = reinterpret_cast<float*>(pData);
                     for (UINT32 f = 0; f < numFrames; f++) {
                         float mono = 0.f;
-                        for (UINT32 c = 0; c < channels; c++)
-                            mono += src[f * channels + c];
+                        if (!silent)
+                            for (UINT32 c = 0; c < channels; c++)
+                                mono += src[f * channels + c];
                         ringBuf[ringHead] = mono / (float)channels;
                         ringHead = (ringHead + 1) % RING_CAP;
                         if (ringCount < RING_CAP)
@@ -5396,8 +5399,9 @@ static void VizCaptureThreadProc() {
                     INT16* src = reinterpret_cast<INT16*>(pData);
                     for (UINT32 f = 0; f < numFrames; f++) {
                         float mono = 0.f;
-                        for (UINT32 c = 0; c < channels; c++)
-                            mono += src[f * channels + c] / 32768.f;
+                        if (!silent)
+                            for (UINT32 c = 0; c < channels; c++)
+                                mono += src[f * channels + c] / 32768.f;
                         ringBuf[ringHead] = mono / (float)channels;
                         ringHead = (ringHead + 1) % RING_CAP;
                         if (ringCount < RING_CAP)
@@ -5474,11 +5478,12 @@ static void StartVizCaptureThread() {
     g_CaptureRunning.store(true);
     g_CaptureThread.emplace(VizCaptureThreadProc);
 }
-static void StopVizCaptureThread() {
+static void StopVizCaptureThread(bool onlyIfHidden = false) {
+    std::lock_guard<std::mutex> lk(g_captureThreadMtx);
+    if (onlyIfHidden && g_vizCurrentlyVisible) return;
     g_CaptureRunning.store(false);
     if (g_hCaptureEvent)
         SetEvent(g_hCaptureEvent);
-    std::lock_guard<std::mutex> lk(g_captureThreadMtx);
     if (g_CaptureThread) {
         if (g_CaptureThread->joinable())
             g_CaptureThread->join();
@@ -5505,16 +5510,12 @@ static void UpdateVisualizerPeaks() {
         bands[i] = g_VizBands[i].load(std::memory_order_relaxed);
         masterPeak = std::max(masterPeak, bands[i]);
     }
-    auto eq = GetVizEQMultipliers(g_settings.vizEq);
     auto sampleBands = [&](float t) -> float {
         float pos = t * (VIZ_NUM_BANDS - 1);
         int lo = (int)pos;
         int hi = std::min(lo + 1, VIZ_NUM_BANDS - 1);
         return bands[lo] * (1.f - (pos - (float)lo)) +
             bands[hi] * (pos - (float)lo);
-    };
-    auto eqForT = [&](float t) -> float {
-        return (t < 0.33f) ? eq.low : (t < 0.66f) ? eq.mid : eq.high;
     };
     float t = (float)GetTickCount64() * 0.001f;
     float center = (vizBars - 1) * 0.5f;
@@ -5523,11 +5524,11 @@ static void UpdateVisualizerPeaks() {
         float target = 0.f;
         switch (g_settings.vizShape) {
             case VizShape::Stereo:
-                target = sampleBands(freqT) * eqForT(freqT);
+                target = sampleBands(freqT);
                 break;
             case VizShape::Mountain: {
                 float dist = fabsf((float)i - center) / std::max(1.f, center);
-                float energy = sampleBands(dist) * eqForT(dist);
+                float energy = sampleBands(dist);
                 float taper = 1.6f - dist * 0.9f;
                 target = std::max(
                     0.f, std::min(1.f, (energy + masterPeak * (0.2f - dist * 0.12f)) *
@@ -5536,7 +5537,7 @@ static void UpdateVisualizerPeaks() {
             }
             case VizShape::Mirror: {
                 float mirT = 1.f - fabsf((float)i - center) / std::max(1.f, center);
-                float energy = sampleBands(mirT) * eqForT(mirT);
+                float energy = sampleBands(mirT);
                 target = std::max(
                     0.f, std::min(1.f, (energy + masterPeak * (0.1f + mirT * 0.12f)) *
                                         1.3f));
@@ -5545,7 +5546,7 @@ static void UpdateVisualizerPeaks() {
             case VizShape::Wave: {
                 float phase = (float)i * (2.f * VIZ_PI / (float)vizBars);
                 float wave = 0.55f + 0.45f * sinf(t * 3.5f - phase);
-                float energy = sampleBands(freqT) * eqForT(freqT);
+                float energy = sampleBands(freqT);
                 target = std::max(0.f, std::min(1.f, energy * wave + masterPeak * 0.15f));
                 break;
             }
@@ -10016,7 +10017,7 @@ static void UpdateVisibility() {
             } else if (!g_anyVisualizerVisible && g_vizCurrentlyVisible) {
                 g_vizCurrentlyVisible = false;
                 StopTickTimer(g_vizTimer);
-                SpawnTrackedWorker([]() { StopVizCaptureThread(); });
+                SpawnTrackedWorker([]() { StopVizCaptureThread(true); });
             }
         }
 
