@@ -773,7 +773,6 @@ Licensed under the MIT License.
 #include <windhawk_utils.h>
 #include <audiopolicy.h>
 #include <mmdeviceapi.h>
-#include <endpointvolume.h>
 #include <audioclient.h>
 #include <propkey.h>
 #include <atomic>
@@ -1168,7 +1167,7 @@ static void LoadSettings() {
     g_settings.emptyIconGlyph       = Str(L"AppearanceSettings.AlbumArtDisplaySettings.emptyIconGlyph",       L"E189");
     g_settings.emptyIconSize        = Int(L"AppearanceSettings.AlbumArtDisplaySettings.emptyIconSize",          1, 256, 16);
     g_settings.emptyIconFont        = Str(L"AppearanceSettings.AlbumArtDisplaySettings.emptyIconFont",        L"segoe_fluent");
-    g_settings.emptyIconColor       = Str(L"AppearanceSettings.AlbumArtDisplaySettings.emptyIconColor",       L"255 255 255");
+    g_settings.emptyIconColor       = Str(L"AppearanceSettings.AlbumArtDisplaySettings.emptyIconColor",       L"140 140 140");
     g_settings.emptyIconOpacity     = Int(L"AppearanceSettings.AlbumArtDisplaySettings.emptyIconOpacity",       0, 100, 100);
     g_settings.albumArtQuality      = Str(L"AppearanceSettings.AlbumArtDisplaySettings.albumArtQuality", L"medium");
     g_settings.showPauseOverlay     = Wh_GetIntSetting(L"AppearanceSettings.AlbumArtDisplaySettings.showPauseOverlay")  != 0;
@@ -1222,15 +1221,15 @@ static void LoadSettings() {
     g_settings.gradientBalance      = Int(L"AppearanceSettings.BackgroundStyleSettings.gradientBalance", 0, 100, 50);
     g_settings.acrylicTintOpacity   = Int(L"AppearanceSettings.BackgroundStyleSettings.acrylicTintOpacity", 0, 100, 50);
     g_settings.micaOpacity          = Int(L"AppearanceSettings.BackgroundStyleSettings.micaOpacity", 0, 100, 50);
-    g_settings.buttonColor          = Str(L"AppearanceSettings.MediaButtonsStyleSettings.buttonColor", L"255 255 255");
+    g_settings.buttonColor          = Str(L"AppearanceSettings.MediaButtonsStyleSettings.buttonColor", L"0 0 0$255 255 255");
     g_settings.buttonColorOpacity   = Int(L"AppearanceSettings.MediaButtonsStyleSettings.buttonColorOpacity", 0, 100, 100);
-    g_settings.titleColor           = Str(L"AppearanceSettings.TitleTextStyleSettings.titleColor", L"255 255 255");
+    g_settings.titleColor           = Str(L"AppearanceSettings.TitleTextStyleSettings.titleColor", L"0 0 0$255 255 255");
     g_settings.titleColorOpacity    = Int(L"AppearanceSettings.TitleTextStyleSettings.titleColorOpacity", 0, 100, 100);
-    g_settings.artistColor          = Str(L"AppearanceSettings.ArtistTextStyleSettings.artistColor", L"255 255 255");
+    g_settings.artistColor          = Str(L"AppearanceSettings.ArtistTextStyleSettings.artistColor", L"0 0 0$255 255 255");
     g_settings.artistColorOpacity   = Int(L"AppearanceSettings.ArtistTextStyleSettings.artistColorOpacity", 0, 100, 80);
     g_settings.vizEnabled      = Wh_GetIntSetting(L"MainSettings.VisualizerFunctionsSettings.vizEnabled") != 0;
     g_settings.vizPosition     = Str(L"MainSettings.VisualizerFunctionsSettings.vizPosition", L"right");
-    g_settings.vizColor        = Str(L"AppearanceSettings.VisualizerStyleSettings.vizColor",  L"255 255 255");
+    g_settings.vizColor        = Str(L"AppearanceSettings.VisualizerStyleSettings.vizColor",  L"0 0 0$255 255 255");
     g_settings.vizColor1       = Str(L"AppearanceSettings.VisualizerStyleSettings.vizColor1", L"30 215 96");
     g_settings.vizColor2       = Str(L"AppearanceSettings.VisualizerStyleSettings.vizColor2", L"0 180 255");
     g_settings.vizSensitivity  = Int(L"MainSettings.VisualizerFunctionsSettings.vizSensitivity", 0, 300, 150);
@@ -1438,11 +1437,7 @@ static void LoadSettings() {
     g_settings.contextMenuIconOpacity  = Int(L"ContextMenuSettings.contextMenuIconOpacity", 0, 100, 100);
     {
         g_settings.contextMenuItems.clear();
-        const wchar_t* defaultItems[] = {
-            L"repeat", L"shuffle", L"forward", L"rewind",
-            L"next", L"prev", L"switch_sessions", L"open_app"
-        };
-        bool hasAny = false;
+        const wchar_t* defaultItems[] = { L"switch_sessions", L"open_app" };
         std::set<std::wstring> seen;
         for (int i = 0; i < 20; i++) {
             PCWSTR p = Wh_GetStringSetting(L"ContextMenuSettings.contextMenuItems[%d]", i);
@@ -1451,10 +1446,9 @@ static void LoadSettings() {
             Wh_FreeStringSetting(p);
             if (seen.insert(s).second) {
                 g_settings.contextMenuItems.push_back(s);
-                hasAny = true;
             }
         }
-        if (!hasAny) {
+        if (g_settings.contextMenuItems.empty()) {
             for (auto& d : defaultItems)
                 g_settings.contextMenuItems.push_back(d);
         }
@@ -1526,13 +1520,29 @@ static int  PlayerInstanceCount();
 static std::atomic<int> g_activeWorkerThreads{0};
 template <typename F>
 static void SpawnTrackedWorker(F&& fn) {
+    struct Worker {
+        std::function<void()> fn;
+        HMODULE module;
+    };
+    auto* worker = new Worker{std::forward<F>(fn), nullptr};
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                       reinterpret_cast<LPCWSTR>(&g_activeWorkerThreads), &worker->module);
     g_activeWorkerThreads.fetch_add(1, std::memory_order_relaxed);
-    std::thread([f = std::forward<F>(fn)]() mutable {
-        struct Decrementer {
-            ~Decrementer() { g_activeWorkerThreads.fetch_sub(1, std::memory_order_release); }
-        } dec;
-        f();
-    }).detach();
+    HANDLE thread = CreateThread(nullptr, 0, [](LPVOID param) WINAPI -> DWORD {
+        auto* worker = static_cast<Worker*>(param);
+        HMODULE module = worker->module;
+        worker->fn();
+        delete worker;
+        g_activeWorkerThreads.fetch_sub(1, std::memory_order_release);
+        FreeLibraryAndExitThread(module, 0);
+    }, worker, 0, nullptr);
+    if (thread) {
+        CloseHandle(thread);
+        return;
+    }
+    FreeLibrary(worker->module);
+    delete worker;
+    g_activeWorkerThreads.fetch_sub(1, std::memory_order_release);
 }
 
 static void WaitForTrackedWorkers() {
@@ -1811,7 +1821,7 @@ static Style GetFluentMediaButtonStyle() {
 <Setter Property="Background" Value="Transparent"/>
 <Setter Property="BorderBrush" Value="Transparent"/>
 <Setter Property="BorderThickness" Value="0"/>
-<Setter Property="UseSystemFocusVisuals" Value="False"/>
+<Setter Property="UseSystemFocusVisuals" Value="True"/>
 <Setter Property="Template">
     <Setter.Value>
     <ControlTemplate TargetType="Button">
@@ -2238,7 +2248,7 @@ static bool DecodeImageToBGRA(const std::vector<BYTE>& imgBytes,
             IWICFormatConverter* pConv = nullptr;
             if (SUCCEEDED(pFactory->CreateFormatConverter(&pConv))) {
                 if (SUCCEEDED(pConv->Initialize(
-                        pFrame, GUID_WICPixelFormat32bppBGRA,
+                        pFrame, GUID_WICPixelFormat32bppPBGRA,
                         WICBitmapDitherTypeNone, nullptr, 0.0,
                         WICBitmapPaletteTypeMedianCut))) {
                     UINT w = 0, h = 0;
@@ -2714,6 +2724,9 @@ static void SendMediaCommandAsync(int cmd) {
                         try {
                             auto timeline = session.GetTimelineProperties();
                             auto currentPos = timeline.Position();
+                            if (auto info = session.GetPlaybackInfo();
+                                info && info.PlaybackStatus() == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing)
+                                currentPos += winrt::clock::now() - timeline.LastUpdatedTime();
                             auto newPos = currentPos - std::chrono::seconds(g_settings.seekStepSeconds);
                             if (newPos.count() < 0) newPos = std::chrono::seconds(0);
                             session.TryChangePlaybackPositionAsync(newPos.count()).get();
@@ -2723,9 +2736,12 @@ static void SendMediaCommandAsync(int cmd) {
                         try {
                             auto timeline = session.GetTimelineProperties();
                             auto currentPos = timeline.Position();
+                            if (auto info = session.GetPlaybackInfo();
+                                info && info.PlaybackStatus() == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing)
+                                currentPos += winrt::clock::now() - timeline.LastUpdatedTime();
                             auto endTime = timeline.EndTime();
                             auto newPos = currentPos + std::chrono::seconds(g_settings.seekStepSeconds);
-                            if (newPos > endTime) newPos = endTime;
+                            if (endTime.count() > 0 && newPos > endTime) newPos = endTime;
                             session.TryChangePlaybackPositionAsync(newPos.count()).get();
                         } catch (...) {}
                         break;
@@ -2819,9 +2835,7 @@ static void SwitchMediaSession() {
         if (!g_sessionMgr) return;
         mgr = g_sessionMgr;
         curSession = g_currentSession;
-        g_userSwitchedSession = true;
     }
-    if (!mgr) return;
     GlobalSystemMediaTransportControlsSession nextSession{nullptr};
     try {
         auto sessions = mgr.GetSessions();
@@ -2829,9 +2843,8 @@ static void SwitchMediaSession() {
         if (count <= 1) return;
         int currentIndex = -1;
         if (curSession) {
-            auto curId = curSession.SourceAppUserModelId();
             for (int i = 0; i < count; ++i) {
-                if (sessions.GetAt(i).SourceAppUserModelId() == curId) {
+                if (sessions.GetAt(i) == curSession) {
                     currentIndex = i;
                     break;
                 }
@@ -2841,6 +2854,10 @@ static void SwitchMediaSession() {
         nextSession = sessions.GetAt(nextIndex);
     } catch (...) { return; }
     if (nextSession) {
+        {
+            std::lock_guard<std::mutex> lk(g_sessionMtx);
+            g_userSwitchedSession = true;
+        }
         AttachToSession(nextSession);
     }
 }
@@ -2861,21 +2878,6 @@ static void CleanupAudioDeviceEnumerator() {
     }
 }
 static void ChangeSystemVolume(bool increase) {
-    InitAudioDeviceEnumerator();
-    std::lock_guard<std::mutex> lk(g_deviceEnumeratorMtx);
-    if (!g_pDeviceEnumerator) return;
-    winrt::com_ptr<IMMDevice> defaultDevice;
-    HRESULT hr = g_pDeviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, defaultDevice.put());
-    if (FAILED(hr)) return;
-    winrt::com_ptr<IAudioEndpointVolume> endpointVolume;
-    hr = defaultDevice->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_ALL, NULL, endpointVolume.put_void());
-    if (FAILED(hr)) return;
-    float currentVolume = 0.0f;
-    if (SUCCEEDED(endpointVolume->GetMasterVolumeLevelScalar(&currentVolume))) {
-        float newVolume = currentVolume + (increase ? 0.005f : -0.005f);
-        newVolume = std::clamp(newVolume, 0.0f, 1.0f);
-        endpointVolume->SetMasterVolumeLevelScalar(newVolume, NULL);
-    }
     HWND hShellTrayWnd = FindWindow(L"Shell_TrayWnd", nullptr);
     if (hShellTrayWnd) {
         SHORT appCommand = increase ? APPCOMMAND_VOLUME_UP : APPCOMMAND_VOLUME_DOWN;
