@@ -19,10 +19,6 @@
 A button on the taskbar that opens a launcher panel. Tick what you want, press
 **Launch**, and it all comes up in order. Press **Close** and it goes back down.
 
-Everything here is driven by the settings, so the same mod works for a web stack,
-a games project, a writing setup or a machine you just want opening the same six
-things every morning.
-
 ---
 
 ## Quick start
@@ -205,7 +201,8 @@ off by default because it loses unsaved work.
 
 An item needs a process before it can be closed:
 
-* `app` and `vscode` items resolve one on their own.
+* `vscode` items, and `app` items whose target is an `.exe`, resolve one on their
+  own. An `app` item pointing at a shortcut or document needs **Process name**.
 * `terminal` and `command` items need **Process name** filled in. A terminal
   running a dev server is usually `node.exe`, for instance, not the shell.
 * An item started as administrator cannot be closed from a normal Explorer, and
@@ -253,18 +250,19 @@ two consequences:
 * the state is applied a moment after launch, so the window may flicker into view
   first
 
-**Wait for it to exit** also forces a terminal item out of Windows Terminal. `wt.exe`
-exits the instant it hands the tab over, so waiting on it would return immediately;
-the item is launched in the shell's own console instead, where the wait is real.
+**Wait for it to exit** also skips `wt.exe`, which exits the instant it hands the
+tab over. The shell is started directly so the wait tracks the shell itself; it can
+still open in Windows Terminal if that is your default terminal, and **Minimized**
+or **Maximized** is then not applied.
 
 ---
 
 ## Sign-in
 
 **Profile to run at sign-in** brings a profile up shortly after you log in. It only
-fires when Explorer genuinely just started, so editing or reloading this mod never
-relaunches anything, and **Only once per day** stops an afternoon reboot doing it
-twice.
+fires within three minutes of Explorer starting, so editing settings never
+relaunches anything, and **Only once per day** stops a later sign-in or a mod
+reload doing it twice.
 
 ---
 
@@ -306,7 +304,7 @@ Leave **Icon** empty and the item uses its target's real shell icon. Otherwise:
       $description: Label shown in the panel.
     - enabled: true
       $name: On by default
-      $description: Starting state of the toggle. Only read the first time.
+      $description: Starting state of the toggle, and what the All chip resets it to.
     - type: vscode
       $name: Type
       $description: How Target is interpreted.
@@ -322,7 +320,7 @@ Leave **Icon** empty and the item uses its target's real shell icon. Otherwise:
       $description: A path, a URL, or a command line for the terminal and command types.
     - group: Editors
       $name: Group
-      $description: Heading to file this item under. Keep a group's items together.
+      $description: Heading to file this item under.
     - profiles: daily, full
       $name: Profiles
       $description: Comma separated profile names this item belongs to.
@@ -364,7 +362,7 @@ Leave **Icon** empty and the item uses its target's real shell icon. Otherwise:
         $description: Skip this item during a launch when its process is already up.
       - processName: ""
         $name: Process name
-        $description: Executable used for the running dot and for closing. Empty auto-detects.
+        $description: Executable used for the running dot and for closing. Empty auto-detects for .exe and VS Code items.
       - delayMs: 0
         $name: Delay before launch (ms)
         $description: Extra wait before starting this one item.
@@ -398,7 +396,7 @@ Leave **Icon** empty and the item uses its target's real shell icon. Otherwise:
   $description: Where terminal items open. Auto groups them into one Windows Terminal window.
   $options:
   - auto: Auto
-  - shell: Always the shell's own console
+  - shell: Start the shell directly
 - wtWindowId: _stack
   $name: Windows Terminal window
   $description: Window name the tabs go to. Use 0 for the last used, or new each time.
@@ -479,7 +477,7 @@ Leave **Icon** empty and the item uses its target's real shell icon. Otherwise:
   $description: Base text size. Everything else scales from it.
 - animation: normal
   $name: Animation
-  $description: Speed of the panel, hover, Toggle and collapse animations.
+  $description: Speed of the panel, hover, toggle and collapse animations.
   $options:
   - off: Off
   - subtle: Subtle
@@ -499,7 +497,7 @@ Leave **Icon** empty and the item uses its target's real shell icon. Otherwise:
   $description: Green dot on items whose process is up.
 - closeAfterLaunch: true
   $name: Close the panel after launching
-  $description: Hide the panel as soon as something starts.
+  $description: Hide the panel as soon as a launch or close starts.
 - confirmBeforeLaunchAll: false
   $name: Confirm before launching a batch
   $description: Ask before the Launch button runs the whole selection.
