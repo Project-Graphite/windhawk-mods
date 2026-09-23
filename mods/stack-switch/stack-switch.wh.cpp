@@ -140,7 +140,8 @@ whole group.
 
 **Item row** - clicking the name launches that one item immediately, whatever its
 toggle says. Right click gives *Launch now*, *Close now* when it is running,
-*Turn on* / *Turn off*, *Show in File Explorer* and *Copy target*.
+*Turn on* / *Turn off*, *Show in File Explorer* for app, VS Code and folder items,
+and *Copy target*.
 
 **Item toggle** - includes or excludes the item from Launch and Close. The state
 survives reboots, so something you only need occasionally can sit switched off
@@ -3420,10 +3421,16 @@ static bool StepAnimations() {
     return animating;
 }
 
+static bool RowHit(const HitResult& hit) {
+    return hit.kind == HitKind::Item || hit.kind == HitKind::ItemToggle ||
+           hit.kind == HitKind::GroupHeader || hit.kind == HitKind::GroupToggleAll;
+}
+
 static void PaintPanel() {
     if (!g_panelWnd) {
         return;
     }
+    std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
     Palette palette = CurrentPalette();
     RebuildRows();
     ClampScroll();
@@ -3451,30 +3458,23 @@ static void PaintPanel() {
     FillRoundRect(graphics, content, radius, palette.background);
     StrokeRoundRect(graphics, content, radius, palette.border, 1.0f);
 
+    const std::wstring& title = g_settings.panelTitle;
+    bool compact = g_settings.compactRows;
+    bool showDots = g_settings.showStatusDots;
+    int total = (int)g_settings.items.size();
     int selected = 0;
-    int total = 0;
     int runningSelected = 0;
-    std::wstring title;
-    bool compact = false;
-    bool showDots = true;
-    {
-        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        title = g_settings.panelTitle;
-        compact = g_settings.compactRows;
-        showDots = g_settings.showStatusDots;
-        total = (int)g_settings.items.size();
-        for (const auto& item : g_settings.items) {
-            if (!item.enabled) {
-                continue;
-            }
-            selected++;
-            if (item.running) {
-                runningSelected++;
-            }
+    for (const auto& item : g_settings.items) {
+        if (!item.enabled) {
+            continue;
+        }
+        selected++;
+        if (item.running) {
+            runningSelected++;
         }
     }
 
-    surface.RenderText(title.empty() ? std::wstring(L"Tech Stack") : title,
+    surface.RenderText(title.empty() ? std::wstring(L"Stack") : title,
                        UiFont(2, true), palette.textStrong,
                        gp::Rect(g_layout.header.X + pad, g_layout.header.Y + Scale(9),
                                 g_layout.header.Width - pad * 2 - Scale(34), Scale(20)),
@@ -3554,7 +3554,6 @@ static void PaintPanel() {
                            UiFont(-1), palette.textDim, g_layout.list, kTextCenter);
     }
 
-    std::lock_guard<std::recursive_mutex> itemsLock(g_settingsMutex);
     for (size_t rowIndex = 0; rowIndex < g_rows.size(); rowIndex++) {
         const PanelRow& row = g_rows[rowIndex];
         if (!RowVisible(row)) {
@@ -3581,12 +3580,9 @@ static void PaintPanel() {
         surface.SetClip(clip);
 
         double hoverWeight = 0.0;
-        if (g_hover.index == (int)rowIndex &&
-            (g_hover.kind == HitKind::Item || g_hover.kind == HitKind::ItemToggle ||
-             g_hover.kind == HitKind::GroupHeader ||
-             g_hover.kind == HitKind::GroupToggleAll)) {
+        if (g_hover.index == (int)rowIndex && RowHit(g_hover)) {
             hoverWeight = g_hoverAmount;
-        } else if (g_hoverFading.index == (int)rowIndex) {
+        } else if (g_hoverFading.index == (int)rowIndex && RowHit(g_hoverFading)) {
             hoverWeight = g_hoverFadeAmount;
         }
         bool dragged = g_dragActive && (row.isGroup ? row.text == g_dragGroup
@@ -3692,13 +3688,10 @@ static void PaintPanel() {
                                  (gp::REAL)dotSize, (gp::REAL)dotSize);
         }
 
-        double toggleValue = row.itemIndex < (int)g_toggleAmount.size()
-                                 ? g_toggleAmount[row.itemIndex]
-                                 : (item.enabled ? 1.0 : 0.0);
         DrawToggle(surface,
                    gp::Rect(g_layout.list.X + g_layout.list.Width - pad - Scale(34),
                             rowTop + (row.height - Scale(18)) / 2, Scale(34), Scale(18)),
-                   toggleValue, palette,
+                   g_toggleAmount[row.itemIndex], palette,
                    g_hover.kind == HitKind::ItemToggle && g_hover.index == (int)rowIndex);
     }
 
@@ -3772,7 +3765,8 @@ static void PaintPanel() {
     int slide = (int)((1.0 - reveal) * Scale(12));
     int top = g_panelGrowsUp ? g_panelAnchorBottom - g_layout.window.Height
                              : g_panelBaseY;
-    SetWindowPos(g_panelWnd, HWND_TOPMOST, g_panelBaseX, top + slide,
+    SetWindowPos(g_panelWnd, HWND_TOPMOST, g_panelBaseX,
+                 top + (g_panelGrowsUp ? slide : -slide),
                  g_layout.window.Width, g_layout.window.Height,
                  SWP_NOACTIVATE | SWP_NOREDRAW);
     g_panelSurface.Present(g_panelWnd, (BYTE)(255 * max(0.0, min(1.0, reveal))));
@@ -3789,11 +3783,6 @@ static int DraggedRowIndex() {
         }
     }
     return -1;
-}
-
-static bool RowHit(const HitResult& hit) {
-    return hit.kind == HitKind::Item || hit.kind == HitKind::ItemToggle ||
-           hit.kind == HitKind::GroupHeader || hit.kind == HitKind::GroupToggleAll;
 }
 
 static void EndDrag(bool persist) {
@@ -3931,7 +3920,6 @@ static void FinishClosingPanel() {
     KillTimer(g_panelWnd, kTimerStatus);
     KillTimer(g_panelWnd, kTimerAnimate);
     ShowWindow(g_panelWnd, SW_HIDE);
-    g_panelHiddenTick = GetTickCount64();
     RefreshTaskbarButtons();
 }
 
@@ -4166,7 +4154,10 @@ static void ShowItemMenu(int rowIndex, POINT screenPoint) {
     AppendMenuW(menu, MF_STRING, 7, L"Move down");
     AppendMenuW(menu, MF_STRING, 8, L"Reset order to settings");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, 3, L"Show in File Explorer");
+    if (item.type == ItemType::App || item.type == ItemType::VSCode ||
+        item.type == ItemType::Folder) {
+        AppendMenuW(menu, MF_STRING, 3, L"Show in File Explorer");
+    }
     AppendMenuW(menu, MF_STRING, 4, L"Copy target");
 
     g_suppressDeactivate = true;
@@ -4228,6 +4219,7 @@ static void HandleClick(const HitResult& hit) {
             break;
         case HitKind::SearchClear:
             g_filter.clear();
+            g_focusRow = -1;
             g_scrollOffset = 0;
             break;
         case HitKind::ItemToggle:
@@ -4324,7 +4316,8 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
             if (g_dragActive) {
                 HitResult over = HitTest(point);
                 int from = DraggedRowIndex();
-                if (RowHit(over) && from >= 0 && over.index != from) {
+                if (RowHit(over) && from >= 0 && over.index != from &&
+                    (g_dragItemIndex >= 0 || g_rows[over.index].isGroup)) {
                     bool moved =
                         g_dragItemIndex >= 0
                             ? MoveItemWithinGroup(g_dragItemIndex,
@@ -4435,6 +4428,7 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
             if (character == VK_BACK) {
                 if (!g_filter.empty()) {
                     g_filter.pop_back();
+                    g_focusRow = -1;
                     g_scrollOffset = 0;
                     PaintPanel();
                 }
@@ -4468,12 +4462,17 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
             }
             break;
 
+        case WM_CLOSE:
+            ClosePanel();
+            return 0;
+
         case WM_KEYDOWN: {
             bool control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
             switch (wParam) {
                 case VK_ESCAPE:
                     if (!g_filter.empty()) {
                         g_filter.clear();
+                        g_focusRow = -1;
                         PaintPanel();
                     } else {
                         ClosePanel();
