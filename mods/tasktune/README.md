@@ -11,7 +11,7 @@ taskbar. It uses Windows media sessions for playback control and can fall back t
 - Accessible control names and tooltips
 - Per-application volume and mute controls for media and audio-only applications
 - Session switching, configurable mouse actions, and a compact mini-player
-- Right-click the player and choose **Open media app** to switch to or open the playing app
+- Right-click the player and choose **Open media app** to switch to or open the playing app, or to start Spotify or another configured app when nothing is playing
 - Solid, gradient, Acrylic, and blurred album-art backgrounds
 - Optional WASAPI spectrum visualizer with configurable shapes, colors, and EQ presets
 - Automatic hiding when media is unavailable, playback stays paused for a set time, or an app is full-screen
@@ -37,10 +37,13 @@ The overview and usage guide appear on Windhawk's **Details** tab. The complete 
 
 - **Main:** position, layout, playback controls, text, and visualizer.
 - **Appearance:** colors, materials, fonts, icons, spacing, and sizing.
-- **Behavior:** clicks, wheel actions, and hiding.
+- **Behavior:** clicks, wheel actions, hiding, and the app opened from the context menu.
 - **Audio Apps:** audio-only detection, exclusions, and per-app volume.
 - **Player Menu:** menu placement, animation, background, and session list.
 - **Animation:** smooth movement, visibility, album-art and text transitions.
 - **Context Menu:** items, order, icons, and repeat/shuffle behavior.
+
+When nothing is playing, **Open media app** runs **App opened from the context menu**, which defaults to `spotify:`.
+Replace it with another URI, executable, full path, or `shell:AppsFolder` ID, or clear it to do nothing.
 
 Because the mod runs inside `explorer.exe`, test changes through Windhawk and keep another way to restart Explorer available while developing.

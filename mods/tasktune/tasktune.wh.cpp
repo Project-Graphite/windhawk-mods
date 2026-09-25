@@ -42,7 +42,7 @@ TaskTune puts media information and controls directly in the Windows 11 taskbar.
 
 After installing the mod, open **Settings** and choose the player position. The default layout shows album art, title, artist, and Previous/Play/Next controls in the system tray area.
 
-Right-click the player and choose **Open media app** to switch to the app that is playing, or to open it if it has no window.
+Right-click the player and choose **Open media app** to switch to the app that is playing, or to open it if it has no window. When nothing is playing, it starts Spotify instead. Change **App opened from the context menu** to start another app, or clear it to do nothing.
 
 Some media applications expose only part of the Windows media-control API. TaskTune disables or hides unsupported actions according to the **Hide unsupported buttons** setting.
 
@@ -573,6 +573,9 @@ TaskTune runs inside `explorer.exe`. If an experimental layout or another taskba
   - emptyStateHideAlbumArt: true
     $name: Hide the album art area when nothing is playing
     $description: Removes the cover area while idle.
+  - launchAppCommand: "spotify:"
+    $name: App opened from the context menu
+    $description: "Open media app starts this when nothing is playing. Use a URI, executable, full path, or shell:AppsFolder ID. The default opens Spotify."
   - ClickActionSettings:
       - - object: player
           $name: Object
@@ -926,6 +929,7 @@ struct ModSettings {
     std::set<std::wstring> audioAppIgnoredStems;
     int          volumeStep;
     bool         showVolumeInMenu;
+    std::wstring launchAppCommand;
     std::vector<std::wstring> contextMenuItems;
     std::wstring contextMenuRepeatStyle;
     std::wstring contextMenuShuffleStyle;
@@ -1254,6 +1258,7 @@ static void LoadSettings() {
     g_settings.audioAppShowIcon      = Wh_GetIntSetting(L"AudioAppSettings.audioAppShowIcon") != 0;
     g_settings.volumeStep            = Int(L"AudioAppSettings.volumeStep", 1, 50);
     g_settings.showVolumeInMenu      = Wh_GetIntSetting(L"AudioAppSettings.showVolumeInMenu") != 0;
+    g_settings.launchAppCommand         = Str(L"BehaviorSettings.launchAppCommand", L"spotify:");
     g_settings.ignoredProcessMatchers.clear();
     g_settings.audioAppIgnoredStems.clear();
     auto ParseProcessList = [](const std::wstring& list, auto&& fn) {
@@ -2648,6 +2653,7 @@ static std::wstring GetProcessImagePath(DWORD pid);
 static std::wstring GetWindowAppUserModelId(HWND hWnd);
 static void ShowMediaContextMenu(FrameworkElement const& target);
 static void ShowMiniPlayerFlyout(FrameworkElement const& target);
+static void LaunchConfiguredApp(const std::wstring& configuredCommand);
 static void ExecuteMediaAction(const std::wstring& action, FrameworkElement const& sourceElement = nullptr) {
     if (action == L"none") {
         return;
@@ -2708,7 +2714,7 @@ static void ExecuteMediaAction(const std::wstring& action, FrameworkElement cons
         SendMediaCommandAsync(kCmdCycleRepeat);
         DispatchMediaUpdate();
 } else if (action == L"open_app") {
-        SpawnTrackedWorker([]() {
+        SpawnTrackedWorker([launchCommand = g_settings.launchAppCommand]() {
             std::wstring title, appAumid;
             {
                 std::lock_guard<std::mutex> lk(g_mediaMtx);
@@ -2796,6 +2802,8 @@ static void ExecuteMediaAction(const std::wstring& action, FrameworkElement cons
             if (!appAumid.empty()) {
                 std::wstring shellPath = L"shell:AppsFolder\\" + appAumid;
                 ShellExecuteW(nullptr, L"open", shellPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            } else {
+                LaunchConfiguredApp(launchCommand);
             }
         });
     }
@@ -2830,6 +2838,27 @@ static bool HasMediaToControl() {
         hasMedia = g_media.hasMedia;
     }
     return (hasSession && hasMedia) || AudioAppIsCurrentSource();
+}
+static void LaunchConfiguredApp(const std::wstring& configuredCommand) {
+    std::wstring command = TrimCopy(configuredCommand);
+    if (command.empty()) return;
+    SpawnTrackedWorker([command]() {
+        std::wstring target = command;
+        wchar_t expanded[2048]{};
+        if (ExpandEnvironmentStringsW(target.c_str(), expanded, ARRAYSIZE(expanded))) {
+            target = expanded;
+        }
+        auto shellExec = [](const std::wstring& what) -> bool {
+            auto result = ShellExecuteW(nullptr, L"open", what.c_str(),
+                                       nullptr, nullptr, SW_SHOWNORMAL);
+            return reinterpret_cast<INT_PTR>(result) > 32;
+        };
+        if (shellExec(target)) return;
+        bool looksLikePathOrUri = (target.find(L':')  != std::wstring::npos) ||
+                                  (target.find(L'\\') != std::wstring::npos);
+        if (!looksLikePathOrUri && shellExec(target + L":")) return;
+        Wh_Log(L"LaunchConfiguredApp: failed to open '%s'", target.c_str());
+    });
 }
 static bool IsIgnoredMediaApp(const std::wstring& appUserModelId) {
     if (g_settings.ignoredProcessMatchers.empty() || appUserModelId.empty()) return false;
