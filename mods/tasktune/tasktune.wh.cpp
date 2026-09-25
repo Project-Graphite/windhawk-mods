@@ -4607,8 +4607,9 @@ static double GetAvailableScrollTextAreaWidth() {
         auto cols = panelGrid.ColumnDefinitions();
         double used = 0.0;
         for (uint32_t i = 0; i < cols.Size(); i++) {
-            if (i == 1) continue;
-            used += cols.GetAt(i).ActualWidth();
+            auto col = cols.GetAt(i);
+            if (col.Width().GridUnitType == GridUnitType::Star) continue;
+            used += col.ActualWidth();
         }
         return std::max(0.0, total - used - g_settings.textAreaLeftMargin - g_settings.textAreaRightMargin);
     } catch (...) {
