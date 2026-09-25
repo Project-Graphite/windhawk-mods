@@ -8,9 +8,9 @@ A Project Graphite collection of native Windows customizations built with
 ### TaskTune
 
 [TaskTune](mods/tasktune/README.md) embeds customizable media
-controls in the Windows 11 taskbar, including Spotify launch by double-click, per-app volume,
-audio-only app support, session switching, Fluent backgrounds, multi-monitor placement, and an
-optional spectrum visualizer.
+controls in the Windows 11 taskbar, including a context-menu entry that opens the playing app,
+per-app volume, audio-only app support, session switching, Fluent backgrounds, multi-monitor
+placement, and an optional spectrum visualizer.
 
 ### StackSwitch
 

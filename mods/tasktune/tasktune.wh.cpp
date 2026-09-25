@@ -30,7 +30,7 @@ TaskTune puts media information and controls directly in the Windows 11 taskbar.
 - Solid, gradient, Acrylic, and blurred-album-art backgrounds
 - WASAPI spectrum visualizer with multiple shapes, color modes, and EQ presets
 - Automatic hiding when no media exists, playback stays paused for a set time, or an app is full-screen
-- Configurable mouse clicks, double-clicks, middle clicks, and wheel actions
+- Configurable mouse clicks, middle clicks, and wheel actions
 - Accessible control names and tooltips
 
 ## Requirements
@@ -42,7 +42,7 @@ TaskTune puts media information and controls directly in the Windows 11 taskbar.
 
 After installing the mod, open **Settings** and choose the player position. The default layout shows album art, title, artist, and Previous/Play/Next controls in the system tray area.
 
-Double-click anywhere on the player to open Spotify. Change **App opened by double-click** to launch another app.
+Right-click the player and choose **Open media app** to switch to the app that is playing, or to open it if it has no window.
 
 Some media applications expose only part of the Windows media-control API. TaskTune disables or hides unsupported actions according to the **Hide unsupported buttons** setting.
 
@@ -573,9 +573,6 @@ TaskTune runs inside `explorer.exe`. If an experimental layout or another taskba
   - emptyStateHideAlbumArt: true
     $name: Hide the album art area when nothing is playing
     $description: Removes the cover area while idle.
-  - launchAppCommand: "spotify:"
-    $name: App opened by double-click
-    $description: "Use a URI, executable, full path, or shell:AppsFolder ID. The default opens Spotify."
   - ClickActionSettings:
       - - object: player
           $name: Object
@@ -588,11 +585,8 @@ TaskTune runs inside `explorer.exe`. If an experimental layout or another taskba
           $options:
           - none:                Nothing
           - left_click:          Left click
-          - left_double_click:   Left double click
           - right_click:         Right click
-          - right_double_click:  Right double click
           - middle_click:        Middle click
-          - middle_double_click: Middle double click
         - action: open_mini_player
           $name: Action
           $options:
@@ -607,7 +601,6 @@ TaskTune runs inside `explorer.exe`. If an experimental layout or another taskba
           - toggle_shuffle:  Toggle Shuffle
           - toggle_repeat:   Toggle Repeat
           - open_app:        Open media app
-          - open_configured_app: Open configured app
           - open_context_menu: Open context menu
           - open_mini_player: Open player menu
           - toggle_app_mute: Mute/unmute the app
@@ -616,9 +609,6 @@ TaskTune runs inside `explorer.exe`. If an experimental layout or another taskba
       - - object: player
         - click: right_click
         - action: open_context_menu
-      - - object: player
-        - click: left_double_click
-        - action: open_configured_app
     $name: Click Actions
   - MouseWheelActionSettings:
       - - object: player
@@ -802,16 +792,10 @@ struct ModSettings {
     std::wstring albumArtLeftClick;
     std::wstring albumArtRightClick;
     std::wstring albumArtMiddleClick;
-    std::wstring albumArtLeftDoubleClick;
-    std::wstring albumArtRightDoubleClick;
-    std::wstring albumArtMiddleDoubleClick;
     std::wstring albumArtWheelAction;
     std::wstring playerLeftClick;
     std::wstring playerRightClick;
     std::wstring playerMiddleClick;
-    std::wstring playerLeftDoubleClick;
-    std::wstring playerRightDoubleClick;
-    std::wstring playerMiddleDoubleClick;
     std::wstring playerWheelAction;
     bool         mirrorLayout;
     bool         fullHeightHitArea;
@@ -943,7 +927,6 @@ struct ModSettings {
     std::set<std::wstring> audioAppIgnoredStems;
     int          volumeStep;
     bool         showVolumeInMenu;
-    std::wstring launchAppCommand;
     std::vector<std::wstring> contextMenuItems;
     std::wstring contextMenuRepeatStyle;
     std::wstring contextMenuShuffleStyle;
@@ -1213,15 +1196,9 @@ static void LoadSettings() {
     g_settings.albumArtLeftClick         = L"none";
     g_settings.albumArtRightClick        = L"none";
     g_settings.albumArtMiddleClick       = L"none";
-    g_settings.albumArtLeftDoubleClick   = L"none";
-    g_settings.albumArtRightDoubleClick  = L"none";
-    g_settings.albumArtMiddleDoubleClick = L"none";
     g_settings.playerLeftClick           = L"none";
     g_settings.playerRightClick          = L"none";
     g_settings.playerMiddleClick         = L"none";
-    g_settings.playerLeftDoubleClick     = L"open_configured_app";
-    g_settings.playerRightDoubleClick    = L"none";
-    g_settings.playerMiddleDoubleClick   = L"none";
     for (int i = 0; i < 20; i++) {
         std::wstring object = WindhawkUtils::StringSetting::make(L"BehaviorSettings.ClickActionSettings[%d].object", i).get();
         std::wstring click = WindhawkUtils::StringSetting::make(L"BehaviorSettings.ClickActionSettings[%d].click", i).get();
@@ -1236,16 +1213,10 @@ static void LoadSettings() {
             if (click == L"left_click") g_settings.albumArtLeftClick = action;
             else if (click == L"right_click") g_settings.albumArtRightClick = action;
             else if (click == L"middle_click") g_settings.albumArtMiddleClick = action;
-            else if (click == L"left_double_click") g_settings.albumArtLeftDoubleClick = action;
-            else if (click == L"right_double_click") g_settings.albumArtRightDoubleClick = action;
-            else if (click == L"middle_double_click") g_settings.albumArtMiddleDoubleClick = action;
         } else if (object == L"player") {
             if (click == L"left_click") g_settings.playerLeftClick = action;
             else if (click == L"right_click") g_settings.playerRightClick = action;
             else if (click == L"middle_click") g_settings.playerMiddleClick = action;
-            else if (click == L"left_double_click") g_settings.playerLeftDoubleClick = action;
-            else if (click == L"right_double_click") g_settings.playerRightDoubleClick = action;
-            else if (click == L"middle_double_click") g_settings.playerMiddleDoubleClick = action;
         }
     }
     g_settings.albumArtWheelAction = L"none";
@@ -1284,7 +1255,6 @@ static void LoadSettings() {
     g_settings.audioAppShowIcon      = Wh_GetIntSetting(L"AudioAppSettings.audioAppShowIcon") != 0;
     g_settings.volumeStep            = Int(L"AudioAppSettings.volumeStep", 1, 50);
     g_settings.showVolumeInMenu      = Wh_GetIntSetting(L"AudioAppSettings.showVolumeInMenu") != 0;
-    g_settings.launchAppCommand         = Str(L"BehaviorSettings.launchAppCommand", L"spotify:");
     g_settings.ignoredProcessMatchers.clear();
     g_settings.audioAppIgnoredStems.clear();
     auto ParseProcessList = [](const std::wstring& list, auto&& fn) {
@@ -2677,7 +2647,6 @@ static std::wstring GetProcessImagePath(DWORD pid);
 static std::wstring GetWindowAppUserModelId(HWND hWnd);
 static void ShowMediaContextMenu(FrameworkElement const& target);
 static void ShowMiniPlayerFlyout(FrameworkElement const& target);
-static void LaunchConfiguredApp();
 static void ExecuteMediaAction(const std::wstring& action, FrameworkElement const& sourceElement = nullptr) {
     if (action == L"none") {
         return;
@@ -2690,9 +2659,6 @@ static void ExecuteMediaAction(const std::wstring& action, FrameworkElement cons
         if (sourceElement) {
             ShowMiniPlayerFlyout(sourceElement);
         }
-        return;
-    } else if (action == L"open_configured_app") {
-        LaunchConfiguredApp();
         return;
     } else if (action == L"switch_session") {
         SwitchMediaSession();
@@ -2833,72 +2799,6 @@ static void ExecuteMediaAction(const std::wstring& action, FrameworkElement cons
         });
     }
 }
-struct PendingPointerAction {
-    winrt::Windows::UI::Xaml::DispatcherTimer timer{nullptr};
-    std::wstring action;
-    FrameworkElement source{nullptr};
-};
-static std::shared_ptr<PendingPointerAction> MakePendingPointerAction() {
-    auto pending = std::make_shared<PendingPointerAction>();
-    pending->timer = winrt::Windows::UI::Xaml::DispatcherTimer();
-    std::weak_ptr<PendingPointerAction> weakPending = pending;
-    pending->timer.Tick([weakPending](auto const&, auto const&) {
-        auto current = weakPending.lock();
-        if (!current) return;
-        current->timer.Stop();
-        auto action = std::move(current->action);
-        auto source = current->source;
-        current->source = nullptr;
-        if (!g_unloading && !action.empty()) {
-            ExecuteMediaAction(action, source);
-        }
-    });
-    return pending;
-}
-static void CancelPendingPointerAction(const std::shared_ptr<PendingPointerAction>& pending) {
-    pending->timer.Stop();
-    pending->action.clear();
-    pending->source = nullptr;
-}
-static void RunPointerAction(const std::shared_ptr<PendingPointerAction>& pending,
-                             const FrameworkElement& source,
-                             const std::wstring& singleAction,
-                             const std::wstring& doubleAction,
-                             bool isDouble,
-                             bool allowSingle,
-                             bool playerHasDoubleAction = false) {
-    bool waitsForDouble = doubleAction != L"none" || playerHasDoubleAction;
-    if (isDouble && waitsForDouble) {
-        CancelPendingPointerAction(pending);
-        ExecuteMediaAction(doubleAction, source);
-    } else if (allowSingle && singleAction != L"none") {
-        CancelPendingPointerAction(pending);
-        if (!waitsForDouble) {
-            ExecuteMediaAction(singleAction, source);
-            return;
-        }
-        pending->action = singleAction;
-        pending->source = source;
-        pending->timer.Interval(winrt::Windows::Foundation::TimeSpan{
-            std::chrono::milliseconds(GetDoubleClickTime())});
-        pending->timer.Start();
-    }
-}
-static bool HasNamedVisualAncestor(const winrt::Windows::Foundation::IInspectable& source,
-                                   const wchar_t* name) {
-    auto current = source.try_as<DependencyObject>();
-    while (current) {
-        if (auto element = current.try_as<FrameworkElement>()) {
-            if (element.Name() == name) return true;
-        }
-        try {
-            current = VisualTreeHelper::GetParent(current);
-        } catch (...) {
-            return false;
-        }
-    }
-    return false;
-}
 static std::wstring ToLowerCopy(std::wstring value) {
     for (auto& c : value) c = towlower(c);
     return value;
@@ -2929,27 +2829,6 @@ static bool HasMediaToControl() {
         hasMedia = g_media.hasMedia;
     }
     return (hasSession && hasMedia) || AudioAppIsCurrentSource();
-}
-static void LaunchConfiguredApp() {
-    std::wstring command = TrimCopy(g_settings.launchAppCommand);
-    if (command.empty()) return;
-    SpawnTrackedWorker([command]() {
-        std::wstring target = command;
-        wchar_t expanded[2048]{};
-        if (ExpandEnvironmentStringsW(target.c_str(), expanded, ARRAYSIZE(expanded))) {
-            target = expanded;
-        }
-        auto shellExec = [](const std::wstring& what) -> bool {
-            auto result = ShellExecuteW(nullptr, L"open", what.c_str(),
-                                       nullptr, nullptr, SW_SHOWNORMAL);
-            return reinterpret_cast<INT_PTR>(result) > 32;
-        };
-        if (shellExec(target)) return;
-        bool looksLikePathOrUri = (target.find(L':')  != std::wstring::npos) ||
-                                  (target.find(L'\\') != std::wstring::npos);
-        if (!looksLikePathOrUri && shellExec(target + L":")) return;
-        Wh_Log(L"LaunchConfiguredApp: failed to open '%s'", target.c_str());
-    });
 }
 static bool IsIgnoredMediaApp(const std::wstring& appUserModelId) {
     if (g_settings.ignoredProcessMatchers.empty() || appUserModelId.empty()) return false;
@@ -7681,22 +7560,6 @@ static void ShowMiniPlayerFlyout(FrameworkElement const& target) {
     }
 }
 
-struct DoubleClickTracker {
-    ULONGLONG time = 0;
-    winrt::Windows::UI::Input::PointerUpdateKind kind = winrt::Windows::UI::Input::PointerUpdateKind::Other;
-    winrt::Windows::Foundation::Point pos{};
-    bool Register(winrt::Windows::UI::Input::PointerUpdateKind k, winrt::Windows::Foundation::Point p) {
-        ULONGLONG now = GetTickCount64();
-        bool isDouble = k == kind &&
-                        now - time <= GetDoubleClickTime() &&
-                        std::abs(p.X - pos.X) <= GetSystemMetrics(SM_CXDOUBLECLK) / 2.0 &&
-                        std::abs(p.Y - pos.Y) <= GetSystemMetrics(SM_CYDOUBLECLK) / 2.0;
-        time = isDouble ? 0 : now;
-        kind = k;
-        pos = p;
-        return isDouble;
-    }
-};
 static void HandleWheelAction(std::wstring const& action, PointerRoutedEventArgs const& e) {
     if (g_unloading) return;
     if (action == L"none") return;
@@ -7955,9 +7818,7 @@ static Grid BuildPlayerGrid() {
                     }
                     e.Handled(true);
                 });
-                auto artDoubleClick = std::make_shared<DoubleClickTracker>();
-                auto pendingAlbumArtClick = MakePendingPointerAction();
-                artContainer.PointerReleased([artDoubleClick, pendingAlbumArtClick](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) mutable {
+                artContainer.PointerReleased([](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) mutable {
                     bool actuallyHovered = false;
                     if (auto elem = sender.template try_as<UIElement>()) {
                         elem.ReleasePointerCapture(e.Pointer());
@@ -7965,29 +7826,18 @@ static Grid BuildPlayerGrid() {
                     }
                     if (g_unloading) return;
                     if (actuallyHovered) {
-                        auto point = e.GetCurrentPoint(nullptr);
-                        auto kind = point.Properties().PointerUpdateKind();
+                        auto kind = e.GetCurrentPoint(nullptr).Properties().PointerUpdateKind();
                         auto fe = sender.template try_as<FrameworkElement>();
-                        bool isDouble = artDoubleClick->Register(kind, point.Position());
                         using Kind = winrt::Windows::UI::Input::PointerUpdateKind;
                         if (kind == Kind::LeftButtonReleased) {
-                            RunPointerAction(pendingAlbumArtClick, fe, g_settings.albumArtLeftClick,
-                                             g_settings.albumArtLeftDoubleClick, isDouble, true,
-                                             g_settings.playerLeftDoubleClick != L"none");
+                            ExecuteMediaAction(g_settings.albumArtLeftClick, fe);
                         } else if (kind == Kind::RightButtonReleased) {
-                            RunPointerAction(pendingAlbumArtClick, fe, g_settings.albumArtRightClick,
-                                             g_settings.albumArtRightDoubleClick, isDouble, true,
-                                             g_settings.playerRightDoubleClick != L"none");
+                            ExecuteMediaAction(g_settings.albumArtRightClick, fe);
                         } else if (kind == Kind::MiddleButtonReleased) {
-                            RunPointerAction(pendingAlbumArtClick, fe, g_settings.albumArtMiddleClick,
-                                             g_settings.albumArtMiddleDoubleClick, isDouble, true,
-                                             g_settings.playerMiddleDoubleClick != L"none");
+                            ExecuteMediaAction(g_settings.albumArtMiddleClick, fe);
                         }
                     }
                     e.Handled(true);
-                });
-                artContainer.Unloaded([pendingAlbumArtClick](auto const&, auto const&) {
-                    CancelPendingPointerAction(pendingAlbumArtClick);
                 });
                 artContainer.PointerWheelChanged([](auto const&, PointerRoutedEventArgs const& e) {
                     HandleWheelAction(g_settings.albumArtWheelAction, e);
@@ -8260,11 +8110,9 @@ static Grid BuildPlayerGrid() {
         *isPressed = true;
         updatePlayerVisualState();
     });
-    auto wrapperDoubleClick = std::make_shared<DoubleClickTracker>();
-    auto pendingPlayerClick = MakePendingPointerAction();
     wrapper.AddHandler(UIElement::PointerReleasedEvent(), winrt::box_value(
         winrt::Windows::UI::Xaml::Input::PointerEventHandler(
-        [isPressed, isHovered, updatePlayerVisualState, wrapperDoubleClick, pendingPlayerClick](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) mutable {
+        [isPressed, isHovered, updatePlayerVisualState](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) mutable {
         bool wasHandled = e.Handled();
         *isPressed = false;
         bool actuallyHovered = false;
@@ -8274,31 +8122,17 @@ static Grid BuildPlayerGrid() {
         }
         *isHovered = actuallyHovered;
         updatePlayerVisualState();
-        if (g_unloading) return;
-        bool handledByAlbumArt =
-            wasHandled && HasNamedVisualAncestor(e.OriginalSource(), kArtContainerName);
-        if (wasHandled && !handledByAlbumArt) return;
+        if (g_unloading || wasHandled) return;
         if (actuallyHovered) {
-            auto point = e.GetCurrentPoint(nullptr);
-            auto kind = point.Properties().PointerUpdateKind();
+            auto kind = e.GetCurrentPoint(nullptr).Properties().PointerUpdateKind();
             auto fe = sender.template try_as<FrameworkElement>();
-            bool isDouble = wrapperDoubleClick->Register(kind, point.Position());
             using Kind = winrt::Windows::UI::Input::PointerUpdateKind;
             if (kind == Kind::LeftButtonReleased) {
-                if (!handledByAlbumArt || g_settings.albumArtLeftDoubleClick == L"none") {
-                    RunPointerAction(pendingPlayerClick, fe, g_settings.playerLeftClick,
-                                     g_settings.playerLeftDoubleClick, isDouble, !wasHandled);
-                }
+                ExecuteMediaAction(g_settings.playerLeftClick, fe);
             } else if (kind == Kind::RightButtonReleased) {
-                if (!handledByAlbumArt || g_settings.albumArtRightDoubleClick == L"none") {
-                    RunPointerAction(pendingPlayerClick, fe, g_settings.playerRightClick,
-                                     g_settings.playerRightDoubleClick, isDouble, !wasHandled);
-                }
+                ExecuteMediaAction(g_settings.playerRightClick, fe);
             } else if (kind == Kind::MiddleButtonReleased) {
-                if (!handledByAlbumArt || g_settings.albumArtMiddleDoubleClick == L"none") {
-                    RunPointerAction(pendingPlayerClick, fe, g_settings.playerMiddleClick,
-                                     g_settings.playerMiddleDoubleClick, isDouble, !wasHandled);
-                }
+                ExecuteMediaAction(g_settings.playerMiddleClick, fe);
             }
         }
     })), true);
@@ -8306,9 +8140,6 @@ static Grid BuildPlayerGrid() {
         *isPressed = false;
         *isHovered = false;
         updatePlayerVisualState();
-    });
-    wrapper.Unloaded([pendingPlayerClick](auto const&, auto const&) {
-        CancelPendingPointerAction(pendingPlayerClick);
     });
     wrapper.PointerCaptureLost([isPressed, isHovered, updatePlayerVisualState](auto const& sender, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) mutable {
         *isPressed = false;
