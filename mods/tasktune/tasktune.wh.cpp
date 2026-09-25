@@ -600,7 +600,6 @@ TaskTune runs inside `explorer.exe`. If an experimental layout or another taskba
           - forward:         Forward
           - toggle_shuffle:  Toggle Shuffle
           - toggle_repeat:   Toggle Repeat
-          - open_app:        Open media app
           - open_context_menu: Open context menu
           - open_mini_player: Open player menu
           - toggle_app_mute: Mute/unmute the app
@@ -1206,7 +1205,7 @@ static void LoadSettings() {
         if (object.empty() || click.empty() || action.empty()) {
             break;
         }
-        if (object == L"none" || click == L"none") {
+        if (object == L"none" || click == L"none" || action == L"open_app") {
             continue;
         }
         if (object == L"album_art") {
