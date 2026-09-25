@@ -1545,7 +1545,9 @@ static bool g_vizPaletteColorsDirty = true;
 [[clang::no_destroy]] static GlobalSystemMediaTransportControlsSessionManager g_sessionMgr     = nullptr;
 [[clang::no_destroy]] static GlobalSystemMediaTransportControlsSession        g_currentSession = nullptr;
 static std::mutex  g_sessionMtx;
-static std::mutex  g_attachMtx;
+static std::atomic<bool> g_attachInProgress{false};
+static bool g_attachRequested = false;
+[[clang::no_destroy]] static GlobalSystemMediaTransportControlsSession g_requestedSession = nullptr;
 static bool g_userSwitchedSession = false;
 static std::atomic<bool> g_forceSessionRefresh{false};
 static std::atomic<int> g_sessionCount{0};
@@ -4218,7 +4220,7 @@ static GlobalSystemMediaTransportControlsSession PickBestSession() {
         return nullptr;
     }
 }
-static void AttachToSession(GlobalSystemMediaTransportControlsSession session) {
+static void RunSessionAttach(GlobalSystemMediaTransportControlsSession session) {
     if (!session) {
         DetachCurrentSession();
         {
@@ -4233,7 +4235,6 @@ static void AttachToSession(GlobalSystemMediaTransportControlsSession session) {
         return;
     }
     {
-        std::lock_guard<std::mutex> attachLock(g_attachMtx);
         if (g_unloading) return;
         GlobalSystemMediaTransportControlsSession current{nullptr};
         bool handlersAttached = false;
@@ -4279,6 +4280,32 @@ static void AttachToSession(GlobalSystemMediaTransportControlsSession session) {
 fetch:
     FetchMediaPropertiesAsync();
     FetchPlaybackInfoAsync();
+}
+static void AttachToSession(GlobalSystemMediaTransportControlsSession session) {
+    GlobalSystemMediaTransportControlsSession replaced{nullptr};
+    {
+        std::lock_guard<std::mutex> lk(g_sessionMtx);
+        replaced = std::exchange(g_requestedSession, session);
+        g_attachRequested = true;
+    }
+    while (!g_attachInProgress.exchange(true)) {
+        GlobalSystemMediaTransportControlsSession next{nullptr};
+        bool requested = false;
+        {
+            std::lock_guard<std::mutex> lk(g_sessionMtx);
+            requested = std::exchange(g_attachRequested, false);
+            next      = std::exchange(g_requestedSession, nullptr);
+        }
+        try {
+            if (requested) RunSessionAttach(next);
+        } catch (...) {
+            g_attachInProgress = false;
+            throw;
+        }
+        g_attachInProgress = false;
+        std::lock_guard<std::mutex> lk(g_sessionMtx);
+        if (!g_attachRequested) break;
+    }
 }
 static void OnSessionsChanged() {
     if (g_unloading) return;
@@ -4333,10 +4360,9 @@ static DWORD WINAPI MediaThreadProc(void*) {
         WaitForSingleObject(g_mediaStopEvent, INFINITE);
         try { if (g_evSessionsChanged.value) g_sessionMgr.SessionsChanged(g_evSessionsChanged); } catch (...) { Wh_Log(L"MediaThreadProc: Failed to unregister SessionsChanged event"); }
         try { if (g_evCurrentChanged.value)  g_sessionMgr.CurrentSessionChanged(g_evCurrentChanged); } catch (...) { Wh_Log(L"MediaThreadProc: Failed to unregister CurrentSessionChanged event"); }
-        {
-            std::lock_guard<std::mutex> attachLock(g_attachMtx);
-            DetachCurrentSession();
-        }
+        while (g_attachInProgress.exchange(true)) Sleep(10);
+        DetachCurrentSession();
+        g_attachInProgress = false;
         {
             GlobalSystemMediaTransportControlsSessionManager released{nullptr};
             {
