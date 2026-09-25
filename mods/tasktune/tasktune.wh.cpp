@@ -9801,12 +9801,13 @@ void Wh_ModSettingsChanged() {
     StopAudioAppThread();
     StopMediaThread();
     WaitForTrackedWorkers();
-    LoadSettings();
     HWND hWnd = FindCurrentProcessTaskbarWnd();
     if (!hWnd) hWnd = g_taskbarWnd;
     if (hWnd) {
         g_taskbarWnd = hWnd;
         bool ok = RunFromWindowThread(hWnd, [](void*) {
+            LoadSettings();
+            if (HWND target = FindCurrentProcessTaskbarWnd()) g_taskbarWnd = target;
             try {
                 RemovePlayerGrid();
                 if (!g_unloading) {
@@ -9823,7 +9824,10 @@ void Wh_ModSettingsChanged() {
         }, nullptr);
         if (!ok) {
             Wh_Log(L"Wh_ModSettingsChanged: RunFromWindowThread failed");
+            LoadSettings();
         }
+    } else {
+        LoadSettings();
     }
     g_applyingSettings = false;
     StartMediaThread();
