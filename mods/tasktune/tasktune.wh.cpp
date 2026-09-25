@@ -4246,13 +4246,20 @@ static void FetchPlaybackInfoAsync() {
     });
 }
 static void DetachCurrentSession() {
-    std::lock_guard<std::mutex> lk(g_sessionMtx);
-    if (!g_currentSession) return;
+    GlobalSystemMediaTransportControlsSession session{nullptr};
+    winrt::event_token mediaPropsToken{};
+    winrt::event_token playbackToken{};
+    {
+        std::lock_guard<std::mutex> lk(g_sessionMtx);
+        if (!g_currentSession) return;
+        session         = std::exchange(g_currentSession, nullptr);
+        mediaPropsToken = std::exchange(g_evMediaProps, {});
+        playbackToken   = std::exchange(g_evPlayback, {});
+    }
     try {
-        if (g_evMediaProps.value) { g_currentSession.MediaPropertiesChanged(g_evMediaProps); g_evMediaProps = {}; }
-        if (g_evPlayback.value)   { g_currentSession.PlaybackInfoChanged(g_evPlayback); g_evPlayback = {}; }
+        if (mediaPropsToken.value) session.MediaPropertiesChanged(mediaPropsToken);
+        if (playbackToken.value)   session.PlaybackInfoChanged(playbackToken);
     } catch (...) {}
-    g_currentSession = nullptr;
     g_repeatMode = RepeatMode::Off;
     g_shuffleEnabled = false;
     {
@@ -4349,10 +4356,14 @@ static void AttachToSession(GlobalSystemMediaTransportControlsSession session) {
     {
         std::lock_guard<std::mutex> attachLock(g_attachMtx);
         if (g_unloading) return;
+        GlobalSystemMediaTransportControlsSession current{nullptr};
+        bool handlersAttached = false;
         {
             std::lock_guard<std::mutex> lk(g_sessionMtx);
-            if (g_currentSession == session && g_evMediaProps.value && g_evPlayback.value) goto fetch;
+            current          = g_currentSession;
+            handlersAttached = g_evMediaProps.value && g_evPlayback.value;
         }
+        if (handlersAttached && current == session) goto fetch;
         DetachCurrentSession();
         {
             std::lock_guard<std::mutex> lk(g_mediaMtx);
@@ -4366,21 +4377,24 @@ static void AttachToSession(GlobalSystemMediaTransportControlsSession session) {
             g_suspectArtHash  = 0;
             g_artDelayPending = false;
         }
+        winrt::event_token mediaPropsToken{};
+        winrt::event_token playbackToken{};
+        try {
+            mediaPropsToken = session.MediaPropertiesChanged([](auto const&, auto const&) {
+                if (!g_unloading) FetchMediaPropertiesAsync();
+            });
+            playbackToken = session.PlaybackInfoChanged([](auto const&, auto const&) {
+                if (!g_unloading) FetchPlaybackInfoAsync();
+            });
+        } catch (...) {
+            Wh_Log(L"AttachToSession: Failed to attach event handlers");
+            return;
+        }
         {
             std::lock_guard<std::mutex> lk(g_sessionMtx);
             g_currentSession = session;
-            try {
-                g_evMediaProps = g_currentSession.MediaPropertiesChanged([](auto const&, auto const&) {
-                    if (!g_unloading) FetchMediaPropertiesAsync();
-                });
-                g_evPlayback = g_currentSession.PlaybackInfoChanged([](auto const&, auto const&) {
-                    if (!g_unloading) FetchPlaybackInfoAsync();
-                });
-            } catch (...) {
-                Wh_Log(L"AttachToSession: Failed to attach event handlers");
-                g_currentSession = nullptr;
-                return;
-            }
+            g_evMediaProps   = mediaPropsToken;
+            g_evPlayback     = playbackToken;
         }
     }
 fetch:
@@ -4420,8 +4434,9 @@ static DWORD WINAPI MediaThreadProc(void*) {
             if (WaitForSingleObject(g_mediaStopEvent, 50) == WAIT_OBJECT_0) goto done;
         }
         {
+            auto mgr = op.GetResults();
             std::lock_guard<std::mutex> lk(g_sessionMtx);
-            g_sessionMgr = op.GetResults();
+            g_sessionMgr = mgr;
         }
         g_evSessionsChanged = g_sessionMgr.SessionsChanged([](auto const&, auto const&) {
             OnSessionsChanged();
@@ -4444,8 +4459,11 @@ static DWORD WINAPI MediaThreadProc(void*) {
             DetachCurrentSession();
         }
         {
-            std::lock_guard<std::mutex> lk(g_sessionMtx);
-            g_sessionMgr = nullptr;
+            GlobalSystemMediaTransportControlsSessionManager released{nullptr};
+            {
+                std::lock_guard<std::mutex> lk(g_sessionMtx);
+                released = std::exchange(g_sessionMgr, nullptr);
+            }
         }
     done:
         winrt::uninit_apartment();
