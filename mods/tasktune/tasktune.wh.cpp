@@ -2,7 +2,7 @@
 // @id              tasktune
 // @name            TaskTune
 // @description     Customizable media controls, per-app volume, audio-only app support, and a spectrum visualizer for the Windows 11 taskbar.
-// @version         2.3.1
+// @version         2.4.0
 // @author          AmrMsCLL
 // @github          https://github.com/AmrMsCLL
 // @license         MIT
