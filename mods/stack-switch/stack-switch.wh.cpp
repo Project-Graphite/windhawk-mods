@@ -9,7 +9,7 @@
 // @homepage        https://github.com/Project-Graphite/windhawk-mods
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -ldwmapi -lgdi32 -lgdiplus -lole32 -lshell32 -lshlwapi -luser32 -ladvapi32
+// @compilerOptions -lgdi32 -lgdiplus -lole32 -lshell32 -lshlwapi -luser32 -ladvapi32
 // ==/WindhawkMod==
 
 // ==WindhawkModReadme==
@@ -24,27 +24,97 @@ A button on the taskbar that opens a launcher panel. Tick what you want, press
 ## Quick start
 
 1. Set **Root folder** to wherever your projects live, for example `C:\Git`.
-2. Add one **Stack item** per thing you want to open.
+2. Open the panel with the taskbar button or `Ctrl+Alt+S`, press **+** at the bottom
+   and pick a running app, a file or a folder. Or add a **Stack item** here in the
+   settings - both kinds show up in the same list.
 3. Give the items you use together the same **Profile** name, and list that name
    in **Profiles** so it gets a chip in the panel.
-4. Press the taskbar button, or `Ctrl+Alt+S`.
 
 ---
 
+## Two places to keep items
+
+**In the panel.** Press **+** in the panel footer:
+
+| Choice | Adds |
+| --- | --- |
+| **Running app** | an app that has a window open right now. Store apps are saved by their app ID, so the item keeps working after the app updates itself |
+| **App or file...** | an `.exe`, a shortcut or any other file |
+| **Folder...** | a folder in File Explorer |
+| **URL or command...** | a blank item, for a URL, a terminal command or anything else |
+
+Each choice opens a small editor with the same fields as a settings item. Right click
+a panel item for **Edit...** and **Remove**. Panel items are stored by the mod
+itself, so they never make the settings page longer.
+
+**In the settings.** Add a **Stack item** here. Right click one in the panel and
+choose **Edit in Windhawk** to come back to this page.
+
+Both kinds are listed, grouped, ordered, toggled and launched the same way.
+
 ## How an item's settings are laid out
 
-Windhawk draws the settings page itself and has no collapsing, so each item keeps its
-six everyday fields at the top - **Name**, **On by default**, **Type**, **Target**,
-**Group**, **Profiles** - and files the rest under three sub-headings:
+Every item, in the settings or in the panel editor, has the same fields in this
+order:
 
-| Sub-heading | Holds |
+| Field | What it is |
 | --- | --- |
-| **Launch options** | Arguments, working folder, shell, keep terminal open, run as administrator, window state |
-| **Timing and safety** | Skip if already running, process name, delay, wait for exit, ask before launching |
-| **Appearance** | Subtitle, icon |
+| **Name** | the label in the panel. An empty name ends the settings list |
+| **On by default** | the toggle's starting state, and what the `All` chip resets it to |
+| **Type** | how **Target** is read - see *Item types* below |
+| **Target** | a path, a URL, or the command line for `terminal` and `command` items |
+| **Arguments** | extra arguments added after **Target** |
+| **Working folder** | where it starts. Empty uses the app's own folder, or **Root folder** for `terminal` and `command` items |
+| **Group** | the heading it sits under. Empty lists it without a heading |
+| **Profiles** | comma separated profile names it belongs to |
+| **Options** | everything else, on one line - see *Options* below |
 
-Every one of those has a sensible default, so a normal item only needs the six at the
-top.
+Only **Name**, **Type** and **Target** are needed. Everything else can stay empty.
+
+## Options
+
+**Options** holds the settings most items never need, so each item stays short.
+Leave it empty and the item uses every default.
+
+The rules:
+
+* separate options with commas
+* the order does not matter - `wait, admin` and `admin, wait` are the same
+* if an option appears twice, the last one wins
+* upper and lower case are the same
+* wrap a value in double quotes when it contains a comma: `subtitle="Chat, calls"`
+* anything unrecognised is ignored
+
+| Option | Does | Without it |
+| --- | --- | --- |
+| `admin` | runs the item as administrator. It then cannot be closed again from StackSwitch | runs normally |
+| `minimized` / `maximized` / `hidden` | how the window comes up. See *Window state* | normal window |
+| `wait` | holds the rest of the launch until this item exits | carries on straight away |
+| `duplicate` | launches it even when its process is already running | skipped if already running |
+| `delay=2000` or `delay=2s` | waits this long before starting this item | no extra wait |
+| `process=node.exe` | the process that shows the running dot and gets closed by **Close** | worked out for `.exe` and VS Code items only |
+| `shell=pwsh` | the shell for `terminal` and `command` items: `powershell`, `pwsh`, `cmd`, `gitbash` or `wsl` | Windows PowerShell |
+| `subtitle=text` | the second line under the name | shows **Target** |
+| `icon=E768` | a Segoe Fluent Icons code, a single emoji, or a path to an `.exe` or `.ico` | the target's own icon |
+
+### Example
+
+A dev server that starts two seconds after the database, in its own minimized
+terminal, and that **Close** can find again:
+
+| Field | Value |
+| --- | --- |
+| **Name** | `API dev server` |
+| **Type** | `terminal` |
+| **Target** | `npm run dev` |
+| **Working folder** | `{root}\api` |
+| **Group** | `Backend` |
+| **Profiles** | `daily, full` |
+| **Options** | `minimized, delay=2s, process=node.exe, shell=pwsh, subtitle="Port 3000"` |
+
+Read left to right, **Options** says: minimize its window, wait two seconds before
+starting it, treat `node.exe` as its process, run it in PowerShell 7, and show
+`Port 3000` under the name.
 
 ## Item types
 
@@ -58,7 +128,7 @@ top.
 | `command` | A command with no window at all | `wsl --shutdown` |
 
 **Target** is read according to the type. For `terminal` and `command` it is the
-command line itself, run through the shell picked in **Shell**.
+command line itself, run through the shell picked with `shell=` in **Options**.
 
 A PowerShell or pwsh command is handed over base64-encoded, so semicolons, pipes,
 quotes and braces all survive exactly as written - a one-liner like
@@ -119,10 +189,9 @@ value. Example: an item with `daily, full` comes on for the `daily` chip and the
 
 ## The panel, button by button
 
-**Taskbar button** - left or right click opens and closes the panel. Its look
-comes from **Button style**, **Button icon** and **Button label**; where it sits
-comes from **Button position**, **Button offset**, **Button percent** and **Button
-alignment**.
+**Taskbar button** - left or right click opens and closes the panel. Its label is
+**Title**, **Button style** picks the icon, the label or both, and **Button
+position** picks where it sits.
 
 **Gear, top right** - opens Windhawk so you can edit these settings.
 
@@ -146,7 +215,7 @@ until the day you want it.
 **Green dot** - that item's process is running right now.
 
 **Footer icons, left to right** - select all, select none, refresh the running
-dots.
+dots, and **+** to add an item.
 
 **Close N** - closes the selected items that are currently running, in reverse
 order. The number is how many are up.
@@ -179,14 +248,16 @@ are selected.
 
 Items launch top to bottom in the order they are listed.
 
-* **Delay before launch** waits before one specific item.
-* **Stagger** waits between every pair of items.
-* **Wait for it to exit** holds the rest of the sequence until that item closes.
+* `delay=` in **Options** waits before one specific item.
+* A short 400 ms pause separates every pair of items.
+* `wait` in **Options** holds the rest of the sequence until that item closes.
+  A terminal item set to wait closes its window when the command finishes, so the
+  wait can end; every other terminal item stays open.
 
 Example: put Docker Desktop at the top, then give the `docker compose up` item
-below it a 20000 ms delay so the daemon is ready before compose runs. Use **Wait
-for it to exit** only for steps that genuinely finish, such as a migration - a
-normal app would stall the launch forever.
+below it `delay=20s` so the daemon is ready before compose runs. Use `wait` only
+for steps that genuinely finish, such as a migration - a normal app would stall
+the launch forever.
 
 ---
 
@@ -195,16 +266,17 @@ normal app would stall the launch forever.
 Close works on exactly the same selection as Launch, in reverse order, so the
 things everything else depends on go down last.
 
-It asks each item's windows to close, waits out **Seconds to wait for each item to
-close**, and only terminates a process when **Force close** is on. Force close is
-off by default because it loses unsaved work.
+It asks each item's windows to close, waits up to 15 seconds, and only terminates
+a process when **Force close** is on. Force close is off by default because it
+loses unsaved work.
 
 An item needs a process before it can be closed:
 
 * `vscode` items, and `app` items whose target is an `.exe`, resolve one on their
-  own. An `app` item pointing at a shortcut or document needs **Process name**.
-* `terminal` and `command` items need **Process name** filled in. A terminal
-  running a dev server is usually `node.exe`, for instance, not the shell.
+  own. An `app` item pointing at a shortcut, a document or a Store app ID needs
+  `process=` in **Options**. **Running app** fills that in for you.
+* `terminal` and `command` items need `process=` too. A terminal running a dev
+  server is usually `node.exe`, for instance, not the shell.
 * An item started as administrator cannot be closed from a normal Explorer, and
   a console window has nothing to close politely - that one needs **Force close**.
 
@@ -212,8 +284,7 @@ An item needs a process before it can be closed:
 
 ## Placement on the taskbar
 
-**Button position** picks what the button anchors to, and **Button offset** nudges
-it from there in pixels. Negative offsets move the other way.
+**Button position** picks what the button anchors to.
 
 | Position | Anchors to |
 | --- | --- |
@@ -224,25 +295,21 @@ it from there in pixels. Negative offsets move the other way.
 | Right of the tray | just inside the tray area |
 | Left of the task buttons | just before the pinned and running icons |
 | Right of the task buttons | just after them |
-| Percentage across | wherever **Button percent** says |
 
 The tray and task button anchors read the taskbar's own layout. If a future
-Windows build stops reporting it, they fall back to the nearest edge, and the
-percentage anchor always works.
-
-**Button alignment** and **Button vertical offset** control the height within the
-taskbar.
+Windows build stops reporting it, they fall back to the nearest edge.
 
 ---
 
 ## Window state, and where it does not apply
 
-**Window state** works as written for `app`, `vscode`, `folder` and `url` items.
+`minimized`, `maximized` and `hidden` work as written for `app`, `vscode`,
+`folder` and `url` items.
 
 For a `terminal` item it is not that simple. Windows hands every new console to
 whichever terminal is set as the default - Windows Terminal, unless you changed it -
-and that host ignores the requested state entirely. So **Minimized** and
-**Maximized** on a terminal item are applied after the window appears, which has
+and that host ignores the requested state entirely. So `minimized` and
+`maximized` on a terminal item are applied after the window appears, which has
 two consequences:
 
 * the item gets its **own** Windows Terminal window rather than joining the shared
@@ -250,39 +317,36 @@ two consequences:
 * the state is applied a moment after launch, so the window may flicker into view
   first
 
-**Wait for it to exit** also skips `wt.exe`, which exits the instant it hands the
-tab over. The shell is started directly so the wait tracks the shell itself; it can
-still open in Windows Terminal if that is your default terminal, and **Minimized**
-or **Maximized** is then not applied.
+`wait` also skips `wt.exe`, which exits the instant it hands the tab over. The
+shell is started directly so the wait tracks the shell itself; it can still open in
+Windows Terminal if that is your default terminal, and `minimized` or `maximized`
+is then not applied.
 
 ---
 
 ## Sign-in
 
-**Profile to run at sign-in** brings a profile up shortly after you log in. It only
-fires within three minutes of Explorer starting, so editing settings never
-relaunches anything, and **Only once per day** stops a later sign-in or a mod
-reload doing it twice.
+**Profile to run at sign-in** brings a profile up 15 seconds after you log in. It
+only fires within three minutes of Explorer starting, so editing settings never
+relaunches anything, and only once per day, so a later sign-in or a mod reload
+does not do it twice.
 
 ---
 
 ## Appearance
 
 The dark panel uses the Project Graphite colours, with a light variant, and picks
-between them from your Windows app theme unless **Theme** says otherwise.
+between them from your Windows app theme. Text is Segoe UI at 13px with a VS Code
+blue accent, the same as VS Code's interface.
 
-* **Accent colour** - empty uses VS Code blue, `system` uses your Windows accent,
-  or give it a hex colour such as `#4C8DFF`.
-* **Font** and **Text size** - the panel defaults to Segoe UI at 13px, the same as
-  VS Code's interface.
-* **Animation** - off, subtle, normal or lively.
-* **Compact rows** - drops the subtitle line and fits about a third more items.
+**Compact rows** drops the subtitle line and fits about a third more items.
 
 ---
 
 ## Icons
 
-Leave **Icon** empty and the item uses its target's real shell icon. Otherwise:
+Without `icon=` in **Options** the item uses its target's real shell icon.
+Otherwise `icon=` takes:
 
 * a Segoe Fluent Icons code point, four hex digits, such as `E768`
 * a single emoji
@@ -292,20 +356,20 @@ Leave **Icon** empty and the item uses its target's real shell icon. Otherwise:
 
 // ==WindhawkModSettings==
 /*
-- rootPath: C:\Git
+- rootPath: '%USERPROFILE%'
   $name: Root folder
   $description: The folder {root} expands to. See Details for the full reference.
-- profiles: [daily, work, full]
+- profiles: [""]
   $name: Profiles
   $description: Profile names to show as chips at the top of the panel.
 - items:
-  - - name: My project
+  - - name: New item
       $name: Name
-      $description: Label shown in the panel.
+      $description: Label shown in the panel. An empty name ends the list.
     - enabled: true
       $name: On by default
       $description: Starting state of the toggle, and what the All chip resets it to.
-    - type: vscode
+    - type: app
       $name: Type
       $description: How Target is interpreted.
       $options:
@@ -315,103 +379,37 @@ Leave **Icon** empty and the item uses its target's real shell icon. Otherwise:
       - url: URL in the default browser
       - terminal: Command in a terminal window
       - command: Command with no window
-    - target: '{root}\my-project'
+    - target: ""
       $name: Target
       $description: A path, a URL, or a command line for the terminal and command types.
-    - group: Editors
+    - args: ""
+      $name: Arguments
+      $description: Extra arguments appended after Target.
+    - workingDir: ""
+      $name: Working folder
+      $description: Empty uses the app's own folder, or Root folder for terminal and command items.
+    - group: ""
       $name: Group
-      $description: Heading to file this item under.
-    - profiles: daily, full
+      $description: Heading to file this item under. Empty lists it without a heading.
+    - profiles: ""
       $name: Profiles
       $description: Comma separated profile names this item belongs to.
-    - launch:
-      - args: ""
-        $name: Arguments
-        $description: Extra arguments appended after Target.
-      - workingDir: '{root}'
-        $name: Working folder
-        $description: Folder the item starts in.
-      - shell: powershell
-        $name: Shell
-        $description: Shell used by the terminal and command types.
-        $options:
-        - powershell: Windows PowerShell
-        - pwsh: PowerShell 7
-        - cmd: Command Prompt
-        - gitbash: Git Bash
-        - wsl: WSL
-      - keepOpen: true
-        $name: Keep the terminal open
-        $description: Leave the window up after the command finishes.
-      - elevated: false
-        $name: Run as administrator
-        $description: Start it elevated. Elevated items cannot be closed again.
-      - windowState: normal
-        $name: Window state
-        $description: How the window comes up.
-        $options:
-        - normal: Normal
-        - minimized: Minimized
-        - maximized: Maximized
-        - hidden: Hidden
-      $name: Launch options
-      $description: How this item starts. The defaults suit most items.
-    - control:
-      - singleInstance: true
-        $name: Skip if already running
-        $description: Skip this item during a launch when its process is already up.
-      - processName: ""
-        $name: Process name
-        $description: Executable used for the running dot and for closing. Empty auto-detects for .exe and VS Code items.
-      - delayMs: 0
-        $name: Delay before launch (ms)
-        $description: Extra wait before starting this one item.
-      - waitForExit: false
-        $name: Wait for it to exit
-        $description: Hold the rest of the sequence until this item closes.
-      - confirm: false
-        $name: Ask before launching
-        $description: Prompt before this one item runs.
-      $name: Timing and safety
-      $description: Where this item sits in a sequence, and how it is found and closed.
-    - display:
-      - description: ""
-        $name: Subtitle
-        $description: Optional second line. Empty shows the target instead.
-      - icon: ""
-        $name: Icon
-        $description: Empty uses the target's own icon. Or a glyph code, an emoji, or an icon file.
-      $name: Appearance
-      $description: How this item looks in the panel.
+    - options: ""
+      $name: Options
+      $description: >-
+        Optional extras, comma separated, in any order: admin, minimized, maximized,
+        hidden, wait, duplicate, delay=2s, process=node.exe, shell=pwsh, subtitle=text,
+        icon=E768. Example: minimized, delay=2s, process=node.exe. Details lists them all.
   $name: Stack items
-  $description: Everything the launcher can start. An empty name ends the list.
-- panelTitle: Stack
-  $name: Panel title
-  $description: Heading shown at the top of the panel.
-- staggerMs: 400
-  $name: Stagger between items (ms)
-  $description: Pause between every pair of items during a launch.
-- terminalHost: auto
-  $name: Terminal host
-  $description: Where terminal items open. Auto groups them into one Windows Terminal window.
-  $options:
-  - auto: Auto
-  - shell: Start the shell directly
-- wtWindowId: _stack
-  $name: Windows Terminal window
-  $description: Window name the tabs go to. Use 0 for the last used, or new each time.
-- vscodePath: ""
-  $name: VS Code path
-  $description: Empty auto-detects the usual install locations.
-- gitBashPath: ""
-  $name: Git Bash path
-  $description: Empty auto-detects. Point it at Git's bash.exe.
+  $description: >-
+    Everything the launcher can start. Items added with the panel's + button are kept
+    in the panel instead. An empty name ends the list.
+- panelTitle: Workspace
+  $name: Title
+  $description: Shown on the taskbar button and at the top of the panel.
 - hotkey: Ctrl+Alt+S
   $name: Hotkey
   $description: Opens the panel from anywhere. Empty for none.
-- showTaskbarButton: true
-  $name: Show the taskbar button
-  $description: Turn off to drive the launcher from the hotkey or tray icon only.
 - buttonPosition: beforeTray
   $name: Button position
   $description: What the button anchors to. See Details.
@@ -423,23 +421,6 @@ Leave **Icon** empty and the item uses its target's real shell icon. Otherwise:
   - afterTray: Right of the tray
   - beforeTaskList: Left of the task buttons
   - afterTaskList: Right of the task buttons
-  - percent: Percentage across the taskbar
-- buttonOffset: 8
-  $name: Button offset (px)
-  $description: Pixels from the anchor. Negative moves the other way.
-- buttonPercent: 50
-  $name: Button percent
-  $description: Position across the taskbar, for the percentage anchor.
-- buttonAlign: middle
-  $name: Button alignment
-  $description: Vertical placement within the taskbar.
-  $options:
-  - top: Top
-  - middle: Middle
-  - bottom: Bottom
-- buttonOffsetY: 0
-  $name: Button vertical offset (px)
-  $description: Nudge up or down from that alignment.
 - buttonStyle: glyphLabel
   $name: Button style
   $description: Whether the button shows its icon, its label, or both.
@@ -447,81 +428,24 @@ Leave **Icon** empty and the item uses its target's real shell icon. Otherwise:
   - glyphLabel: Icon and label
   - glyph: Icon only
   - label: Label only
-- buttonGlyph: E768
-  $name: Button icon
-  $description: A Segoe Fluent Icons code point, an emoji, or short text.
-- buttonLabel: Stack
-  $name: Button label
-  $description: Text shown next to the icon.
 - showTrayIcon: false
   $name: Also show a tray icon
   $description: Adds a notification area icon with a launch menu.
 - showOnSecondaryTaskbars: false
   $name: Show on secondary taskbars
   $description: Put a button on other monitors' taskbars too.
-- theme: auto
-  $name: Theme
-  $description: Project Graphite dark colours, or a light variant.
-  $options:
-  - auto: Follow Windows
-  - dark: Dark
-  - light: Light
-- accentColor: ""
-  $name: Accent colour
-  $description: Empty uses VS Code blue. Use system for the Windows accent, or a hex colour.
-- fontFamily: Segoe UI
-  $name: Font
-  $description: UI font for the panel and the taskbar button.
-- fontSize: 13
-  $name: Text size (px)
-  $description: Base text size. Everything else scales from it.
-- animation: normal
-  $name: Animation
-  $description: Speed of the panel, hover, toggle and collapse animations.
-  $options:
-  - off: Off
-  - subtle: Subtle
-  - normal: Normal
-  - lively: Lively
-- panelWidth: 400
-  $name: Panel width (px)
-  $description: Raise it if long names are being cut off.
-- panelMaxHeight: 640
-  $name: Panel maximum height (px)
-  $description: The panel shrinks to fit and scrolls past this.
 - compactRows: false
   $name: Compact rows
   $description: Drop the subtitle line and fit about a third more items.
-- showStatusDots: true
-  $name: Show running indicators
-  $description: Green dot on items whose process is up.
-- closeAfterLaunch: true
-  $name: Close the panel after launching
-  $description: Hide the panel as soon as a launch or close starts.
-- confirmBeforeLaunchAll: false
-  $name: Confirm before launching a batch
-  $description: Ask before the Launch button runs the whole selection.
-- showCloseButton: true
-  $name: Show the Close button
-  $description: Closes the same selection Launch would start, in reverse.
 - confirmBeforeClose: true
   $name: Confirm before closing
   $description: Ask before the Close button runs.
-- closeGraceSeconds: 15
-  $name: Seconds to wait for each item to close
-  $description: How long to give each item to shut down before moving on.
 - forceCloseAfterGrace: false
   $name: Force close if it does not shut down
   $description: Terminates the process afterwards. Loses unsaved work.
 - autoRunProfile: ""
   $name: Profile to run at sign-in
   $description: Runs this profile after Explorer starts. Empty disables it.
-- autoRunDelaySeconds: 15
-  $name: Sign-in delay (seconds)
-  $description: How long to wait after Explorer starts.
-- autoRunOncePerDay: true
-  $name: Only once per day
-  $description: Stops a second reboot starting everything again.
 */
 // ==/WindhawkModSettings==
 
@@ -537,8 +461,9 @@ using std::min;
 
 #include <gdiplus.h>
 
-#include <dwmapi.h>
+#include <appmodel.h>
 #include <shellapi.h>
+#include <shlobj.h>
 #include <shlwapi.h>
 #include <tlhelp32.h>
 #include <windowsx.h>
@@ -563,6 +488,7 @@ namespace gp = Gdiplus;
 constexpr PCWSTR kButtonClass = L"WhStackSwitchButton";
 constexpr PCWSTR kPanelClass = L"WhStackSwitchPanel";
 constexpr PCWSTR kMessageClass = L"WhStackSwitchMessages";
+constexpr PCWSTR kEditorClass = L"WhStackSwitchEditor";
 
 constexpr UINT kMsgTogglePanel = WM_APP + 1;
 constexpr UINT kMsgLaunchProgress = WM_APP + 2;
@@ -595,12 +521,8 @@ enum class ButtonPosition {
     AfterTray,
     BeforeTaskList,
     AfterTaskList,
-    Percent,
 };
-enum class ButtonAlign { Top, Middle, Bottom };
 enum class ButtonStyle { Glyph, GlyphLabel, Label };
-enum class ThemeMode { Auto, Dark, Light };
-enum class TerminalHost { Auto, Shell };
 enum GroupMenuCommand : UINT {
     kGroupMenuCollapse = 1,
     kGroupMenuToggleAll,
@@ -617,6 +539,14 @@ enum ItemMenuCommand : UINT {
     kItemMenuMoveUp,
     kItemMenuMoveDown,
     kItemMenuResetOrder,
+    kItemMenuEdit,
+    kItemMenuRemove,
+};
+enum AddMenuCommand : UINT {
+    kAddMenuFile = 1,
+    kAddMenuFolder,
+    kAddMenuOther,
+    kAddMenuRunningFirst = 100,
 };
 
 struct StackItem {
@@ -633,15 +563,27 @@ struct StackItem {
     ShellKind shell = ShellKind::PowerShell;
     WindowStateOption windowState = WindowStateOption::Normal;
     bool defaultEnabled = true;
-    bool keepOpen = true;
     bool elevated = false;
     bool singleInstance = true;
     bool waitForExit = false;
-    bool confirm = false;
     int delayMs = 0;
+    std::wstring options;
+    int panelIndex = -1;
     std::wstring storageKey;
     bool enabled = true;
     bool running = false;
+};
+
+struct ItemFields {
+    std::wstring name;
+    std::wstring type = L"app";
+    std::wstring target;
+    std::wstring args;
+    std::wstring workingDir;
+    std::wstring group;
+    std::wstring profiles;
+    std::wstring options;
+    bool enabled = true;
 };
 
 struct Settings {
@@ -649,44 +591,20 @@ struct Settings {
     std::vector<std::wstring> profiles;
     std::vector<StackItem> items;
     std::wstring panelTitle;
-    int staggerMs = 400;
-    TerminalHost terminalHost = TerminalHost::Auto;
-    std::wstring wtWindowId;
-    std::wstring vscodePath;
-    std::wstring gitBashPath;
     std::wstring hotkey;
-    bool showTaskbarButton = true;
     ButtonPosition buttonPosition = ButtonPosition::BeforeTray;
-    int buttonOffset = 8;
-    int buttonPercent = 50;
-    ButtonAlign buttonAlign = ButtonAlign::Middle;
-    int buttonOffsetY = 0;
     ButtonStyle buttonStyle = ButtonStyle::GlyphLabel;
-    std::wstring buttonGlyph;
-    std::wstring buttonLabel;
     bool showTrayIcon = false;
     bool showOnSecondaryTaskbars = false;
-    ThemeMode theme = ThemeMode::Auto;
-    std::wstring accentColor;
-    std::wstring fontFamily;
-    int fontSize = 13;
-    int panelWidth = 400;
-    int panelMaxHeight = 640;
     bool compactRows = false;
-    bool showStatusDots = true;
-    bool closeAfterLaunch = true;
-    bool confirmBeforeLaunchAll = false;
-    bool showCloseButton = true;
     bool confirmBeforeClose = true;
-    int closeGraceSeconds = 15;
     bool forceCloseAfterGrace = false;
     std::wstring autoRunProfile;
-    int autoRunDelaySeconds = 15;
-    bool autoRunOncePerDay = true;
 };
 
 static Settings g_settings;
 static std::recursive_mutex g_settingsMutex;
+static std::vector<ItemFields> g_panelItems;
 
 static ULONG_PTR g_gdiplusToken = 0;
 static std::thread g_uiThread;
@@ -796,15 +714,8 @@ static void UseDpiOf(HWND window) {
     }
 }
 
-static std::atomic<double> g_animationSpeed{1.0};
-
 static bool Approach(double& value, double target, double tau) {
-    double speed = g_animationSpeed.load();
-    if (speed <= 0.0) {
-        value = target;
-        return false;
-    }
-    value += (target - value) * (1.0 - exp(-(kFrameMs / 1000.0) * speed / tau));
+    value += (target - value) * (1.0 - exp(-(kFrameMs / 1000.0) / tau));
     if (fabs(target - value) < 0.002) {
         value = target;
         return false;
@@ -952,15 +863,164 @@ static ButtonPosition ParseButtonPosition(PCWSTR value) {
     if (wcscmp(value, L"afterTray") == 0) return ButtonPosition::AfterTray;
     if (wcscmp(value, L"beforeTaskList") == 0) return ButtonPosition::BeforeTaskList;
     if (wcscmp(value, L"afterTaskList") == 0) return ButtonPosition::AfterTaskList;
-    if (wcscmp(value, L"percent") == 0) return ButtonPosition::Percent;
     return ButtonPosition::BeforeTray;
 }
 
-static double ParseAnimationSpeed(PCWSTR value) {
-    if (wcscmp(value, L"off") == 0) return 0.0;
-    if (wcscmp(value, L"subtle") == 0) return 0.65;
-    if (wcscmp(value, L"lively") == 0) return 1.7;
-    return 1.0;
+static std::vector<std::wstring> SplitOptions(std::wstring_view text) {
+    std::vector<std::wstring> tokens;
+    std::wstring current;
+    bool quoted = false;
+    for (wchar_t character : text) {
+        if (character == L'"') {
+            quoted = !quoted;
+        } else if (character == L',' && !quoted) {
+            tokens.push_back(Trim(current));
+            current.clear();
+        } else {
+            current += character;
+        }
+    }
+    tokens.push_back(Trim(current));
+    return tokens;
+}
+
+static int ParseDelayMs(const std::wstring& value) {
+    wchar_t* end = nullptr;
+    double amount = wcstod(value.c_str(), &end);
+    return max(0, (int)(ToLower(Trim(end)) == L"s" ? amount * 1000 : amount));
+}
+
+static void ApplyItemOptions(const std::wstring& options, StackItem& item) {
+    for (const std::wstring& token : SplitOptions(options)) {
+        size_t equals = token.find(L'=');
+        std::wstring key = ToLower(Trim(std::wstring_view(token).substr(0, equals)));
+        std::wstring value = equals == std::wstring::npos
+                                 ? std::wstring()
+                                 : Trim(std::wstring_view(token).substr(equals + 1));
+        if (key == L"admin") {
+            item.elevated = true;
+        } else if (key == L"minimized" || key == L"maximized" || key == L"hidden") {
+            item.windowState = ParseWindowState(key.c_str());
+        } else if (key == L"wait") {
+            item.waitForExit = true;
+        } else if (key == L"duplicate") {
+            item.singleInstance = false;
+        } else if (key == L"delay") {
+            item.delayMs = ParseDelayMs(value);
+        } else if (key == L"process") {
+            item.processName = value;
+        } else if (key == L"shell") {
+            item.shell = ParseShellKind(ToLower(value).c_str());
+        } else if (key == L"subtitle") {
+            item.description = value;
+        } else if (key == L"icon") {
+            item.icon = value;
+        } else if (!key.empty()) {
+            Wh_Log(L"%s: unknown option %s", item.name.c_str(), key.c_str());
+        }
+    }
+}
+
+static StackItem BuildItem(const ItemFields& fields, int panelIndex) {
+    StackItem item;
+    item.name = Trim(fields.name);
+    item.type = ParseItemType(fields.type.c_str());
+    item.target = Trim(fields.target);
+    item.args = Trim(fields.args);
+    item.workingDir = Trim(fields.workingDir);
+    item.group = Trim(fields.group);
+    item.profiles = Trim(fields.profiles);
+    item.options = Trim(fields.options);
+    item.defaultEnabled = fields.enabled;
+    item.panelIndex = panelIndex;
+    ApplyItemOptions(item.options, item);
+    item.storageKey =
+        HashKey(L"en_", item.group + L"|" + item.name + L"|" + item.target);
+    item.enabled =
+        Wh_GetIntValue(item.storageKey.c_str(), item.defaultEnabled ? 1 : 0) != 0;
+    return item;
+}
+
+static std::wstring EscapeField(std::wstring_view text) {
+    std::wstring escaped;
+    for (wchar_t character : text) {
+        if (character == L'\\') {
+            escaped += L"\\\\";
+        } else if (character == L'\t') {
+            escaped += L"\\t";
+        } else if (character == L'\n') {
+            escaped += L"\\n";
+        } else if (character != L'\r') {
+            escaped += character;
+        }
+    }
+    return escaped;
+}
+
+static std::vector<std::wstring> UnescapeFields(std::wstring_view line) {
+    std::vector<std::wstring> fields(1);
+    for (size_t i = 0; i < line.size(); i++) {
+        if (line[i] == L'\t') {
+            fields.emplace_back();
+        } else if (line[i] == L'\\' && i + 1 < line.size()) {
+            wchar_t next = line[++i];
+            fields.back() += next == L't' ? L'\t' : next == L'n' ? L'\n' : next;
+        } else {
+            fields.back() += line[i];
+        }
+    }
+    return fields;
+}
+
+static std::vector<ItemFields> LoadPanelItems() {
+    std::vector<ItemFields> items;
+    std::vector<wchar_t> buffer(8192, L'\0');
+    int count = Wh_GetIntValue(L"panelItemCount", 0);
+    for (int i = 0; i < count; i++) {
+        wchar_t valueName[32];
+        swprintf_s(valueName, L"panelItem%d", i);
+        buffer[0] = L'\0';
+        Wh_GetStringValue(valueName, buffer.data(), buffer.size());
+        std::vector<std::wstring> parts = UnescapeFields(buffer.data());
+        if (parts.size() != 9 || parts[1].empty()) {
+            continue;
+        }
+        ItemFields fields;
+        fields.enabled = parts[0] != L"0";
+        fields.name = parts[1];
+        fields.type = parts[2];
+        fields.target = parts[3];
+        fields.args = parts[4];
+        fields.workingDir = parts[5];
+        fields.group = parts[6];
+        fields.profiles = parts[7];
+        fields.options = parts[8];
+        items.push_back(std::move(fields));
+    }
+    return items;
+}
+
+static void SavePanelItems(const std::vector<ItemFields>& items) {
+    int previous = Wh_GetIntValue(L"panelItemCount", 0);
+    for (size_t i = 0; i < items.size(); i++) {
+        const ItemFields& fields = items[i];
+        std::wstring line = fields.enabled ? L"1" : L"0";
+        for (const std::wstring* part :
+             {&fields.name, &fields.type, &fields.target, &fields.args,
+              &fields.workingDir, &fields.group, &fields.profiles, &fields.options}) {
+            line += L'\t';
+            line += EscapeField(*part);
+        }
+        wchar_t valueName[32];
+        swprintf_s(valueName, L"panelItem%d", (int)i);
+        Wh_SetStringValue(valueName, line.c_str());
+    }
+    for (int i = (int)items.size(); i < previous; i++) {
+        wchar_t valueName[32];
+        swprintf_s(valueName, L"panelItem%d", i);
+        Wh_DeleteValue(valueName);
+    }
+    Wh_SetIntValue(L"panelItemCount", (int)items.size());
 }
 
 static void LoadSettings() {
@@ -984,114 +1044,53 @@ static void LoadSettings() {
         if (!*name) {
             break;
         }
-        StackItem item;
-        item.name = Trim(name.get());
-        item.description = Trim(
-            WindhawkUtils::StringSetting::make(L"items[%d].display.description", i)
-                .get());
-        item.group =
-            Trim(WindhawkUtils::StringSetting::make(L"items[%d].group", i).get());
-        item.profiles =
-            Trim(WindhawkUtils::StringSetting::make(L"items[%d].profiles", i).get());
-        item.type = ParseItemType(
-            WindhawkUtils::StringSetting::make(L"items[%d].type", i).get());
-        item.target =
-            Trim(WindhawkUtils::StringSetting::make(L"items[%d].target", i).get());
-        item.args = Trim(
-            WindhawkUtils::StringSetting::make(L"items[%d].launch.args", i).get());
-        item.workingDir = Trim(
-            WindhawkUtils::StringSetting::make(L"items[%d].launch.workingDir", i)
-                .get());
-        item.shell = ParseShellKind(
-            WindhawkUtils::StringSetting::make(L"items[%d].launch.shell", i).get());
-        item.icon = Trim(
-            WindhawkUtils::StringSetting::make(L"items[%d].display.icon", i).get());
-        item.processName = Trim(
-            WindhawkUtils::StringSetting::make(L"items[%d].control.processName", i)
-                .get());
-        item.windowState = ParseWindowState(
-            WindhawkUtils::StringSetting::make(L"items[%d].launch.windowState", i)
-                .get());
-        item.defaultEnabled = Wh_GetIntSetting(L"items[%d].enabled", i) != 0;
-        item.keepOpen = Wh_GetIntSetting(L"items[%d].launch.keepOpen", i) != 0;
-        item.elevated = Wh_GetIntSetting(L"items[%d].launch.elevated", i) != 0;
-        item.singleInstance =
-            Wh_GetIntSetting(L"items[%d].control.singleInstance", i) != 0;
-        item.waitForExit = Wh_GetIntSetting(L"items[%d].control.waitForExit", i) != 0;
-        item.confirm = Wh_GetIntSetting(L"items[%d].control.confirm", i) != 0;
-        item.delayMs = max(0, Wh_GetIntSetting(L"items[%d].control.delayMs", i));
-        item.storageKey =
-            HashKey(L"en_", item.group + L"|" + item.name + L"|" + item.target);
-        item.enabled =
-            Wh_GetIntValue(item.storageKey.c_str(), item.defaultEnabled ? 1 : 0) != 0;
-        loaded.items.push_back(std::move(item));
+        ItemFields fields;
+        fields.name = name.get();
+        fields.type = WindhawkUtils::StringSetting::make(L"items[%d].type", i).get();
+        fields.target = WindhawkUtils::StringSetting::make(L"items[%d].target", i).get();
+        fields.args = WindhawkUtils::StringSetting::make(L"items[%d].args", i).get();
+        fields.workingDir =
+            WindhawkUtils::StringSetting::make(L"items[%d].workingDir", i).get();
+        fields.group = WindhawkUtils::StringSetting::make(L"items[%d].group", i).get();
+        fields.profiles =
+            WindhawkUtils::StringSetting::make(L"items[%d].profiles", i).get();
+        fields.options =
+            WindhawkUtils::StringSetting::make(L"items[%d].options", i).get();
+        fields.enabled = Wh_GetIntSetting(L"items[%d].enabled", i) != 0;
+        loaded.items.push_back(BuildItem(fields, -1));
+    }
+
+    std::vector<ItemFields> panelItems = LoadPanelItems();
+    for (size_t i = 0; i < panelItems.size(); i++) {
+        loaded.items.push_back(BuildItem(panelItems[i], (int)i));
     }
 
     loaded.panelTitle = Trim(WindhawkUtils::StringSetting::make(L"panelTitle").get());
-    loaded.staggerMs = max(0, Wh_GetIntSetting(L"staggerMs"));
-
-    auto terminalHost = WindhawkUtils::StringSetting::make(L"terminalHost");
-    loaded.terminalHost =
-        wcscmp(terminalHost, L"shell") == 0 ? TerminalHost::Shell : TerminalHost::Auto;
-
-    loaded.wtWindowId = Trim(WindhawkUtils::StringSetting::make(L"wtWindowId").get());
-    loaded.vscodePath = Trim(WindhawkUtils::StringSetting::make(L"vscodePath").get());
-    loaded.gitBashPath = Trim(WindhawkUtils::StringSetting::make(L"gitBashPath").get());
+    if (loaded.panelTitle.empty()) {
+        loaded.panelTitle = L"Workspace";
+    }
     loaded.hotkey = Trim(WindhawkUtils::StringSetting::make(L"hotkey").get());
 
-    loaded.showTaskbarButton = Wh_GetIntSetting(L"showTaskbarButton") != 0;
     loaded.buttonPosition = ParseButtonPosition(
         WindhawkUtils::StringSetting::make(L"buttonPosition").get());
-    loaded.buttonOffset = Wh_GetIntSetting(L"buttonOffset");
-    loaded.buttonPercent = max(0, min(100, Wh_GetIntSetting(L"buttonPercent")));
-
-    auto buttonAlign = WindhawkUtils::StringSetting::make(L"buttonAlign");
-    loaded.buttonAlign = wcscmp(buttonAlign, L"top") == 0      ? ButtonAlign::Top
-                         : wcscmp(buttonAlign, L"bottom") == 0 ? ButtonAlign::Bottom
-                                                               : ButtonAlign::Middle;
-    loaded.buttonOffsetY = Wh_GetIntSetting(L"buttonOffsetY");
 
     auto buttonStyle = WindhawkUtils::StringSetting::make(L"buttonStyle");
     loaded.buttonStyle = wcscmp(buttonStyle, L"glyph") == 0   ? ButtonStyle::Glyph
                          : wcscmp(buttonStyle, L"label") == 0 ? ButtonStyle::Label
                                                               : ButtonStyle::GlyphLabel;
 
-    loaded.buttonGlyph = Trim(WindhawkUtils::StringSetting::make(L"buttonGlyph").get());
-    loaded.buttonLabel = Trim(WindhawkUtils::StringSetting::make(L"buttonLabel").get());
     loaded.showTrayIcon = Wh_GetIntSetting(L"showTrayIcon") != 0;
     loaded.showOnSecondaryTaskbars = Wh_GetIntSetting(L"showOnSecondaryTaskbars") != 0;
-
-    auto theme = WindhawkUtils::StringSetting::make(L"theme");
-    loaded.theme = wcscmp(theme, L"dark") == 0    ? ThemeMode::Dark
-                   : wcscmp(theme, L"light") == 0 ? ThemeMode::Light
-                                                  : ThemeMode::Auto;
-
-    loaded.accentColor = Trim(WindhawkUtils::StringSetting::make(L"accentColor").get());
-    loaded.fontFamily = Trim(WindhawkUtils::StringSetting::make(L"fontFamily").get());
-    loaded.fontSize = max(9, min(22, Wh_GetIntSetting(L"fontSize")));
-    g_animationSpeed =
-        ParseAnimationSpeed(WindhawkUtils::StringSetting::make(L"animation").get());
-    loaded.panelWidth = max(280, Wh_GetIntSetting(L"panelWidth"));
-    loaded.panelMaxHeight = max(240, Wh_GetIntSetting(L"panelMaxHeight"));
     loaded.compactRows = Wh_GetIntSetting(L"compactRows") != 0;
-    loaded.showStatusDots = Wh_GetIntSetting(L"showStatusDots") != 0;
-    loaded.closeAfterLaunch = Wh_GetIntSetting(L"closeAfterLaunch") != 0;
-    loaded.confirmBeforeLaunchAll = Wh_GetIntSetting(L"confirmBeforeLaunchAll") != 0;
-    loaded.showCloseButton = Wh_GetIntSetting(L"showCloseButton") != 0;
+
     loaded.confirmBeforeClose = Wh_GetIntSetting(L"confirmBeforeClose") != 0;
-    loaded.closeGraceSeconds = max(0, Wh_GetIntSetting(L"closeGraceSeconds"));
     loaded.forceCloseAfterGrace = Wh_GetIntSetting(L"forceCloseAfterGrace") != 0;
     loaded.autoRunProfile =
         Trim(WindhawkUtils::StringSetting::make(L"autoRunProfile").get());
-    loaded.autoRunDelaySeconds = max(0, Wh_GetIntSetting(L"autoRunDelaySeconds"));
-    loaded.autoRunOncePerDay = Wh_GetIntSetting(L"autoRunOncePerDay") != 0;
-
-    if (loaded.fontFamily.empty() || loaded.fontFamily.size() >= LF_FACESIZE) {
-        loaded.fontFamily = L"Segoe UI";
-    }
 
     std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
     g_settings = std::move(loaded);
+    g_panelItems = std::move(panelItems);
 }
 
 static bool CancellableSleep(int milliseconds) {
@@ -1217,12 +1216,6 @@ static std::wstring FindFirstExisting(std::initializer_list<PCWSTR> candidates) 
 }
 
 static std::wstring FindVSCode() {
-    {
-        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        if (!g_settings.vscodePath.empty()) {
-            return ExpandTokens(g_settings.vscodePath);
-        }
-    }
     return FindFirstExisting({
         L"%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe",
         L"%ProgramFiles%\\Microsoft VS Code\\Code.exe",
@@ -1232,12 +1225,6 @@ static std::wstring FindVSCode() {
 }
 
 static std::wstring FindGitBash() {
-    {
-        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        if (!g_settings.gitBashPath.empty()) {
-            return ExpandTokens(g_settings.gitBashPath);
-        }
-    }
     return FindFirstExisting({
         L"%ProgramFiles%\\Git\\bin\\bash.exe",
         L"%ProgramFiles(x86)%\\Git\\bin\\bash.exe",
@@ -1297,7 +1284,7 @@ static bool BuildShellInvocation(const StackItem& item,
                                  const std::wstring& command,
                                  bool visible,
                                  ShellInvocation& out) {
-    bool keepOpen = visible && item.keepOpen;
+    bool keepOpen = visible && !item.waitForExit;
     switch (item.shell) {
         case ShellKind::Cmd:
             out.file = L"cmd.exe";
@@ -1331,27 +1318,12 @@ static bool WrapInWindowsTerminal(const StackItem& item,
                                   const std::wstring& workingDir,
                                   bool ownWindow,
                                   ShellInvocation& invocation) {
-    TerminalHost host;
-    std::wstring windowId;
-    {
-        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        host = g_settings.terminalHost;
-        windowId = g_settings.wtWindowId;
-    }
-    if (host == TerminalHost::Shell) {
-        return false;
-    }
     std::wstring terminal = FindWindowsTerminal();
     if (terminal.empty()) {
         return false;
     }
 
-    std::wstring args;
-    if (ownWindow) {
-        args += L"-w new ";
-    } else if (!windowId.empty()) {
-        args += L"-w " + QuoteIfNeeded(windowId) + L" ";
-    }
+    std::wstring args = ownWindow ? L"-w new " : L"-w _stack ";
     args += L"new-tab --title " + QuoteIfNeeded(item.name);
     if (ownWindow) {
         args += L" --suppressApplicationTitle";
@@ -1476,7 +1448,8 @@ static bool BuildLaunchPlan(const StackItem& item, LaunchPlan& plan) {
             }
             plan.file = target;
             plan.args = args;
-            if (plan.workingDir.empty() && item.type == ItemType::App) {
+            if (plan.workingDir.empty() && item.type == ItemType::App &&
+                PathFileExistsW(target.c_str())) {
                 size_t slash = target.find_last_of(L"\\/");
                 if (slash != std::wstring::npos) {
                     plan.workingDir = target.substr(0, slash);
@@ -1505,6 +1478,9 @@ static bool BuildLaunchPlan(const StackItem& item, LaunchPlan& plan) {
             }
             if (command.empty()) {
                 return false;
+            }
+            if (plan.workingDir.empty()) {
+                plan.workingDir = ExpandTokens(L"{root}");
             }
             bool visible = item.type == ItemType::Terminal &&
                            item.windowState != WindowStateOption::Hidden;
@@ -1621,28 +1597,6 @@ static bool PersonalizeFlag(PCWSTR name) {
            value != 0;
 }
 
-static bool ParseHexColor(const std::wstring& text, gp::Color& color) {
-    std::wstring digits = text;
-    if (!digits.empty() && digits.front() == L'#') {
-        digits.erase(0, 1);
-    }
-    if (digits.size() != 6) {
-        return false;
-    }
-    wchar_t* end = nullptr;
-    unsigned long value = wcstoul(digits.c_str(), &end, 16);
-    if (end != digits.c_str() + 6) {
-        return false;
-    }
-    color = gp::Color(255, (BYTE)(value >> 16), (BYTE)(value >> 8), (BYTE)value);
-    return true;
-}
-
-static double Luminance(const gp::Color& color) {
-    return (0.2126 * color.GetR() + 0.7152 * color.GetG() + 0.0722 * color.GetB()) /
-           255.0;
-}
-
 static gp::Color Shift(const gp::Color& color, double amount) {
     auto mix = [amount](BYTE channel) {
         double target = amount > 0 ? 255.0 : 0.0;
@@ -1664,51 +1618,16 @@ static gp::Color Blend(const gp::Color& from, const gp::Color& to, double amount
                      mix(from.GetG(), to.GetG()), mix(from.GetB(), to.GetB()));
 }
 
-static gp::Color ResolveAccent(bool dark) {
-    std::wstring choice;
-    {
-        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        choice = g_settings.accentColor;
-    }
-    gp::Color parsed;
-    if (ParseHexColor(choice, parsed)) {
-        return parsed;
-    }
-    if (ToLower(choice) == L"system") {
-        DWORD colorization = 0;
-        BOOL opaque = FALSE;
-        if (SUCCEEDED(DwmGetColorizationColor(&colorization, &opaque))) {
-            gp::Color accent(255, (BYTE)(colorization >> 16), (BYTE)(colorization >> 8),
-                             (BYTE)colorization);
-            if (dark && Luminance(accent) < 0.30) {
-                accent = Shift(accent, 0.35);
-            }
-            if (!dark && Luminance(accent) > 0.70) {
-                accent = Shift(accent, -0.35);
-            }
-            return accent;
-        }
-    }
-    return dark ? gp::Color(255, 0x00, 0x78, 0xD4) : gp::Color(255, 0x00, 0x5F, 0xB8);
-}
-
 static Palette BuildPalette() {
-    ThemeMode mode;
-    {
-        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        mode = g_settings.theme;
-    }
-    bool dark = mode == ThemeMode::Dark ||
-                (mode == ThemeMode::Auto && !PersonalizeFlag(L"AppsUseLightTheme"));
+    bool dark = !PersonalizeFlag(L"AppsUseLightTheme");
 
     Palette palette;
     palette.dark = dark;
     palette.taskbarLight = PersonalizeFlag(L"SystemUsesLightTheme");
-    palette.accent = ResolveAccent(dark);
+    palette.accent =
+        dark ? gp::Color(255, 0x00, 0x78, 0xD4) : gp::Color(255, 0x00, 0x5F, 0xB8);
     palette.accentHover = Shift(palette.accent, dark ? 0.16 : 0.12);
-    palette.accentText = Luminance(palette.accent) > 0.6
-                             ? gp::Color(255, 0x1F, 0x1F, 0x1F)
-                             : gp::Color(255, 0xFF, 0xFF, 0xFF);
+    palette.accentText = gp::Color(255, 0xFF, 0xFF, 0xFF);
 
     if (dark) {
         palette.background = gp::Color(247, 0x0C, 0x0C, 0x0E);
@@ -2013,22 +1932,12 @@ static HFONT GetFont(const std::wstring& family, int sizePx, bool bold) {
     return font;
 }
 
-static std::wstring UiFontFamily() {
-    std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-    return g_settings.fontFamily;
-}
-
-static int BaseFontSize() {
-    std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-    return g_settings.fontSize;
-}
-
 static HFONT UiFont(int delta = 0, bool bold = false) {
-    return GetFont(UiFontFamily(), Scale(max(7, BaseFontSize() + delta)), bold);
+    return GetFont(L"Segoe UI", Scale(13 + delta), bold);
 }
 
 static HFONT IconFont(int delta = 0) {
-    return GetFont(IconFontFamily(), Scale(max(7, BaseFontSize() + delta)), false);
+    return GetFont(IconFontFamily(), Scale(13 + delta), false);
 }
 
 static void ClearFontCache() {
@@ -2274,9 +2183,22 @@ static std::wstring IconCacheKey(const StackItem& item) {
     return std::wstring();
 }
 
-static HICON LoadShellIcon(const std::wstring& path) {
+static HICON LoadShellIcon(std::wstring path) {
+    PathUnquoteSpacesW(path.data());
+    path.resize(wcslen(path.c_str()));
     if (path.empty()) {
         return nullptr;
+    }
+    if (ToLower(path).starts_with(L"shell:")) {
+        PIDLIST_ABSOLUTE pidl = nullptr;
+        if (FAILED(SHParseDisplayName(path.c_str(), nullptr, &pidl, 0, nullptr))) {
+            return nullptr;
+        }
+        SHFILEINFOW info{};
+        SHGetFileInfoW(reinterpret_cast<PCWSTR>(pidl), 0, &info, sizeof(info),
+                       SHGFI_PIDL | SHGFI_ICON | SHGFI_LARGEICON);
+        CoTaskMemFree(pidl);
+        return info.hIcon;
     }
     SHFILEINFOW info{};
     UINT flags = SHGFI_ICON | SHGFI_LARGEICON;
@@ -2359,6 +2281,7 @@ enum class HitKind {
     SelectAll,
     SelectNone,
     Refresh,
+    Add,
     Cancel,
     Scrollbar,
     Outside,
@@ -2385,6 +2308,7 @@ struct PanelLayout {
     gp::Rect selectAllButton;
     gp::Rect selectNoneButton;
     gp::Rect refreshButton;
+    gp::Rect addButton;
     gp::Rect cancelButton;
     gp::Rect progressBar;
     gp::Rect scrollTrack;
@@ -2700,7 +2624,7 @@ static void ComputeLayout() {
     std::lock_guard<std::recursive_mutex> settingsLock(g_settingsMutex);
 
     const int shadow = Scale(24);
-    const int width = Scale(g_settings.panelWidth);
+    const int width = Scale(400);
     const int pad = Scale(14);
     const int headerHeight = Scale(56);
     const int searchHeight = Scale(44);
@@ -2732,8 +2656,8 @@ static void ComputeLayout() {
         chipsHeight = (row + 1) * Scale(30) + Scale(8);
     }
 
-    int listHeight = Scale(g_settings.panelMaxHeight) - headerHeight - chipsHeight -
-                     searchHeight - footerHeight;
+    int listHeight =
+        Scale(640) - headerHeight - chipsHeight - searchHeight - footerHeight;
     listHeight = max(Scale(72), min(listHeight, g_layout.rowsHeight));
     int contentHeight =
         headerHeight + chipsHeight + searchHeight + listHeight + footerHeight;
@@ -2776,19 +2700,17 @@ static void ComputeLayout() {
     smallX += smallButton + Scale(2);
     g_layout.refreshButton = gp::Rect(smallX, smallY, smallButton, smallButton);
     smallX += smallButton + Scale(2);
+    g_layout.addButton = gp::Rect(smallX, smallY, smallButton, smallButton);
+    smallX += smallButton + Scale(2);
 
     int rightEdge = shadow + width - pad;
     int available = rightEdge - smallX - Scale(8);
-    int closeWidth =
-        g_settings.showCloseButton ? max(Scale(60), min(Scale(84), available / 3)) : 0;
-    int launchWidth =
-        max(Scale(92), available - closeWidth - (closeWidth > 0 ? Scale(6) : 0));
+    int closeWidth = max(Scale(60), min(Scale(84), available / 3));
+    int launchWidth = max(Scale(92), available - closeWidth - Scale(6));
     g_layout.launchButton =
         gp::Rect(rightEdge - launchWidth, footerY, launchWidth, buttonHeight);
-    g_layout.closeButton =
-        closeWidth > 0 ? gp::Rect(g_layout.launchButton.X - Scale(6) - closeWidth,
-                                  footerY, closeWidth, buttonHeight)
-                       : gp::Rect(0, 0, 0, 0);
+    g_layout.closeButton = gp::Rect(g_layout.launchButton.X - Scale(6) - closeWidth,
+                                    footerY, closeWidth, buttonHeight);
     g_layout.cancelButton =
         gp::Rect(rightEdge - Scale(64), footerY, Scale(64), buttonHeight);
     g_layout.progressBar =
@@ -2896,6 +2818,8 @@ static HitResult HitTest(POINT point) {
             result.kind = HitKind::SelectNone;
         } else if (Contains(g_layout.refreshButton, point)) {
             result.kind = HitKind::Refresh;
+        } else if (Contains(g_layout.addButton, point)) {
+            result.kind = HitKind::Add;
         }
     }
     return result;
@@ -3023,15 +2947,6 @@ static void RunLaunchSequence(const std::vector<int>& indices) {
             continue;
         }
 
-        if (item.confirm) {
-            if (MessageBoxW(nullptr, (L"Launch " + item.name + L"?").c_str(),
-                            L"StackSwitch",
-                            MB_OKCANCEL | MB_ICONQUESTION | MB_TOPMOST |
-                                MB_SETFOREGROUND) != IDOK) {
-                continue;
-            }
-        }
-
         LaunchPlan plan;
         if (!BuildLaunchPlan(item, plan)) {
             SetStatusText(L"Could not resolve " + item.name);
@@ -3073,23 +2988,16 @@ static void RunLaunchSequence(const std::vector<int>& indices) {
             CloseHandle(processHandle);
         }
 
-        int stagger = 0;
-        {
-            std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-            stagger = g_settings.staggerMs;
-        }
-        if (i + 1 < indices.size() && stagger > 0 && !CancellableSleep(stagger)) {
+        if (i + 1 < indices.size() && !CancellableSleep(400)) {
             break;
         }
     }
 }
 
 static void RunShutdownSequence(const std::vector<int>& indices) {
-    int graceMs = 0;
     bool force = false;
     {
         std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        graceMs = g_settings.closeGraceSeconds * 1000;
         force = g_settings.forceCloseAfterGrace;
     }
 
@@ -3135,7 +3043,7 @@ static void RunShutdownSequence(const std::vector<int>& indices) {
 
         std::vector<DWORD> alive = StillRunning(pids);
         if (posted > 0) {
-            ULONGLONG deadline = GetTickCount64() + (ULONGLONG)graceMs;
+            ULONGLONG deadline = GetTickCount64() + 15000;
             while (!alive.empty() && GetTickCount64() < deadline) {
                 if (!CancellableSleep(250)) {
                     break;
@@ -3439,7 +3347,6 @@ static void PaintPanel() {
 
     const std::wstring& title = g_settings.panelTitle;
     bool compact = g_settings.compactRows;
-    bool showDots = g_settings.showStatusDots;
     int total = (int)g_settings.items.size();
     int selected = 0;
     int runningSelected = 0;
@@ -3453,8 +3360,7 @@ static void PaintPanel() {
         }
     }
 
-    surface.RenderText(title.empty() ? std::wstring(L"Stack") : title,
-                       UiFont(2, true), palette.textStrong,
+    surface.RenderText(title, UiFont(2, true), palette.textStrong,
                        gp::Rect(g_layout.header.X + pad, g_layout.header.Y + Scale(9),
                                 g_layout.header.Width - pad * 2 - Scale(34), Scale(20)),
                        kTextLeft);
@@ -3633,10 +3539,7 @@ static void PaintPanel() {
         DrawItemIcon(surface, iconBox, item, palette);
 
         int textLeft = iconBox.X + iconSize + Scale(10);
-        int textRight = ToggleLeftEdge() - Scale(8);
-        if (showDots) {
-            textRight -= Scale(12);
-        }
+        int textRight = ToggleLeftEdge() - Scale(20);
         int textWidth = max(Scale(30), textRight - textLeft);
 
         std::wstring subtitleText =
@@ -3657,7 +3560,7 @@ static void PaintPanel() {
                                kTextLeft);
         }
 
-        if (showDots && item.running) {
+        if (item.running) {
             gp::SolidBrush dot(palette.running);
             int dotSize = Scale(6);
             graphics.FillEllipse(&dot, (gp::REAL)(textRight + Scale(5)),
@@ -3715,18 +3618,18 @@ static void PaintPanel() {
         DrawSmallButton(surface, g_layout.refreshButton, L"\uE72C", palette,
                         g_hover.kind == HitKind::Refresh,
                         g_pressed.kind == HitKind::Refresh);
+        DrawSmallButton(surface, g_layout.addButton, L"\uE710", palette,
+                        g_hover.kind == HitKind::Add, g_pressed.kind == HitKind::Add);
 
-        if (g_layout.closeButton.Width > 0) {
-            wchar_t closeLabel[48];
-            if (runningSelected == 0) {
-                wcscpy_s(closeLabel, L"Close");
-            } else {
-                swprintf_s(closeLabel, L"Close %d", runningSelected);
-            }
-            DrawTextButton(surface, g_layout.closeButton, closeLabel, palette, false,
-                           runningSelected > 0, g_hover.kind == HitKind::Close,
-                           g_pressed.kind == HitKind::Close);
+        wchar_t closeLabel[48];
+        if (runningSelected == 0) {
+            wcscpy_s(closeLabel, L"Close");
+        } else {
+            swprintf_s(closeLabel, L"Close %d", runningSelected);
         }
+        DrawTextButton(surface, g_layout.closeButton, closeLabel, palette, false,
+                       runningSelected > 0, g_hover.kind == HitKind::Close,
+                       g_pressed.kind == HitKind::Close);
 
         wchar_t launchLabel[48];
         if (selected == 0) {
@@ -3875,7 +3778,7 @@ static void OpenPanel() {
     g_hoverAmount = 0.0;
     g_hoverFadeAmount = 0.0;
     g_caretVisible = true;
-    g_revealAmount = g_animationSpeed.load() > 0.0 ? 0.0 : 1.0;
+    g_revealAmount = 0.0;
     g_revealTarget = 1.0;
 
     PositionPanel();
@@ -3906,11 +3809,6 @@ static void ClosePanel() {
     g_panelOpen = false;
     g_panelHiddenTick = GetTickCount64();
     g_revealTarget = 0.0;
-    if (g_animationSpeed.load() <= 0.0) {
-        g_revealAmount = 0.0;
-        FinishClosingPanel();
-        return;
-    }
     EnsureAnimationTimer();
     RefreshTaskbarButtons();
 }
@@ -3984,28 +3882,8 @@ static void LaunchSelected() {
     if (indices.empty()) {
         return;
     }
-    bool confirm = false;
-    bool closeAfter = false;
-    {
-        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        confirm = g_settings.confirmBeforeLaunchAll;
-        closeAfter = g_settings.closeAfterLaunch;
-    }
-    if (confirm) {
-        wchar_t message[128];
-        swprintf_s(message, L"Launch %d items?", (int)indices.size());
-        g_suppressDeactivate = true;
-        int answer = MessageBoxW(g_panelWnd, message, L"StackSwitch",
-                                 MB_OKCANCEL | MB_ICONQUESTION);
-        g_suppressDeactivate = false;
-        if (answer != IDOK) {
-            return;
-        }
-    }
     StartSequence(RunLaunchSequence, std::move(indices));
-    if (closeAfter) {
-        ClosePanel();
-    }
+    ClosePanel();
 }
 
 static void CloseSelected() {
@@ -4016,11 +3894,9 @@ static void CloseSelected() {
     std::reverse(indices.begin(), indices.end());
 
     bool confirm = false;
-    bool closeAfter = false;
     {
         std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
         confirm = g_settings.confirmBeforeClose;
-        closeAfter = g_settings.closeAfterLaunch;
     }
     if (confirm) {
         wchar_t message[128];
@@ -4034,9 +3910,7 @@ static void CloseSelected() {
         }
     }
     StartSequence(RunShutdownSequence, std::move(indices));
-    if (closeAfter) {
-        ClosePanel();
-    }
+    ClosePanel();
 }
 
 static void FocusItemRow(int itemIndex) {
@@ -4104,6 +3978,458 @@ static void ShowGroupMenu(int rowIndex, POINT screenPoint) {
     }
 }
 
+constexpr PCWSTR kItemTypeNames[] = {L"app", L"vscode", L"folder",
+                                     L"url", L"terminal", L"command"};
+constexpr PCWSTR kItemTypeLabels[] = {
+    L"Application, document or shortcut",
+    L"Folder or workspace in VS Code",
+    L"Folder in File Explorer",
+    L"URL in the default browser",
+    L"Command in a terminal window",
+    L"Command with no window",
+};
+constexpr PROPERTYKEY kAppUserModelIdKey = {
+    {0x9F4C2855, 0x9F79, 0x4B39, {0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3}},
+    5};
+constexpr PROPERTYKEY kFileDescriptionKey = {
+    {0x0CEF7D53, 0xFA64, 0x11D1, {0xA2, 0x03, 0x00, 0x00, 0xF8, 0x1F, 0xED, 0xEE}},
+    3};
+constexpr PROPERTYKEY kProductNameKey = {
+    {0x0CEF7D53, 0xFA64, 0x11D1, {0xA2, 0x03, 0x00, 0x00, 0xF8, 0x1F, 0xED, 0xEE}},
+    7};
+
+enum EditorField {
+    kFieldName,
+    kFieldTarget,
+    kFieldArgs,
+    kFieldWorkingDir,
+    kFieldGroup,
+    kFieldProfiles,
+    kFieldOptions,
+    kEditorFieldCount,
+};
+
+static HWND g_editorWnd = nullptr;
+static HWND g_editorEdits[kEditorFieldCount] = {};
+static HWND g_editorType = nullptr;
+static HWND g_editorEnabled = nullptr;
+static HFONT g_editorFont = nullptr;
+static int g_editorPanelIndex = -1;
+
+static void StorePanelItems(const std::vector<ItemFields>& items) {
+    SavePanelItems(items);
+    LoadSettings();
+    PostMessageW(g_messageWnd, kMsgReloadSettings, 0, 0);
+}
+
+static std::wstring WindowTextOf(HWND window) {
+    int length = GetWindowTextLengthW(window);
+    std::wstring text(length + 1, L'\0');
+    GetWindowTextW(window, text.data(), length + 1);
+    text.resize(length);
+    return text;
+}
+
+static void SaveItemEditor() {
+    ItemFields fields;
+    fields.name = Trim(WindowTextOf(g_editorEdits[kFieldName]));
+    if (fields.name.empty()) {
+        MessageBoxW(g_editorWnd, L"Give the item a name.", L"StackSwitch",
+                    MB_OK | MB_ICONINFORMATION);
+        SetFocus(g_editorEdits[kFieldName]);
+        return;
+    }
+    int typeIndex = (int)SendMessageW(g_editorType, CB_GETCURSEL, 0, 0);
+    fields.type = kItemTypeNames[typeIndex >= 0 && typeIndex < (int)ARRAYSIZE(kItemTypeNames)
+                                     ? typeIndex
+                                     : 0];
+    fields.target = Trim(WindowTextOf(g_editorEdits[kFieldTarget]));
+    fields.args = Trim(WindowTextOf(g_editorEdits[kFieldArgs]));
+    fields.workingDir = Trim(WindowTextOf(g_editorEdits[kFieldWorkingDir]));
+    fields.group = Trim(WindowTextOf(g_editorEdits[kFieldGroup]));
+    fields.profiles = Trim(WindowTextOf(g_editorEdits[kFieldProfiles]));
+    fields.options = Trim(WindowTextOf(g_editorEdits[kFieldOptions]));
+    fields.enabled = SendMessageW(g_editorEnabled, BM_GETCHECK, 0, 0) == BST_CHECKED;
+
+    std::vector<ItemFields> items;
+    {
+        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
+        items = g_panelItems;
+    }
+    if (g_editorPanelIndex >= 0 && g_editorPanelIndex < (int)items.size()) {
+        items[g_editorPanelIndex] = std::move(fields);
+    } else {
+        items.push_back(std::move(fields));
+    }
+    DestroyWindow(g_editorWnd);
+    StorePanelItems(items);
+}
+
+static LRESULT CALLBACK EditorWndProc(HWND window,
+                                      UINT message,
+                                      WPARAM wParam,
+                                      LPARAM lParam) {
+    switch (message) {
+        case WM_COMMAND:
+            if (LOWORD(wParam) == IDOK) {
+                SaveItemEditor();
+                return 0;
+            }
+            if (LOWORD(wParam) == IDCANCEL) {
+                DestroyWindow(window);
+                return 0;
+            }
+            break;
+        case WM_CLOSE:
+            DestroyWindow(window);
+            return 0;
+        case WM_NCDESTROY:
+            g_editorWnd = nullptr;
+            if (g_editorFont) {
+                DeleteObject(g_editorFont);
+                g_editorFont = nullptr;
+            }
+            break;
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+static void OpenItemEditor(const ItemFields& fields, int panelIndex) {
+    if (g_editorWnd) {
+        DestroyWindow(g_editorWnd);
+    }
+    ClosePanel();
+    g_editorPanelIndex = panelIndex;
+
+    const int pad = Scale(16);
+    const int labelWidth = Scale(110);
+    const int fieldWidth = Scale(360);
+    const int rowHeight = Scale(32);
+    const int editHeight = Scale(24);
+    const int hintHeight = Scale(64);
+    const int clientWidth = pad * 3 + labelWidth + fieldWidth;
+    const int clientHeight =
+        pad + rowHeight * 8 + hintHeight + rowHeight + Scale(40) + pad;
+
+    DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU;
+    RECT frame{0, 0, clientWidth, clientHeight};
+    AdjustWindowRectEx(&frame, style, FALSE, WS_EX_DLGMODALFRAME);
+    RECT work{};
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+    int width = frame.right - frame.left;
+    int height = frame.bottom - frame.top;
+
+    HINSTANCE instance = GetModuleHandleW(nullptr);
+    g_editorWnd = CreateWindowExW(
+        WS_EX_DLGMODALFRAME, kEditorClass,
+        panelIndex < 0 ? L"Add to StackSwitch" : L"Edit StackSwitch item", style,
+        work.left + (work.right - work.left - width) / 2,
+        work.top + (work.bottom - work.top - height) / 2, width, height, nullptr,
+        nullptr, instance, nullptr);
+    if (!g_editorWnd) {
+        return;
+    }
+    g_editorFont = CreateFontW(-Scale(12), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                               CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+
+    auto addControl = [&](DWORD exStyle, PCWSTR className, PCWSTR text, DWORD controlStyle,
+                          int x, int y, int w, int h, int id) {
+        HWND control = CreateWindowExW(exStyle, className, text,
+                                       WS_CHILD | WS_VISIBLE | controlStyle, x, y, w, h,
+                                       g_editorWnd, (HMENU)(INT_PTR)id, instance, nullptr);
+        SendMessageW(control, WM_SETFONT, (WPARAM)g_editorFont, FALSE);
+        return control;
+    };
+    const int fieldX = pad * 2 + labelWidth;
+    int y = pad;
+    auto addRow = [&](PCWSTR label) {
+        addControl(0, L"STATIC", label, SS_LEFT, pad, y + Scale(4), labelWidth, Scale(20),
+                   0);
+        int top = y;
+        y += rowHeight;
+        return top;
+    };
+    auto addEdit = [&](PCWSTR label, const std::wstring& text) {
+        return addControl(WS_EX_CLIENTEDGE, L"EDIT", text.c_str(),
+                          WS_TABSTOP | ES_AUTOHSCROLL, fieldX, addRow(label), fieldWidth,
+                          editHeight, 0);
+    };
+
+    g_editorEdits[kFieldName] = addEdit(L"Name", fields.name);
+    g_editorType = addControl(0, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST,
+                              fieldX, addRow(L"Type"), fieldWidth, Scale(200), 0);
+    for (PCWSTR label : kItemTypeLabels) {
+        SendMessageW(g_editorType, CB_ADDSTRING, 0, (LPARAM)label);
+    }
+    SendMessageW(g_editorType, CB_SETCURSEL, (WPARAM)ParseItemType(fields.type.c_str()),
+                 0);
+    g_editorEdits[kFieldTarget] = addEdit(L"Target", fields.target);
+    g_editorEdits[kFieldArgs] = addEdit(L"Arguments", fields.args);
+    g_editorEdits[kFieldWorkingDir] = addEdit(L"Working folder", fields.workingDir);
+    g_editorEdits[kFieldGroup] = addEdit(L"Group", fields.group);
+    g_editorEdits[kFieldProfiles] = addEdit(L"Profiles", fields.profiles);
+    g_editorEdits[kFieldOptions] = addEdit(L"Options", fields.options);
+    addControl(0, L"STATIC",
+               L"Comma separated, in any order: admin, minimized, maximized, hidden, "
+               L"wait, duplicate, delay=2s, process=node.exe, shell=pwsh, "
+               L"subtitle=text, icon=E768.\nExample: minimized, delay=2s, "
+               L"process=node.exe",
+               SS_LEFT, fieldX, y - Scale(4), fieldWidth, hintHeight, 0);
+    y += hintHeight;
+    g_editorEnabled = addControl(0, L"BUTTON", L"On by default",
+                                 WS_TABSTOP | BS_AUTOCHECKBOX, fieldX, y, fieldWidth,
+                                 editHeight, 0);
+    SendMessageW(g_editorEnabled, BM_SETCHECK, fields.enabled ? BST_CHECKED : BST_UNCHECKED,
+                 0);
+    y += rowHeight + Scale(8);
+
+    int buttonWidth = Scale(88);
+    addControl(0, L"BUTTON", L"Cancel", WS_TABSTOP | BS_PUSHBUTTON,
+               clientWidth - pad - buttonWidth, y, buttonWidth, Scale(28), IDCANCEL);
+    addControl(0, L"BUTTON", L"Save", WS_TABSTOP | BS_DEFPUSHBUTTON,
+               clientWidth - pad * 2 - buttonWidth * 2 + Scale(8), y, buttonWidth,
+               Scale(28), IDOK);
+
+    ShowWindow(g_editorWnd, SW_SHOWNORMAL);
+    ForceForeground(g_editorWnd);
+    SetFocus(g_editorEdits[fields.name.empty() ? kFieldName : kFieldTarget]);
+}
+
+static bool PickPath(bool folder, std::wstring& path) {
+    IFileOpenDialog* dialog = nullptr;
+    if (FAILED(CoCreateInstance(__uuidof(FileOpenDialog), nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&dialog)))) {
+        return false;
+    }
+    FILEOPENDIALOGOPTIONS options = 0;
+    dialog->GetOptions(&options);
+    dialog->SetOptions(options | FOS_FORCEFILESYSTEM |
+                       (folder ? FOS_PICKFOLDERS : FOS_NODEREFERENCELINKS));
+    if (!folder) {
+        COMDLG_FILTERSPEC filters[] = {
+            {L"Apps and shortcuts", L"*.exe;*.lnk;*.url;*.bat;*.cmd;*.ps1"},
+            {L"All files", L"*.*"},
+        };
+        dialog->SetFileTypes(ARRAYSIZE(filters), filters);
+    }
+    dialog->SetTitle(folder ? L"Add a folder to StackSwitch"
+                            : L"Add an app or file to StackSwitch");
+    bool picked = false;
+    IShellItem* result = nullptr;
+    if (SUCCEEDED(dialog->Show(nullptr)) && SUCCEEDED(dialog->GetResult(&result))) {
+        PWSTR name = nullptr;
+        if (SUCCEEDED(result->GetDisplayName(SIGDN_FILESYSPATH, &name))) {
+            path = name;
+            CoTaskMemFree(name);
+            picked = true;
+        }
+        result->Release();
+    }
+    dialog->Release();
+    return picked;
+}
+
+static std::wstring ShellItemText(IShellItem2* item, const PROPERTYKEY* key) {
+    PWSTR text = nullptr;
+    HRESULT result = key ? item->GetString(*key, &text)
+                         : item->GetDisplayName(SIGDN_NORMALDISPLAY, &text);
+    std::wstring value;
+    if (SUCCEEDED(result) && text) {
+        value = Trim(text);
+        CoTaskMemFree(text);
+    }
+    return value;
+}
+
+static std::wstring AppDisplayName(const std::wstring& parsingName, bool packaged) {
+    IShellItem2* item = nullptr;
+    if (FAILED(SHCreateItemFromParsingName(parsingName.c_str(), nullptr,
+                                           IID_PPV_ARGS(&item)))) {
+        return std::wstring();
+    }
+    std::wstring name;
+    if (packaged) {
+        name = ShellItemText(item, nullptr);
+    } else {
+        name = ShellItemText(item, &kFileDescriptionKey);
+        if (name.empty() || name == L"Electron") {
+            name = ShellItemText(item, &kProductNameKey);
+        }
+    }
+    item->Release();
+    return name;
+}
+
+static std::wstring WindowAppUserModelId(HWND window) {
+    IPropertyStore* store = nullptr;
+    if (FAILED(SHGetPropertyStoreForWindow(window, IID_PPV_ARGS(&store)))) {
+        return std::wstring();
+    }
+    PROPVARIANT value;
+    PropVariantInit(&value);
+    std::wstring id;
+    if (SUCCEEDED(store->GetValue(kAppUserModelIdKey, &value)) && value.vt == VT_LPWSTR) {
+        id = value.pwszVal;
+    }
+    PropVariantClear(&value);
+    store->Release();
+    return id;
+}
+
+static std::vector<ItemFields> ListRunningApps() {
+    std::unordered_set<std::wstring> known = {
+        L"explorer.exe",           L"shellexperiencehost.exe", L"textinputhost.exe",
+        L"startmenuexperiencehost.exe", L"searchhost.exe",     L"lockapp.exe",
+    };
+    {
+        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
+        for (const auto& item : g_settings.items) {
+            std::wstring process = ResolveProcessName(item);
+            if (!process.empty()) {
+                known.insert(process);
+            }
+            known.insert(ToLower(ExpandTokens(item.target)));
+        }
+    }
+
+    std::vector<HWND> windows;
+    EnumWindows(
+        [](HWND window, LPARAM param) -> BOOL {
+            if (IsWindowVisible(window) && !GetWindow(window, GW_OWNER) &&
+                !(GetWindowLongPtrW(window, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) &&
+                GetWindowTextLengthW(window) > 0) {
+                reinterpret_cast<std::vector<HWND>*>(param)->push_back(window);
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&windows));
+
+    std::vector<ItemFields> apps;
+    for (HWND window : windows) {
+        DWORD pid = 0;
+        GetWindowThreadProcessId(window, &pid);
+        HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (!process) {
+            continue;
+        }
+        wchar_t imagePath[MAX_PATH * 2];
+        DWORD size = ARRAYSIZE(imagePath);
+        std::wstring path =
+            QueryFullProcessImageNameW(process, 0, imagePath, &size) ? imagePath : L"";
+        wchar_t packageId[MAX_PATH * 2];
+        UINT32 idLength = ARRAYSIZE(packageId);
+        std::wstring appId =
+            GetApplicationUserModelId(process, &idLength, packageId) == ERROR_SUCCESS
+                ? packageId
+                : L"";
+        CloseHandle(process);
+
+        std::wstring exe = ToLower(FileNameOf(path));
+        if (exe.empty() || known.count(exe) || known.count(ToLower(path))) {
+            continue;
+        }
+        if (exe == L"applicationframehost.exe") {
+            appId = WindowAppUserModelId(window);
+            exe.clear();
+            if (appId.empty()) {
+                continue;
+            }
+        }
+
+        ItemFields app;
+        if (appId.empty()) {
+            app.target = path;
+            app.name = AppDisplayName(path, false);
+            if (app.name.empty()) {
+                app.name = FileNameOf(path).substr(0, FileNameOf(path).rfind(L'.'));
+            }
+        } else {
+            app.target = L"shell:AppsFolder\\" + appId;
+            app.name = AppDisplayName(app.target, true);
+            if (!exe.empty()) {
+                app.options = L"process=" + FileNameOf(path);
+            }
+        }
+        if (app.name.empty() || known.count(ToLower(app.target))) {
+            continue;
+        }
+        known.insert(ToLower(app.target));
+        if (!exe.empty()) {
+            known.insert(exe);
+        }
+        apps.push_back(std::move(app));
+    }
+    std::sort(apps.begin(), apps.end(), [](const ItemFields& a, const ItemFields& b) {
+        return ToLower(a.name) < ToLower(b.name);
+    });
+    return apps;
+}
+
+static void ShowAddMenu(POINT screenPoint) {
+    std::vector<ItemFields> running = ListRunningApps();
+    HMENU menu = CreatePopupMenu();
+    HMENU runningMenu = CreatePopupMenu();
+    if (!menu || !runningMenu) {
+        return;
+    }
+    for (size_t i = 0; i < running.size(); i++) {
+        AppendMenuW(runningMenu, MF_STRING, kAddMenuRunningFirst + i,
+                    running[i].name.c_str());
+    }
+    if (running.empty()) {
+        AppendMenuW(runningMenu, MF_STRING | MF_GRAYED, 0, L"Everything running is listed");
+    }
+    AppendMenuW(menu, MF_POPUP, (UINT_PTR)runningMenu, L"Running app");
+    AppendMenuW(menu, MF_STRING, kAddMenuFile, L"App or file...");
+    AppendMenuW(menu, MF_STRING, kAddMenuFolder, L"Folder...");
+    AppendMenuW(menu, MF_STRING, kAddMenuOther, L"URL or command...");
+
+    int command = TrackPanelMenu(menu, screenPoint);
+    ItemFields fields;
+    if (command >= kAddMenuRunningFirst &&
+        command < kAddMenuRunningFirst + (int)running.size()) {
+        fields = running[command - kAddMenuRunningFirst];
+    } else if (command == kAddMenuFile || command == kAddMenuFolder) {
+        ClosePanel();
+        bool folder = command == kAddMenuFolder;
+        if (!PickPath(folder, fields.target)) {
+            return;
+        }
+        std::wstring file = FileNameOf(fields.target);
+        fields.name = folder ? file : file.substr(0, file.rfind(L'.'));
+        if (folder) {
+            fields.type = L"folder";
+        }
+    } else if (command == kAddMenuOther) {
+        fields.type = L"url";
+    } else {
+        return;
+    }
+    OpenItemEditor(fields, -1);
+}
+
+static void RemovePanelItem(int panelIndex, const std::wstring& name) {
+    std::wstring message = L"Remove " + name + L" from StackSwitch?";
+    g_suppressDeactivate = true;
+    int answer = MessageBoxW(g_panelWnd, message.c_str(), L"StackSwitch",
+                             MB_OKCANCEL | MB_ICONQUESTION);
+    g_suppressDeactivate = false;
+    if (answer != IDOK) {
+        return;
+    }
+    std::vector<ItemFields> items;
+    {
+        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
+        items = g_panelItems;
+    }
+    if (panelIndex < 0 || panelIndex >= (int)items.size()) {
+        return;
+    }
+    items.erase(items.begin() + panelIndex);
+    StorePanelItems(items);
+}
+
 static void ShowItemMenu(int rowIndex, POINT screenPoint) {
     if (rowIndex < 0 || rowIndex >= (int)g_rows.size() || g_rows[rowIndex].isGroup) {
         return;
@@ -4138,6 +4464,13 @@ static void ShowItemMenu(int rowIndex, POINT screenPoint) {
         AppendMenuW(menu, MF_STRING, kItemMenuShowInExplorer, L"Show in File Explorer");
     }
     AppendMenuW(menu, MF_STRING, kItemMenuCopyTarget, L"Copy target");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    if (item.panelIndex >= 0) {
+        AppendMenuW(menu, MF_STRING, kItemMenuEdit, L"Edit...");
+        AppendMenuW(menu, MF_STRING, kItemMenuRemove, L"Remove");
+    } else {
+        AppendMenuW(menu, MF_STRING, kItemMenuEdit, L"Edit in Windhawk");
+    }
 
     switch (TrackPanelMenu(menu, screenPoint)) {
         case kItemMenuLaunch:
@@ -4168,6 +4501,25 @@ static void ShowItemMenu(int rowIndex, POINT screenPoint) {
             break;
         case kItemMenuResetOrder:
             ResetItemOrder();
+            break;
+        case kItemMenuEdit:
+            if (item.panelIndex < 0) {
+                OpenWindhawk();
+                ClosePanel();
+            } else {
+                ItemFields fields;
+                {
+                    std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
+                    if (item.panelIndex >= (int)g_panelItems.size()) {
+                        break;
+                    }
+                    fields = g_panelItems[item.panelIndex];
+                }
+                OpenItemEditor(fields, item.panelIndex);
+            }
+            break;
+        case kItemMenuRemove:
+            RemovePanelItem(item.panelIndex, item.name);
             break;
         default:
             break;
@@ -4215,14 +4567,7 @@ static void HandleClick(const HitResult& hit) {
             }
             if (hit.index >= 0 && hit.index < (int)g_rows.size()) {
                 StartSequence(RunLaunchSequence, {g_rows[hit.index].itemIndex});
-                bool closeAfter = false;
-                {
-                    std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-                    closeAfter = g_settings.closeAfterLaunch;
-                }
-                if (closeAfter) {
-                    ClosePanel();
-                }
+                ClosePanel();
             }
             break;
         case HitKind::GroupHeader:
@@ -4255,6 +4600,13 @@ static void HandleClick(const HitResult& hit) {
         case HitKind::Refresh:
             RefreshRunningStatus();
             break;
+        case HitKind::Add: {
+            POINT screenPoint{g_layout.addButton.X,
+                              g_layout.addButton.Y + g_layout.addButton.Height};
+            ClientToScreen(g_panelWnd, &screenPoint);
+            ShowAddMenu(screenPoint);
+            break;
+        }
         case HitKind::Cancel:
             g_cancelLaunch = true;
             break;
@@ -4616,24 +4968,16 @@ static SIZE MeasureButton() {
     {
         std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
         style = g_settings.buttonStyle;
-        label = g_settings.buttonLabel;
+        label = g_settings.panelTitle;
     }
     int width = Scale(20);
     if (style != ButtonStyle::Label) {
         width += Scale(16);
     }
-    if (style != ButtonStyle::Glyph && !label.empty()) {
+    if (style != ButtonStyle::Glyph) {
         width += MeasureText(label, UiFont(-1)) + Scale(6);
     }
     return SIZE{max(Scale(32), width), Scale(30)};
-}
-
-static bool ResolveButtonGlyph(const std::wstring& source, std::wstring& glyph) {
-    if (ParseGlyph(source, glyph)) {
-        return true;
-    }
-    glyph = source.empty() ? std::wstring(L"\uE768") : source;
-    return source.empty();
 }
 
 static void PaintButton(HWND window) {
@@ -4652,13 +4996,11 @@ static void PaintButton(HWND window) {
     bool open = g_panelOpen.load();
 
     ButtonStyle style;
-    std::wstring glyphSource;
     std::wstring label;
     {
         std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
         style = g_settings.buttonStyle;
-        glyphSource = g_settings.buttonGlyph;
-        label = g_settings.buttonLabel;
+        label = g_settings.panelTitle;
     }
 
     gp::Color base =
@@ -4675,14 +5017,12 @@ static void PaintButton(HWND window) {
     gp::Color foreground = open ? palette.accentText : base;
     int contentLeft = Scale(10);
     if (style != ButtonStyle::Label) {
-        std::wstring glyph;
-        bool isGlyph = ResolveButtonGlyph(glyphSource, glyph);
-        state.surface.RenderText(glyph, isGlyph ? IconFont(-2) : UiFont(-2), foreground,
+        state.surface.RenderText(L"\uE768", IconFont(-2), foreground,
                                  gp::Rect(contentLeft, 0, Scale(16), height),
                                  kTextCenter);
         contentLeft += Scale(16) + Scale(4);
     }
-    if (style != ButtonStyle::Glyph && !label.empty()) {
+    if (style != ButtonStyle::Glyph) {
         state.surface.RenderText(
             label, UiFont(-1), foreground,
             gp::Rect(contentLeft, 0, width - contentLeft - Scale(8), height),
@@ -4708,19 +5048,11 @@ static void PositionButton(HWND window) {
     size.cy = min((int)size.cy, max(Scale(18), anchors.height - Scale(6)));
 
     ButtonPosition position;
-    ButtonAlign align;
-    int offset = 0;
-    int offsetY = 0;
-    int percent = 50;
     {
         std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
         position = g_settings.buttonPosition;
-        align = g_settings.buttonAlign;
-        offset = g_settings.buttonOffset;
-        offsetY = g_settings.buttonOffsetY;
-        percent = g_settings.buttonPercent;
     }
-    int scaledOffset = Scale(offset);
+    int scaledOffset = Scale(8);
 
     int x = 0;
     switch (position) {
@@ -4728,10 +5060,7 @@ static void PositionButton(HWND window) {
             x = scaledOffset;
             break;
         case ButtonPosition::Center:
-            x = (anchors.width - size.cx) / 2 + scaledOffset;
-            break;
-        case ButtonPosition::Percent:
-            x = anchors.width * percent / 100 - size.cx / 2 + scaledOffset;
+            x = (anchors.width - size.cx) / 2;
             break;
         case ButtonPosition::BeforeTray:
             x = (anchors.hasTray ? anchors.trayLeft : anchors.width) - size.cx -
@@ -4754,10 +5083,7 @@ static void PositionButton(HWND window) {
     }
     x = max(0, min(x, anchors.width - (int)size.cx));
 
-    int y = align == ButtonAlign::Top      ? 0
-            : align == ButtonAlign::Bottom ? anchors.height - size.cy
-                                           : (anchors.height - size.cy) / 2;
-    y = max(0, min(y + Scale(offsetY), anchors.height - (int)size.cy));
+    int y = (anchors.height - size.cy) / 2;
 
     RECT current{};
     GetWindowRect(window, &current);
@@ -4933,15 +5259,10 @@ static std::vector<HWND> FindOwnWindowsOfClass(PCWSTR className) {
 }
 
 static void CreateTaskbarButtons() {
-    bool enabled = false;
     bool secondary = false;
     {
         std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        enabled = g_settings.showTaskbarButton;
         secondary = g_settings.showOnSecondaryTaskbars;
-    }
-    if (!enabled) {
-        return;
     }
 
     std::vector<HWND> taskbars;
@@ -5025,18 +5346,7 @@ static HICON CreateTrayIcon() {
     if (!surface.Resize(size, size)) {
         return nullptr;
     }
-    std::wstring glyphSource;
-    std::wstring family;
-    {
-        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        glyphSource = g_settings.buttonGlyph;
-        family = g_settings.fontFamily;
-    }
-    std::wstring glyph;
-    bool isGlyph = ResolveButtonGlyph(glyphSource, glyph);
-    surface.RenderText(glyph,
-                       GetFont(isGlyph ? IconFontFamily() : family,
-                               (int)(size * 0.72), false),
+    surface.RenderText(L"\uE768", GetFont(IconFontFamily(), (int)(size * 0.72), false),
                        CurrentPalette().taskbarLight ? gp::Color(255, 0, 0, 0)
                                                      : gp::Color(255, 255, 255, 255),
                        gp::Rect(0, 0, size, size), kTextCenter);
@@ -5181,14 +5491,6 @@ static bool ExplorerJustStarted() {
 }
 
 static bool ShouldAutoRunToday() {
-    bool oncePerDay = true;
-    {
-        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        oncePerDay = g_settings.autoRunOncePerDay;
-    }
-    if (!oncePerDay) {
-        return true;
-    }
     SYSTEMTIME time{};
     GetLocalTime(&time);
     wchar_t today[16];
@@ -5204,16 +5506,14 @@ static bool ShouldAutoRunToday() {
 
 static void ScheduleAutoRun() {
     std::wstring profile;
-    int delaySeconds = 0;
     {
         std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
         profile = g_settings.autoRunProfile;
-        delaySeconds = g_settings.autoRunDelaySeconds;
     }
     if (profile.empty() || !ExplorerJustStarted() || !ShouldAutoRunToday()) {
         return;
     }
-    SetTimer(g_messageWnd, kTimerAutoRun, max(1, delaySeconds) * 1000, nullptr);
+    SetTimer(g_messageWnd, kTimerAutoRun, 15000, nullptr);
 }
 
 static LRESULT CALLBACK MessageWndProc(HWND window,
@@ -5312,6 +5612,15 @@ static void RegisterWindowClasses() {
     messageClass.hInstance = GetModuleHandleW(nullptr);
     messageClass.lpszClassName = kMessageClass;
     RegisterClassExW(&messageClass);
+
+    WNDCLASSEXW editorClass{};
+    editorClass.cbSize = sizeof(editorClass);
+    editorClass.lpfnWndProc = EditorWndProc;
+    editorClass.hInstance = GetModuleHandleW(nullptr);
+    editorClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    editorClass.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+    editorClass.lpszClassName = kEditorClass;
+    RegisterClassExW(&editorClass);
 }
 
 static void UnregisterWindowClasses() {
@@ -5319,6 +5628,7 @@ static void UnregisterWindowClasses() {
     UnregisterClassW(kButtonClass, instance);
     UnregisterClassW(kPanelClass, instance);
     UnregisterClassW(kMessageClass, instance);
+    UnregisterClassW(kEditorClass, instance);
 }
 
 static HWND WaitForTaskbar() {
@@ -5379,8 +5689,15 @@ static void UiThreadMain() {
 
     MSG message;
     while (!g_unloading && GetMessageW(&message, nullptr, 0, 0) > 0) {
+        if (g_editorWnd && IsDialogMessageW(g_editorWnd, &message)) {
+            continue;
+        }
         TranslateMessage(&message);
         DispatchMessageW(&message);
+    }
+
+    if (g_editorWnd) {
+        DestroyWindow(g_editorWnd);
     }
 
     UnregisterHotKey(g_messageWnd, kHotkeyId);
@@ -5409,7 +5726,11 @@ BOOL Wh_ModInit() {
 
     g_backgroundQueue.Start();
     g_launchQueue.Start();
-    g_uiThread = std::thread(UiThreadMain);
+    g_uiThread = std::thread([] {
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        UiThreadMain();
+        CoUninitialize();
+    });
     return TRUE;
 }
 
