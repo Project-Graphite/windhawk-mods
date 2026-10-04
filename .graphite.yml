@@ -23,6 +23,7 @@ projects:
     authors: [AmrMsCLL]
     status: source-only
     listed: true
+    paths: [mods/stack-switch]
     showcase:
       problem: >
         A development session can mean opening the same mix of applications, workspaces, folders, URLs and terminal commands, then finding and closing them all again in the right order.
@@ -48,6 +49,7 @@ projects:
     authors: [AmrMsCLL]
     status: source-only
     listed: true
+    paths: [mods/tasktune]
     showcase:
       problem: >
         Checking playback details or controlling several media and audio applications usually means opening a player window or a separate volume interface and leaving the current workflow.
