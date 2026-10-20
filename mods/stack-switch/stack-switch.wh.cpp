@@ -23,126 +23,121 @@ A button on the taskbar that opens a launcher panel. Tick what you want, press
 
 ## Quick start
 
-1. Set **Root folder** to wherever your projects live, for example `C:\Git`.
-2. Open the panel with the taskbar button or `Ctrl+Alt+S`, press **+** at the bottom
-   and pick a running app, a file or a folder. Or add a **Stack item** here in the
-   settings - both kinds show up in the same list.
-3. Give the items you use together the same **Profile** name, and list that name
-   in **Profiles** so it gets a chip in the panel.
+Everything is set up from the panel itself - this mod has nothing on the Windhawk
+settings page.
+
+1. Open the panel with the taskbar button or `Ctrl+Alt+S`.
+2. Press **+** at the bottom, type a few letters of an app's name and click it.
+3. Press the gear, add a few names to **Profiles**, then right click items and tick
+   them under **Profiles** - each profile gets a chip at the top of the panel.
 
 ---
 
-## Two places to keep items
+## Settings, and where they are kept
 
-**In the panel.** Press **+** in the panel footer:
+The gear swaps the list for the **Settings** page: title, profiles, compact rows,
+the taskbar button's position, style and hotkey, the tray icon, secondary
+taskbars, the two close options and the profile to launch at sign-in. Click a
+field to type in it, a switch to flip it, or a dropdown to pick from it, then
+press **Save**. **Cancel**, `Esc` or the cross in the corner leaves without saving.
 
-| Choice | Adds |
-| --- | --- |
-| **Running app** | an app that has a window open right now. Store apps are saved by their app ID, so the item keeps working after the app updates itself |
-| **App or file...** | an `.exe`, a shortcut or any other file |
-| **Folder...** | a folder in File Explorer |
-| **URL or command...** | a blank item, for a URL, a terminal command or anything else |
+Everything - those settings, your items, toggles, order, collapsed groups and the
+active profile - is kept in Windhawk's storage for this mod, so it survives
+restarts, Explorer restarts and mod updates. It is removed only when the mod itself
+is removed from Windhawk.
 
-Each choice opens a small editor with the same fields as a settings item. Right click
-a panel item for **Edit...** and **Remove**. Panel items are stored by the mod
-itself, so they never make the settings page longer.
+Settings and items from older versions, which lived on the Windhawk settings page,
+are copied into the panel once, the first time this version runs.
 
-**In the settings.** Add a **Stack item** here. Right click one in the panel and
-choose **Edit in Windhawk** to come back to this page.
+---
 
-Both kinds are listed, grouped, ordered, toggled and launched the same way.
+## Adding items
 
-## How an item's settings are laid out
+Press **+** in the panel footer. The **Add** page has three parts:
 
-Every item, in the settings or in the panel editor, has the same fields in this
-order:
+* **Create** - start a new item of a given kind: an app, file or shortcut, a folder
+  in File Explorer, a folder in VS Code, a website, a terminal command or a
+  background command. The file and folder entries ask for the path first.
+* **Running now** - apps with a window open at the moment.
+* **All apps** - every app in the Start menu.
 
-| Field | What it is |
-| --- | --- |
-| **Name** | the label in the panel. An empty name ends the settings list |
-| **On by default** | the toggle's starting state, and what the `All` chip resets it to |
-| **Type** | how **Target** is read - see *Item types* below |
-| **Target** | a path, a URL, or the command line for `terminal` and `command` items |
-| **Arguments** | extra arguments added after **Target** |
-| **Working folder** | where it starts. Empty uses the app's own folder, or **Root folder** for `terminal` and `command` items |
-| **Group** | the heading it sits under. Empty lists it without a heading |
-| **Profiles** | comma separated profile names it belongs to |
-| **Options** | everything else, on one line - see *Options* below |
+Type to search all three. Click an app to add it straight away, or click the pencil
+next to it to open it in the item editor first. `Up` / `Down` and `Enter` work too,
+and `Ctrl+Enter` opens the highlighted app in the editor.
 
-Only **Name**, **Type** and **Target** are needed. Everything else can stay empty.
+Apps are saved by their Start menu ID rather than a file path, so an item keeps
+working when the app updates itself or moves to a new version folder. The process
+to track is filled in too, so the running dot and **Close** work straight away -
+for a Store app only when it was running at the time.
 
-## Options
+## The item editor
 
-**Options** holds the settings most items never need, so each item stays short.
-Leave it empty and the item uses every default.
+Opened from **Create**, from the pencil, or with **Edit...** on an item's right
+click menu. Only **Name** is required.
 
-The rules:
-
-* separate options with commas
-* the order does not matter - `wait, admin` and `admin, wait` are the same
-* if an option appears twice, the last one wins
-* upper and lower case are the same
-* wrap a value in double quotes when it contains a comma: `subtitle="Chat, calls"`
-* anything unrecognised is ignored
-
-| Option | Does | Without it |
+| Section | Field | What it is |
 | --- | --- | --- |
-| `admin` | runs the item as administrator. It then cannot be closed again from StackSwitch | runs normally |
-| `minimized` / `maximized` / `hidden` | how the window comes up. See *Window state* | normal window |
-| `wait` | holds the rest of the launch until this item exits | carries on straight away |
-| `duplicate` | launches it even when its process is already running | skipped if already running |
-| `delay=2000` or `delay=2s` | waits this long before starting this item | no extra wait |
-| `process=node.exe` | the process that shows the running dot and gets closed by **Close** | worked out for `.exe` and VS Code items only |
-| `shell=pwsh` | the shell for `terminal` and `command` items: `powershell`, `pwsh`, `cmd`, `gitbash` or `wsl` | Windows PowerShell |
-| `subtitle=text` | the second line under the name | shows **Target** |
-| `icon=E768` | a Segoe Fluent Icons code, a single emoji, or a path to an `.exe` or `.ico` | the target's own icon |
+| What it opens | **Name** | the label in the panel |
+| | **Type** | app, VS Code folder, File Explorer folder, URL, terminal command or background command - the fields below adjust to it |
+| | **Target** / **Folder** / **Address** / **Command** | what to open or run. The folder button browses for it |
+| | **Arguments** | extra arguments added after the target |
+| | **Working folder** | where it starts. Empty uses the app's own folder, or your user folder for commands |
+| | **Shell** | for commands: Windows PowerShell, PowerShell 7, Command Prompt, Git Bash or WSL |
+| Organise | **Group** | the heading it sits under. The arrow lists the groups you already have |
+| | **On by default** | the toggle's starting state, and what the `All` chip resets it to |
+| | **In profile ...** | one switch per profile |
+| Launch | **Window** | normal, minimized, maximized or hidden - see *Window state* |
+| | **Wait before starting** | a pause before this item, from 1 second to 1 minute |
+| | **Hold the launch until it exits** | the next item waits for this one to close |
+| | **Launch even when already running** | otherwise a running item is skipped |
+| | **Run as administrator** | it then cannot be closed again from StackSwitch |
+| Display and tracking | **Subtitle** | the second line under the name. Empty shows the target |
+| | **Icon** | a Segoe Fluent Icons code such as `E768`, an emoji, or an `.exe` / `.ico` file |
+| | **Process to track** | the process behind the running dot and **Close**, such as `node.exe` |
 
-### Example
+Text fields take typing, `Backspace` and `Ctrl+V`; `Tab` moves to the next one,
+`Enter` saves and `Esc` steps back.
 
-A dev server that starts two seconds after the database, in its own minimized
-terminal, and that **Close** can find again:
+## The item menu
 
-| Field | Value |
+Right click any item in the panel. Entries with an arrow open in place; the top row
+takes you back.
+
+| Entry | Does |
 | --- | --- |
-| **Name** | `API dev server` |
-| **Type** | `terminal` |
-| **Target** | `npm run dev` |
-| **Working folder** | `{root}\api` |
-| **Group** | `Backend` |
-| **Profiles** | `daily, full` |
-| **Options** | `minimized, delay=2s, process=node.exe, shell=pwsh, subtitle="Port 3000"` |
+| **Launch now** / **Close now** | starts or closes just this item |
+| **Turn on** / **Turn off** | the same as its toggle |
+| **Type** | switches how the target is read, for example a folder from File Explorer to VS Code |
+| **Group** | moves it to an existing group, out of any group, or to a **New group...** |
+| **Profiles** | ticks or unticks it for each profile |
+| **Move up** / **Move down** / **Reset order** | reorders it, see *Reordering* |
+| **Show in File Explorer** / **Copy target** | for app, VS Code and folder items |
+| **Edit...** | opens the item editor |
+| **Duplicate** | adds a copy right below, to tweak |
+| **Remove** | deletes it, after asking |
 
-Read left to right, **Options** says: minimize its window, wait two seconds before
-starting it, treat `node.exe` as its process, run it in PowerShell 7, and show
-`Port 3000` under the name.
+Changing an item from this menu keeps its toggle and its place in the order.
 
 ## Item types
 
 | Type | What it opens | Example target |
 | --- | --- | --- |
-| `app` | Any executable, document or shortcut | `C:\Program Files\Docker\Docker\Docker Desktop.exe` |
-| `vscode` | A folder or `.code-workspace` in VS Code | `{root}\my-project` |
-| `folder` | A folder in File Explorer | `{root}\my-project\docs` |
-| `url` | A URL in the default browser | `http://localhost:3000` |
-| `terminal` | A command in a visible terminal | `npm run dev` |
-| `command` | A command with no window at all | `wsl --shutdown` |
-
-**Target** is read according to the type. For `terminal` and `command` it is the
-command line itself, run through the shell picked with `shell=` in **Options**.
+| App | Any executable, document or shortcut | `C:\Program Files\Docker\Docker\Docker Desktop.exe` |
+| VS Code | A folder or `.code-workspace` in VS Code | `C:\Git\my-project` |
+| File Explorer | A folder window | `%USERPROFILE%\Downloads` |
+| URL | A URL in the default browser | `http://localhost:3000` |
+| Terminal | A command in a visible terminal | `npm run dev` |
+| Background | A command with no window at all | `wsl --shutdown` |
 
 A PowerShell or pwsh command is handed over base64-encoded, so semicolons, pipes,
 quotes and braces all survive exactly as written - a one-liner like
 `Get-ChildItem | ForEach-Object { Write-Host $_.Name; $_ }` needs no escaping. For
-`cmd`, Git Bash and WSL the command is passed as text, so a double quote inside a
-Git Bash or WSL command is escaped for you, but the shell's own rules still apply.
+Command Prompt, Git Bash and WSL the command is passed as text, so a double quote
+inside a Git Bash or WSL command is escaped for you, but the shell's own rules still
+apply.
 
----
-
-## Paths and tokens
-
-`{root}` expands to the **Root folder** setting, so `{root}\my-project` saves
-repeating the full path in every item. Environment variables are expanded too, so
-`%USERPROFILE%\Downloads` and `%LOCALAPPDATA%` work anywhere a path is accepted.
+Environment variables such as `%USERPROFILE%` and `%LOCALAPPDATA%` work anywhere a
+path is accepted.
 
 ---
 
@@ -154,7 +149,7 @@ in that group at once: if any of them is off it turns them all on, otherwise it
 turns them all off.
 
 Items with the same group name are always listed together under one heading, no
-matter where they sit in the settings, so the list stays tidy however you add to it.
+matter when they were added, so the list stays tidy however you add to it.
 
 ---
 
@@ -166,19 +161,17 @@ group. The same moves are on the right click menu of any item or heading, and
 
 **Launch order follows the panel**, so dragging changes what starts first.
 
-A mod cannot write to its own Windhawk settings, so the order you drag is stored
-separately and the settings page keeps listing items as you typed them. The two
-disagreeing is harmless - the panel wins for display and for launching. **Reset
-order to settings**, on either right click menu, throws the override away and goes
-back to the settings order.
+**Reset order**, on either right click menu, goes back to the order the items were
+added in.
 
 ---
 
 ## Profiles
 
-A profile is a named set. Put the name in an item's **Profiles** field, list the
-name in the global **Profiles** setting, and it appears as a chip at the top of the
-panel.
+A profile is a named set. List the name under **Profiles** on the Settings page
+and it appears as a chip at the top of the panel. Then tick it for an item from
+the item's right click menu, under **Profiles**, or with its **In profile** switch
+in the item editor.
 
 Clicking a chip turns on exactly the items carrying that name and turns off
 everything else. The `All` chip resets every toggle back to its **On by default**
@@ -193,7 +186,8 @@ value. Example: an item with `daily, full` comes on for the `daily` chip and the
 **Title**, **Button style** picks the icon, the label or both, and **Button
 position** picks where it sits.
 
-**Gear, top right** - opens Windhawk so you can edit these settings.
+**Gear, top right** - opens the Settings page. On the Settings, Add and editor
+pages it becomes a cross that goes back to the list.
 
 **Profile chips** - switch the whole selection in one click, as above.
 
@@ -204,9 +198,7 @@ position** picks where it sits.
 whole group.
 
 **Item row** - clicking the name launches that one item immediately, whatever its
-toggle says. Right click gives *Launch now*, *Close now* when it is running,
-*Turn on* / *Turn off*, *Show in File Explorer* for app, VS Code and folder items,
-and *Copy target*.
+toggle says. Right click opens the item menu, see *The item menu*.
 
 **Item toggle** - includes or excludes the item from Launch and Close. The state
 survives reboots, so something you only need occasionally can sit switched off
@@ -242,22 +234,25 @@ are selected.
 | `Ctrl+Enter` | launches the whole selection |
 | `Ctrl+A` / `Ctrl+D` | select all / select none |
 
+In a right click menu, `Up` / `Down` move, `Enter` or `Right` picks or opens, and
+`Left` or `Esc` steps back.
+
 ---
 
 ## Ordering a launch
 
 Items launch top to bottom in the order they are listed.
 
-* `delay=` in **Options** waits before one specific item.
+* **Wait before starting** pauses before one specific item.
 * A short 400 ms pause separates every pair of items.
-* `wait` in **Options** holds the rest of the sequence until that item closes.
-  A terminal item set to wait closes its window when the command finishes, so the
-  wait can end; every other terminal item stays open.
+* **Hold the launch until it exits** holds the rest of the sequence until that
+  item closes. A terminal item set this way closes its window when the command
+  finishes, so the wait can end; every other terminal item stays open.
 
 Example: put Docker Desktop at the top, then give the `docker compose up` item
-below it `delay=20s` so the daemon is ready before compose runs. Use `wait` only
-for steps that genuinely finish, such as a migration - a normal app would stall
-the launch forever.
+below it a 20 second wait so the daemon is ready before compose runs. Hold the
+launch only for steps that genuinely finish, such as a migration - a normal app
+would stall the launch forever.
 
 ---
 
@@ -272,11 +267,12 @@ loses unsaved work.
 
 An item needs a process before it can be closed:
 
-* `vscode` items, and `app` items whose target is an `.exe`, resolve one on their
-  own. An `app` item pointing at a shortcut, a document or a Store app ID needs
-  `process=` in **Options**. **Running app** fills that in for you.
-* `terminal` and `command` items need `process=` too. A terminal running a dev
-  server is usually `node.exe`, for instance, not the shell.
+* VS Code items, and app items whose target is an `.exe`, resolve one on their
+  own. An app item pointing at a shortcut, a document or a Store app ID needs
+  **Process to track** in the editor. Apps added with **+** usually have it filled
+  in for you.
+* Terminal and background commands need **Process to track** too. A terminal
+  running a dev server is usually `node.exe`, for instance, not the shell.
 * An item started as administrator cannot be closed from a normal Explorer, and
   a console window has nothing to close politely - that one needs **Force close**.
 
@@ -303,33 +299,32 @@ Windows build stops reporting it, they fall back to the nearest edge.
 
 ## Window state, and where it does not apply
 
-`minimized`, `maximized` and `hidden` work as written for `app`, `vscode`,
-`folder` and `url` items.
+**Window** set to minimized, maximized or hidden works as written for app, VS Code,
+File Explorer and URL items.
 
-For a `terminal` item it is not that simple. Windows hands every new console to
+For a terminal item it is not that simple. Windows hands every new console to
 whichever terminal is set as the default - Windows Terminal, unless you changed it -
-and that host ignores the requested state entirely. So `minimized` and
-`maximized` on a terminal item are applied after the window appears, which has
-two consequences:
+and that host ignores the requested state entirely. So minimized and maximized on
+a terminal item are applied after the window appears, which has two consequences:
 
 * the item gets its **own** Windows Terminal window rather than joining the shared
   one, because minimizing a shared window would take every other tab with it
 * the state is applied a moment after launch, so the window may flicker into view
   first
 
-`wait` also skips `wt.exe`, which exits the instant it hands the tab over. The
-shell is started directly so the wait tracks the shell itself; it can still open in
-Windows Terminal if that is your default terminal, and `minimized` or `maximized`
-is then not applied.
+**Hold the launch until it exits** also skips `wt.exe`, which exits the instant it
+hands the tab over. The shell is started directly so the wait tracks the shell
+itself; it can still open in Windows Terminal if that is your default terminal, and
+minimized or maximized is then not applied.
 
 ---
 
 ## Sign-in
 
-**Profile to run at sign-in** brings a profile up 15 seconds after you log in. It
-only fires within three minutes of Explorer starting, so editing settings never
-relaunches anything, and only once per day, so a later sign-in or a mod reload
-does not do it twice.
+**Profile to launch**, under Sign-in on the Settings page, brings a profile up 15
+seconds after you log in. It only fires within three minutes of Explorer
+starting, so editing settings never relaunches anything, and only once per day,
+so a later sign-in or a mod reload does not do it twice.
 
 ---
 
@@ -345,109 +340,14 @@ blue accent, the same as VS Code's interface.
 
 ## Icons
 
-Without `icon=` in **Options** the item uses its target's real shell icon.
-Otherwise `icon=` takes:
+With **Icon** empty in the editor the item uses its target's real shell icon.
+Otherwise **Icon** takes:
 
 * a Segoe Fluent Icons code point, four hex digits, such as `E768`
 * a single emoji
 * a full path to an `.exe` or `.ico` to pull the icon out of
 */
 // ==/WindhawkModReadme==
-
-// ==WindhawkModSettings==
-/*
-- rootPath: '%USERPROFILE%'
-  $name: Root folder
-  $description: The folder {root} expands to. See Details for the full reference.
-- profiles: [""]
-  $name: Profiles
-  $description: Profile names to show as chips at the top of the panel.
-- items:
-  - - name: New item
-      $name: Name
-      $description: Label shown in the panel. An empty name ends the list.
-    - enabled: true
-      $name: On by default
-      $description: Starting state of the toggle, and what the All chip resets it to.
-    - type: app
-      $name: Type
-      $description: How Target is interpreted.
-      $options:
-      - app: Application, document or shortcut
-      - vscode: Folder or workspace in VS Code
-      - folder: Folder in File Explorer
-      - url: URL in the default browser
-      - terminal: Command in a terminal window
-      - command: Command with no window
-    - target: ""
-      $name: Target
-      $description: A path, a URL, or a command line for the terminal and command types.
-    - args: ""
-      $name: Arguments
-      $description: Extra arguments appended after Target.
-    - workingDir: ""
-      $name: Working folder
-      $description: Empty uses the app's own folder, or Root folder for terminal and command items.
-    - group: ""
-      $name: Group
-      $description: Heading to file this item under. Empty lists it without a heading.
-    - profiles: ""
-      $name: Profiles
-      $description: Comma separated profile names this item belongs to.
-    - options: ""
-      $name: Options
-      $description: >-
-        Optional extras, comma separated, in any order: admin, minimized, maximized,
-        hidden, wait, duplicate, delay=2s, process=node.exe, shell=pwsh, subtitle=text,
-        icon=E768. Example: minimized, delay=2s, process=node.exe. Details lists them all.
-  $name: Stack items
-  $description: >-
-    Everything the launcher can start. Items added with the panel's + button are kept
-    in the panel instead. An empty name ends the list.
-- panelTitle: Workspace
-  $name: Title
-  $description: Shown on the taskbar button and at the top of the panel.
-- hotkey: Ctrl+Alt+S
-  $name: Hotkey
-  $description: Opens the panel from anywhere. Empty for none.
-- buttonPosition: beforeTray
-  $name: Button position
-  $description: What the button anchors to. See Details.
-  $options:
-  - left: Taskbar left edge
-  - center: Taskbar centre
-  - right: Taskbar right edge
-  - beforeTray: Left of the tray
-  - afterTray: Right of the tray
-  - beforeTaskList: Left of the task buttons
-  - afterTaskList: Right of the task buttons
-- buttonStyle: glyphLabel
-  $name: Button style
-  $description: Whether the button shows its icon, its label, or both.
-  $options:
-  - glyphLabel: Icon and label
-  - glyph: Icon only
-  - label: Label only
-- showTrayIcon: false
-  $name: Also show a tray icon
-  $description: Adds a notification area icon with a launch menu.
-- showOnSecondaryTaskbars: false
-  $name: Show on secondary taskbars
-  $description: Put a button on other monitors' taskbars too.
-- compactRows: false
-  $name: Compact rows
-  $description: Drop the subtitle line and fit about a third more items.
-- confirmBeforeClose: true
-  $name: Confirm before closing
-  $description: Ask before the Close button runs.
-- forceCloseAfterGrace: false
-  $name: Force close if it does not shut down
-  $description: Terminates the process afterwards. Loses unsaved work.
-- autoRunProfile: ""
-  $name: Profile to run at sign-in
-  $description: Runs this profile after Explorer starts. Empty disables it.
-*/
-// ==/WindhawkModSettings==
 
 #include <windhawk_utils.h>
 
@@ -488,7 +388,6 @@ namespace gp = Gdiplus;
 constexpr PCWSTR kButtonClass = L"WhStackSwitchButton";
 constexpr PCWSTR kPanelClass = L"WhStackSwitchPanel";
 constexpr PCWSTR kMessageClass = L"WhStackSwitchMessages";
-constexpr PCWSTR kEditorClass = L"WhStackSwitchEditor";
 
 constexpr UINT kMsgTogglePanel = WM_APP + 1;
 constexpr UINT kMsgLaunchProgress = WM_APP + 2;
@@ -541,12 +440,34 @@ enum ItemMenuCommand : UINT {
     kItemMenuResetOrder,
     kItemMenuEdit,
     kItemMenuRemove,
+    kItemMenuDuplicate,
+    kItemMenuGroupNone,
+    kItemMenuGroupNew,
+    kItemMenuTypeFirst = 100,
+    kItemMenuGroupFirst = 200,
+    kItemMenuProfileFirst = 400,
 };
-enum AddMenuCommand : UINT {
-    kAddMenuFile = 1,
-    kAddMenuFolder,
-    kAddMenuOther,
-    kAddMenuRunningFirst = 100,
+enum SettingsControl : UINT {
+    kSettingsRoot = 100,
+    kSettingsBrowse,
+    kSettingsProfiles,
+    kSettingsTitle,
+    kSettingsHotkey,
+    kSettingsPosition,
+    kSettingsStyle,
+    kSettingsAutoRun,
+    kSettingsTray,
+    kSettingsSecondary,
+    kSettingsCompact,
+    kSettingsConfirm,
+    kSettingsForce,
+};
+enum AppPickerControl : UINT {
+    kPickerSearch = 100,
+    kPickerList,
+    kPickerFile,
+    kPickerFolder,
+    kPickerOther,
 };
 
 struct StackItem {
@@ -587,11 +508,10 @@ struct ItemFields {
 };
 
 struct Settings {
-    std::wstring rootPath;
     std::vector<std::wstring> profiles;
     std::vector<StackItem> items;
-    std::wstring panelTitle;
-    std::wstring hotkey;
+    std::wstring panelTitle = L"Workspace";
+    std::wstring hotkey = L"Ctrl+Alt+S";
     ButtonPosition buttonPosition = ButtonPosition::BeforeTray;
     ButtonStyle buttonStyle = ButtonStyle::GlyphLabel;
     bool showTrayIcon = false;
@@ -760,6 +680,14 @@ static std::vector<std::wstring> SplitList(std::wstring_view text, wchar_t separ
     return result;
 }
 
+static std::wstring JoinList(const std::vector<std::wstring>& entries) {
+    std::wstring joined;
+    for (const auto& entry : entries) {
+        joined += (joined.empty() ? L"" : L", ") + entry;
+    }
+    return joined;
+}
+
 static bool ListContains(std::wstring_view list, std::wstring_view value) {
     std::wstring wanted = ToLower(value);
     for (const auto& entry : SplitList(list, L',')) {
@@ -788,18 +716,8 @@ static std::wstring HashKey(PCWSTR prefix, std::wstring_view text) {
     return buffer;
 }
 
-static std::wstring ExpandTokens(std::wstring_view raw) {
+static std::wstring ExpandEnvironment(std::wstring_view raw) {
     std::wstring text(raw);
-    std::wstring root;
-    {
-        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        root = g_settings.rootPath;
-    }
-    for (size_t position = 0;
-         (position = ToLower(text).find(L"{root}", position)) != std::wstring::npos;
-         position += root.size()) {
-        text.replace(position, 6, root);
-    }
     if (text.find(L'%') == std::wstring::npos) {
         return text;
     }
@@ -841,29 +759,61 @@ static ItemType ParseItemType(PCWSTR value) {
     return ItemType::App;
 }
 
+constexpr PCWSTR kShellNames[] = {L"powershell", L"pwsh", L"cmd", L"gitbash", L"wsl"};
+constexpr PCWSTR kShellLabels[] = {L"Windows PowerShell", L"PowerShell 7",
+                                   L"Command Prompt", L"Git Bash", L"WSL"};
+constexpr PCWSTR kWindowStateNames[] = {L"normal", L"minimized", L"maximized", L"hidden"};
+constexpr PCWSTR kWindowStateLabels[] = {L"Normal", L"Minimized", L"Maximized",
+                                         L"Hidden"};
+
 static ShellKind ParseShellKind(PCWSTR value) {
-    if (wcscmp(value, L"pwsh") == 0) return ShellKind::Pwsh;
-    if (wcscmp(value, L"cmd") == 0) return ShellKind::Cmd;
-    if (wcscmp(value, L"gitbash") == 0) return ShellKind::GitBash;
-    if (wcscmp(value, L"wsl") == 0) return ShellKind::Wsl;
+    for (size_t i = 0; i < ARRAYSIZE(kShellNames); i++) {
+        if (wcscmp(value, kShellNames[i]) == 0) {
+            return (ShellKind)i;
+        }
+    }
     return ShellKind::PowerShell;
 }
 
 static WindowStateOption ParseWindowState(PCWSTR value) {
-    if (wcscmp(value, L"minimized") == 0) return WindowStateOption::Minimized;
-    if (wcscmp(value, L"maximized") == 0) return WindowStateOption::Maximized;
-    if (wcscmp(value, L"hidden") == 0) return WindowStateOption::Hidden;
+    for (size_t i = 0; i < ARRAYSIZE(kWindowStateNames); i++) {
+        if (wcscmp(value, kWindowStateNames[i]) == 0) {
+            return (WindowStateOption)i;
+        }
+    }
     return WindowStateOption::Normal;
 }
 
+constexpr PCWSTR kButtonPositionNames[] = {L"left",      L"center",
+                                           L"right",     L"beforeTray",
+                                           L"afterTray", L"beforeTaskList",
+                                           L"afterTaskList"};
+constexpr PCWSTR kButtonPositionLabels[] = {
+    L"Taskbar left edge",        L"Taskbar centre",
+    L"Taskbar right edge",       L"Left of the tray",
+    L"Right of the tray",        L"Left of the task buttons",
+    L"Right of the task buttons",
+};
+constexpr PCWSTR kButtonStyleNames[] = {L"glyph", L"glyphLabel", L"label"};
+constexpr PCWSTR kButtonStyleLabels[] = {L"Icon only", L"Icon and label",
+                                         L"Label only"};
+
 static ButtonPosition ParseButtonPosition(PCWSTR value) {
-    if (wcscmp(value, L"left") == 0) return ButtonPosition::Left;
-    if (wcscmp(value, L"center") == 0) return ButtonPosition::Center;
-    if (wcscmp(value, L"right") == 0) return ButtonPosition::Right;
-    if (wcscmp(value, L"afterTray") == 0) return ButtonPosition::AfterTray;
-    if (wcscmp(value, L"beforeTaskList") == 0) return ButtonPosition::BeforeTaskList;
-    if (wcscmp(value, L"afterTaskList") == 0) return ButtonPosition::AfterTaskList;
+    for (size_t i = 0; i < ARRAYSIZE(kButtonPositionNames); i++) {
+        if (wcscmp(value, kButtonPositionNames[i]) == 0) {
+            return (ButtonPosition)i;
+        }
+    }
     return ButtonPosition::BeforeTray;
+}
+
+static ButtonStyle ParseButtonStyle(PCWSTR value) {
+    for (size_t i = 0; i < ARRAYSIZE(kButtonStyleNames); i++) {
+        if (wcscmp(value, kButtonStyleNames[i]) == 0) {
+            return (ButtonStyle)i;
+        }
+    }
+    return ButtonStyle::GlyphLabel;
 }
 
 static std::vector<std::wstring> SplitOptions(std::wstring_view text) {
@@ -921,6 +871,11 @@ static void ApplyItemOptions(const std::wstring& options, StackItem& item) {
     }
 }
 
+static std::wstring ItemStorageKey(const ItemFields& fields) {
+    return HashKey(L"en_", Trim(fields.group) + L"|" + Trim(fields.name) + L"|" +
+                               Trim(fields.target));
+}
+
 static StackItem BuildItem(const ItemFields& fields, int panelIndex) {
     StackItem item;
     item.name = Trim(fields.name);
@@ -934,8 +889,7 @@ static StackItem BuildItem(const ItemFields& fields, int panelIndex) {
     item.defaultEnabled = fields.enabled;
     item.panelIndex = panelIndex;
     ApplyItemOptions(item.options, item);
-    item.storageKey =
-        HashKey(L"en_", item.group + L"|" + item.name + L"|" + item.target);
+    item.storageKey = ItemStorageKey(fields);
     item.enabled =
         Wh_GetIntValue(item.storageKey.c_str(), item.defaultEnabled ? 1 : 0) != 0;
     return item;
@@ -1023,70 +977,112 @@ static void SavePanelItems(const std::vector<ItemFields>& items) {
     Wh_SetIntValue(L"panelItemCount", (int)items.size());
 }
 
+static std::wstring StoredString(PCWSTR name) {
+    std::vector<wchar_t> buffer(8192, L'\0');
+    Wh_GetStringValue(name, buffer.data(), buffer.size());
+    return buffer.data();
+}
+
+static void SaveConfig(const Settings& config) {
+    Wh_SetStringValue(L"profiles", JoinList(config.profiles).c_str());
+    Wh_SetStringValue(L"panelTitle", config.panelTitle.c_str());
+    Wh_SetStringValue(L"hotkey", config.hotkey.c_str());
+    Wh_SetStringValue(L"buttonPosition", kButtonPositionNames[(int)config.buttonPosition]);
+    Wh_SetStringValue(L"buttonStyle", kButtonStyleNames[(int)config.buttonStyle]);
+    Wh_SetIntValue(L"showTrayIcon", config.showTrayIcon);
+    Wh_SetIntValue(L"showOnSecondaryTaskbars", config.showOnSecondaryTaskbars);
+    Wh_SetIntValue(L"compactRows", config.compactRows);
+    Wh_SetIntValue(L"confirmBeforeClose", config.confirmBeforeClose);
+    Wh_SetIntValue(L"forceCloseAfterGrace", config.forceCloseAfterGrace);
+    Wh_SetStringValue(L"autoRunProfile", config.autoRunProfile.c_str());
+}
+
+static void LoadConfig(Settings& config) {
+    config.profiles = SplitList(StoredString(L"profiles"), L',');
+    config.panelTitle = Trim(StoredString(L"panelTitle"));
+    if (config.panelTitle.empty()) {
+        config.panelTitle = L"Workspace";
+    }
+    config.hotkey = Trim(StoredString(L"hotkey"));
+    config.buttonPosition = ParseButtonPosition(StoredString(L"buttonPosition").c_str());
+    config.buttonStyle = ParseButtonStyle(StoredString(L"buttonStyle").c_str());
+    config.showTrayIcon = Wh_GetIntValue(L"showTrayIcon", 0) != 0;
+    config.showOnSecondaryTaskbars = Wh_GetIntValue(L"showOnSecondaryTaskbars", 0) != 0;
+    config.compactRows = Wh_GetIntValue(L"compactRows", 0) != 0;
+    config.confirmBeforeClose = Wh_GetIntValue(L"confirmBeforeClose", 1) != 0;
+    config.forceCloseAfterGrace = Wh_GetIntValue(L"forceCloseAfterGrace", 0) != 0;
+    config.autoRunProfile = Trim(StoredString(L"autoRunProfile"));
+}
+
+static void ImportWindhawkSettings() {
+    if (Wh_GetIntValue(L"configVersion", 0) != 0) {
+        return;
+    }
+    Settings config;
+    std::vector<ItemFields> items;
+    if (*WindhawkUtils::StringSetting::make(L"rootPath")) {
+        for (int i = 0;; i++) {
+            auto profile = WindhawkUtils::StringSetting::make(L"profiles[%d]", i);
+            if (!*profile) {
+                break;
+            }
+            std::wstring trimmed = Trim(profile.get());
+            if (!trimmed.empty()) {
+                config.profiles.push_back(std::move(trimmed));
+            }
+        }
+        config.panelTitle = Trim(WindhawkUtils::StringSetting::make(L"panelTitle").get());
+        config.hotkey = Trim(WindhawkUtils::StringSetting::make(L"hotkey").get());
+        config.buttonPosition = ParseButtonPosition(
+            WindhawkUtils::StringSetting::make(L"buttonPosition").get());
+        config.buttonStyle =
+            ParseButtonStyle(WindhawkUtils::StringSetting::make(L"buttonStyle").get());
+        config.showTrayIcon = Wh_GetIntSetting(L"showTrayIcon") != 0;
+        config.showOnSecondaryTaskbars = Wh_GetIntSetting(L"showOnSecondaryTaskbars") != 0;
+        config.compactRows = Wh_GetIntSetting(L"compactRows") != 0;
+        config.confirmBeforeClose = Wh_GetIntSetting(L"confirmBeforeClose") != 0;
+        config.forceCloseAfterGrace = Wh_GetIntSetting(L"forceCloseAfterGrace") != 0;
+        config.autoRunProfile =
+            Trim(WindhawkUtils::StringSetting::make(L"autoRunProfile").get());
+
+        for (int i = 0;; i++) {
+            auto name = WindhawkUtils::StringSetting::make(L"items[%d].name", i);
+            if (!*name) {
+                break;
+            }
+            ItemFields fields;
+            fields.name = name.get();
+            fields.type = WindhawkUtils::StringSetting::make(L"items[%d].type", i).get();
+            fields.target =
+                WindhawkUtils::StringSetting::make(L"items[%d].target", i).get();
+            fields.args = WindhawkUtils::StringSetting::make(L"items[%d].args", i).get();
+            fields.workingDir =
+                WindhawkUtils::StringSetting::make(L"items[%d].workingDir", i).get();
+            fields.group =
+                WindhawkUtils::StringSetting::make(L"items[%d].group", i).get();
+            fields.profiles =
+                WindhawkUtils::StringSetting::make(L"items[%d].profiles", i).get();
+            fields.options =
+                WindhawkUtils::StringSetting::make(L"items[%d].options", i).get();
+            fields.enabled = Wh_GetIntSetting(L"items[%d].enabled", i) != 0;
+            items.push_back(std::move(fields));
+        }
+    }
+    SaveConfig(config);
+    std::vector<ItemFields> panelItems = LoadPanelItems();
+    items.insert(items.end(), panelItems.begin(), panelItems.end());
+    SavePanelItems(items);
+    Wh_SetIntValue(L"configVersion", 1);
+}
+
 static void LoadSettings() {
     Settings loaded;
-
-    loaded.rootPath = Trim(WindhawkUtils::StringSetting::make(L"rootPath").get());
-
-    for (int i = 0;; i++) {
-        auto profile = WindhawkUtils::StringSetting::make(L"profiles[%d]", i);
-        if (!*profile) {
-            break;
-        }
-        std::wstring trimmed = Trim(profile.get());
-        if (!trimmed.empty()) {
-            loaded.profiles.push_back(std::move(trimmed));
-        }
-    }
-
-    for (int i = 0;; i++) {
-        auto name = WindhawkUtils::StringSetting::make(L"items[%d].name", i);
-        if (!*name) {
-            break;
-        }
-        ItemFields fields;
-        fields.name = name.get();
-        fields.type = WindhawkUtils::StringSetting::make(L"items[%d].type", i).get();
-        fields.target = WindhawkUtils::StringSetting::make(L"items[%d].target", i).get();
-        fields.args = WindhawkUtils::StringSetting::make(L"items[%d].args", i).get();
-        fields.workingDir =
-            WindhawkUtils::StringSetting::make(L"items[%d].workingDir", i).get();
-        fields.group = WindhawkUtils::StringSetting::make(L"items[%d].group", i).get();
-        fields.profiles =
-            WindhawkUtils::StringSetting::make(L"items[%d].profiles", i).get();
-        fields.options =
-            WindhawkUtils::StringSetting::make(L"items[%d].options", i).get();
-        fields.enabled = Wh_GetIntSetting(L"items[%d].enabled", i) != 0;
-        loaded.items.push_back(BuildItem(fields, -1));
-    }
+    LoadConfig(loaded);
 
     std::vector<ItemFields> panelItems = LoadPanelItems();
     for (size_t i = 0; i < panelItems.size(); i++) {
         loaded.items.push_back(BuildItem(panelItems[i], (int)i));
     }
-
-    loaded.panelTitle = Trim(WindhawkUtils::StringSetting::make(L"panelTitle").get());
-    if (loaded.panelTitle.empty()) {
-        loaded.panelTitle = L"Workspace";
-    }
-    loaded.hotkey = Trim(WindhawkUtils::StringSetting::make(L"hotkey").get());
-
-    loaded.buttonPosition = ParseButtonPosition(
-        WindhawkUtils::StringSetting::make(L"buttonPosition").get());
-
-    auto buttonStyle = WindhawkUtils::StringSetting::make(L"buttonStyle");
-    loaded.buttonStyle = wcscmp(buttonStyle, L"glyph") == 0   ? ButtonStyle::Glyph
-                         : wcscmp(buttonStyle, L"label") == 0 ? ButtonStyle::Label
-                                                              : ButtonStyle::GlyphLabel;
-
-    loaded.showTrayIcon = Wh_GetIntSetting(L"showTrayIcon") != 0;
-    loaded.showOnSecondaryTaskbars = Wh_GetIntSetting(L"showOnSecondaryTaskbars") != 0;
-    loaded.compactRows = Wh_GetIntSetting(L"compactRows") != 0;
-
-    loaded.confirmBeforeClose = Wh_GetIntSetting(L"confirmBeforeClose") != 0;
-    loaded.forceCloseAfterGrace = Wh_GetIntSetting(L"forceCloseAfterGrace") != 0;
-    loaded.autoRunProfile =
-        Trim(WindhawkUtils::StringSetting::make(L"autoRunProfile").get());
 
     std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
     g_settings = std::move(loaded);
@@ -1190,7 +1186,7 @@ static std::wstring ResolveDuplicateProcessName(const StackItem& item) {
     if (item.type != ItemType::App) {
         return std::wstring();
     }
-    std::wstring file = ToLower(FileNameOf(ExpandTokens(item.target)));
+    std::wstring file = ToLower(FileNameOf(ExpandEnvironment(item.target)));
     if (file.size() > 4 && file.compare(file.size() - 4, 4, L".exe") == 0) {
         return file;
     }
@@ -1207,7 +1203,7 @@ static std::wstring ResolveProcessName(const StackItem& item) {
 
 static std::wstring FindFirstExisting(std::initializer_list<PCWSTR> candidates) {
     for (PCWSTR candidate : candidates) {
-        std::wstring path = ExpandTokens(candidate);
+        std::wstring path = ExpandEnvironment(candidate);
         if (PathFileExistsW(path.c_str())) {
             return path;
         }
@@ -1235,10 +1231,6 @@ static std::wstring FindGitBash() {
 static std::wstring FindWindowsTerminal() {
     return FindFirstExisting(
         {L"%LOCALAPPDATA%\\Microsoft\\WindowsApps\\wt.exe"});
-}
-
-static std::wstring FindWindhawk() {
-    return FindFirstExisting({L"%ProgramFiles%\\Windhawk\\windhawk.exe"});
 }
 
 struct ShellInvocation {
@@ -1419,9 +1411,9 @@ struct LaunchPlan {
 };
 
 static bool BuildLaunchPlan(const StackItem& item, LaunchPlan& plan) {
-    std::wstring target = ExpandTokens(item.target);
-    std::wstring args = ExpandTokens(item.args);
-    plan.workingDir = ExpandTokens(item.workingDir);
+    std::wstring target = ExpandEnvironment(item.target);
+    std::wstring args = ExpandEnvironment(item.args);
+    plan.workingDir = ExpandEnvironment(item.workingDir);
     plan.elevated = item.elevated;
 
     switch (item.windowState) {
@@ -1480,7 +1472,7 @@ static bool BuildLaunchPlan(const StackItem& item, LaunchPlan& plan) {
                 return false;
             }
             if (plan.workingDir.empty()) {
-                plan.workingDir = ExpandTokens(L"{root}");
+                plan.workingDir = ExpandEnvironment(L"%USERPROFILE%");
             }
             bool visible = item.type == ItemType::Terminal &&
                            item.windowState != WindowStateOption::Hidden;
@@ -2172,10 +2164,10 @@ static PCWSTR TypeGlyph(ItemType type) {
 
 static std::wstring IconCacheKey(const StackItem& item) {
     if (!item.icon.empty()) {
-        return ExpandTokens(item.icon);
+        return ExpandEnvironment(item.icon);
     }
     if (item.type == ItemType::App || item.type == ItemType::Folder) {
-        return ExpandTokens(item.target);
+        return ExpandEnvironment(item.target);
     }
     if (item.type == ItemType::VSCode) {
         return FindVSCode();
@@ -2284,6 +2276,12 @@ enum class HitKind {
     Add,
     Cancel,
     Scrollbar,
+    FormRow,
+    FormAction,
+    AddRow,
+    AddCustomize,
+    PageSave,
+    PageCancel,
     Outside,
 };
 
@@ -2385,9 +2383,7 @@ static void SetGroupCollapsed(const std::wstring& group, bool collapsed) {
 static std::vector<std::wstring> g_itemOrder;
 
 static void LoadItemOrder() {
-    std::vector<wchar_t> stored(8192, L'\0');
-    Wh_GetStringValue(L"itemOrder", stored.data(), stored.size());
-    g_itemOrder = SplitList(stored.data(), L'|');
+    g_itemOrder = SplitList(StoredString(L"itemOrder"), L'|');
 }
 
 static void SaveItemOrder() {
@@ -2528,9 +2524,379 @@ static int RowHeight() {
     return Scale(g_settings.compactRows ? 34 : 46);
 }
 
+enum class PanelView { List, Form, Add };
+enum class FormKind { Heading, Text, Choice, Toggle };
+
+struct FormRow {
+    FormKind kind = FormKind::Heading;
+    std::wstring label;
+    std::wstring hint;
+    std::wstring* text = nullptr;
+    std::function<std::vector<std::wstring>()> options;
+    std::function<int()> current;
+    std::function<void(int)> select;
+    std::function<bool()> value;
+    std::function<void(bool)> toggle;
+    PCWSTR actionGlyph = nullptr;
+    std::function<void()> action;
+};
+
+static FormRow FormHeading(std::wstring label) {
+    FormRow row;
+    row.label = std::move(label);
+    return row;
+}
+
+static FormRow FormText(std::wstring label, std::wstring hint, std::wstring* text) {
+    FormRow row;
+    row.kind = FormKind::Text;
+    row.label = std::move(label);
+    row.hint = std::move(hint);
+    row.text = text;
+    return row;
+}
+
+static FormRow FormChoice(std::wstring label,
+                          std::function<std::vector<std::wstring>()> options,
+                          std::function<int()> current,
+                          std::function<void(int)> select) {
+    FormRow row;
+    row.kind = FormKind::Choice;
+    row.label = std::move(label);
+    row.options = std::move(options);
+    row.current = std::move(current);
+    row.select = std::move(select);
+    return row;
+}
+
+static FormRow FormToggle(std::wstring label,
+                          std::function<bool()> value,
+                          std::function<void(bool)> toggle) {
+    FormRow row;
+    row.kind = FormKind::Toggle;
+    row.label = std::move(label);
+    row.value = std::move(value);
+    row.toggle = std::move(toggle);
+    return row;
+}
+
+static FormRow FormToggle(std::wstring label, bool* flag) {
+    return FormToggle(std::move(label), [flag] { return *flag; },
+                      [flag](bool on) { *flag = on; });
+}
+
+static PanelView g_view = PanelView::List;
+static std::wstring g_formTitle;
+static std::wstring g_formSubtitle;
+static std::wstring g_formSaveLabel;
+static std::vector<FormRow> g_formRows;
+static std::function<void()> g_formBuild;
+static std::function<bool()> g_formSave;
+static int g_formFocus = -1;
+static std::vector<int> g_formRowTops;
+
+static int FormRowHeight(size_t index) {
+    return Scale(g_formRows[index].kind == FormKind::Heading ? 32 : 40);
+}
+
+static void RebuildFormRows() {
+    g_formRowTops.clear();
+    int y = Scale(6);
+    for (size_t i = 0; i < g_formRows.size(); i++) {
+        g_formRowTops.push_back(y);
+        y += FormRowHeight(i);
+    }
+    g_layout.rowsHeight = y + Scale(6);
+}
+
+static void FocusNextFormText() {
+    for (size_t step = 1; step <= g_formRows.size(); step++) {
+        size_t index = (g_formFocus + step) % g_formRows.size();
+        if (g_formRows[index].kind == FormKind::Text) {
+            g_formFocus = (int)index;
+            return;
+        }
+    }
+}
+
+static int FindFormRow(const std::wstring& label) {
+    for (size_t i = 0; i < g_formRows.size(); i++) {
+        if (g_formRows[i].label == label) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+enum class AddAction { Heading, App, File, Folder, VSCode, Url, Terminal, Command };
+
+struct AddRow {
+    AddAction action = AddAction::Heading;
+    std::wstring label;
+    std::wstring detail;
+    int app = -1;
+    int top = 0;
+    int height = 0;
+};
+
+struct AddShortcut {
+    AddAction action;
+    PCWSTR label;
+    PCWSTR detail;
+};
+
+constexpr AddShortcut kAddShortcuts[] = {
+    {AddAction::File, L"App, file or shortcut...", L"Pick an .exe, script, document or shortcut"},
+    {AddAction::Folder, L"Folder in File Explorer...", L"Opens a folder window"},
+    {AddAction::VSCode, L"Folder in VS Code...", L"Opens a project folder or workspace"},
+    {AddAction::Url, L"Website or URL", L"Opens in your default browser"},
+    {AddAction::Terminal, L"Terminal command", L"Runs in a visible terminal, like npm run dev"},
+    {AddAction::Command, L"Background command", L"Runs with no window, like wsl --shutdown"},
+};
+
+static std::vector<ItemFields> g_pickerApps;
+static size_t g_pickerRunningCount = 0;
+static std::vector<AddRow> g_addRows;
+static int g_addFocus = -1;
+
+static void RebuildAddRows() {
+    g_addRows.clear();
+    const int rowHeight = Scale(44);
+    const int headingHeight = Scale(32);
+    int y = Scale(6);
+    auto addHeading = [&](PCWSTR text) {
+        AddRow row;
+        row.label = text;
+        row.top = y;
+        row.height = headingHeight;
+        g_addRows.push_back(std::move(row));
+        y += headingHeight;
+    };
+    auto addRow = [&](AddRow row) {
+        row.top = y;
+        row.height = rowHeight;
+        g_addRows.push_back(std::move(row));
+        y += rowHeight;
+    };
+
+    bool headed = false;
+    for (const AddShortcut& shortcut : kAddShortcuts) {
+        if (!ContainsNoCase(shortcut.label, g_filter)) {
+            continue;
+        }
+        if (!headed) {
+            addHeading(L"Create");
+            headed = true;
+        }
+        addRow(AddRow{shortcut.action, shortcut.label, shortcut.detail});
+    }
+    for (int pass = 0; pass < 2; pass++) {
+        headed = false;
+        size_t first = pass == 0 ? 0 : g_pickerRunningCount;
+        size_t last = pass == 0 ? g_pickerRunningCount : g_pickerApps.size();
+        for (size_t i = first; i < last; i++) {
+            if (!ContainsNoCase(g_pickerApps[i].name, g_filter)) {
+                continue;
+            }
+            if (!headed) {
+                addHeading(pass == 0 ? L"Running now" : L"All apps");
+                headed = true;
+            }
+            AddRow row{AddAction::App, g_pickerApps[i].name, std::wstring()};
+            row.app = (int)i;
+            addRow(std::move(row));
+        }
+    }
+    g_layout.rowsHeight = y + Scale(6);
+    if (g_addFocus >= (int)g_addRows.size()) {
+        g_addFocus = -1;
+    }
+}
+
+static void MoveAddFocus(int delta) {
+    int count = (int)g_addRows.size();
+    int row = g_addFocus;
+    for (int step = 0; step < count; step++) {
+        row = row < 0 ? (delta > 0 ? 0 : count - 1) : (row + delta + count) % count;
+        if (g_addRows[row].action != AddAction::Heading) {
+            g_addFocus = row;
+            return;
+        }
+    }
+}
+
+struct MenuEntry {
+    std::wstring label;
+    UINT command = 0;
+    bool checked = false;
+    bool disabled = false;
+    std::vector<MenuEntry> children;
+};
+
+static bool g_menuOpen = false;
+static std::vector<MenuEntry> g_menuEntries;
+static std::vector<size_t> g_menuPath;
+static std::function<void(UINT)> g_menuHandler;
+static POINT g_menuAnchor{};
+static int g_menuHover = -1;
+static gp::Rect g_menuRect;
+
+static const std::vector<MenuEntry>& MenuPage() {
+    const std::vector<MenuEntry>* page = &g_menuEntries;
+    for (size_t index : g_menuPath) {
+        page = &(*page)[index].children;
+    }
+    return *page;
+}
+
+static bool MenuHasBackRow() {
+    return !g_menuPath.empty();
+}
+
+static int MenuRowCount() {
+    return (int)MenuPage().size() + (MenuHasBackRow() ? 1 : 0);
+}
+
+static const MenuEntry* MenuRowEntry(int row) {
+    int index = row - (MenuHasBackRow() ? 1 : 0);
+    return index >= 0 ? &MenuPage()[index] : nullptr;
+}
+
+static bool MenuRowIsSeparator(int row) {
+    const MenuEntry* entry = MenuRowEntry(row);
+    return entry && entry->label.empty();
+}
+
+static int MenuRowHeight(int row) {
+    return Scale(MenuRowIsSeparator(row) ? 9 : 30);
+}
+
+static std::wstring MenuBackLabel() {
+    const std::vector<MenuEntry>* page = &g_menuEntries;
+    std::wstring label;
+    for (size_t index : g_menuPath) {
+        label = (*page)[index].label;
+        page = &(*page)[index].children;
+    }
+    return label;
+}
+
+static void CloseMenu() {
+    g_menuOpen = false;
+    g_menuEntries.clear();
+    g_menuPath.clear();
+    g_menuHandler = nullptr;
+    g_menuHover = -1;
+}
+
+static void ShowMenu(std::vector<MenuEntry> entries,
+                     POINT clientPoint,
+                     std::function<void(UINT)> handler) {
+    g_menuEntries = std::move(entries);
+    g_menuPath.clear();
+    g_menuHandler = std::move(handler);
+    g_menuAnchor = clientPoint;
+    g_menuHover = -1;
+    g_menuOpen = true;
+}
+
+static void ConfirmInMenu(std::wstring question,
+                          std::wstring confirmLabel,
+                          POINT clientPoint,
+                          std::function<void()> confirmed) {
+    ShowMenu({{std::move(question), 0, false, true}, {}, {std::move(confirmLabel), 1},
+              {L"Cancel", 0}},
+             clientPoint, [confirmed = std::move(confirmed)](UINT command) {
+                 if (command == 1) {
+                     confirmed();
+                 }
+             });
+}
+
+static void LayoutMenu() {
+    int width = Scale(180);
+    for (int row = 0; row < MenuRowCount(); row++) {
+        const MenuEntry* entry = MenuRowEntry(row);
+        std::wstring label = entry ? entry->label : MenuBackLabel();
+        width = max(width, MeasureText(label, UiFont(-1)) + Scale(76));
+    }
+    int height = Scale(8);
+    for (int row = 0; row < MenuRowCount(); row++) {
+        height += MenuRowHeight(row);
+    }
+    const gp::Rect& bounds = g_layout.content;
+    width = min(width, bounds.Width - Scale(16));
+    int x = min((int)g_menuAnchor.x, bounds.X + bounds.Width - Scale(8) - width);
+    int y = g_menuAnchor.y;
+    if (y + height > bounds.Y + bounds.Height - Scale(8)) {
+        y = max(bounds.Y + Scale(8), (int)g_menuAnchor.y - height);
+    }
+    g_menuRect = gp::Rect(max(bounds.X + Scale(8), x), y, width, height);
+}
+
+static int MenuRowAt(POINT point) {
+    if (!Contains(g_menuRect, point)) {
+        return -2;
+    }
+    int y = g_menuRect.Y + Scale(4);
+    for (int row = 0; row < MenuRowCount(); row++) {
+        int height = MenuRowHeight(row);
+        if (point.y >= y && point.y < y + height) {
+            return MenuRowIsSeparator(row) ? -1 : row;
+        }
+        y += height;
+    }
+    return -1;
+}
+
+static void ActivateMenuRow(int row) {
+    if (row < 0 || row >= MenuRowCount()) {
+        return;
+    }
+    if (MenuHasBackRow() && row == 0) {
+        g_menuPath.pop_back();
+        g_menuHover = -1;
+        return;
+    }
+    const MenuEntry* entry = MenuRowEntry(row);
+    if (entry->label.empty() || entry->disabled) {
+        return;
+    }
+    if (!entry->children.empty()) {
+        g_menuPath.push_back(row - (MenuHasBackRow() ? 1 : 0));
+        g_menuHover = MenuHasBackRow() ? 1 : 0;
+        return;
+    }
+    UINT command = entry->command;
+    std::function<void(UINT)> handler = std::move(g_menuHandler);
+    CloseMenu();
+    handler(command);
+}
+
+static void MoveMenuHover(int delta) {
+    int count = MenuRowCount();
+    int row = g_menuHover;
+    for (int step = 0; step < count; step++) {
+        row = row < 0 ? (delta > 0 ? 0 : count - 1) : (row + delta + count) % count;
+        const MenuEntry* entry = MenuRowEntry(row);
+        if (!entry || (!entry->label.empty() && !entry->disabled)) {
+            g_menuHover = row;
+            return;
+        }
+    }
+}
+
 static void RebuildRows() {
     g_rows.clear();
     g_groups.clear();
+    if (g_view == PanelView::Form) {
+        RebuildFormRows();
+        return;
+    }
+    if (g_view == PanelView::Add) {
+        RebuildAddRows();
+        return;
+    }
 
     std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
     if (g_toggleAmount.size() != g_settings.items.size()) {
@@ -2627,13 +2993,13 @@ static void ComputeLayout() {
     const int width = Scale(400);
     const int pad = Scale(14);
     const int headerHeight = Scale(56);
-    const int searchHeight = Scale(44);
+    const int searchHeight = g_view == PanelView::Form ? 0 : Scale(44);
     const int footerHeight = Scale(58);
 
     g_layout.chipRects.clear();
     g_layout.chipNames.clear();
     int chipsHeight = 0;
-    if (!g_settings.profiles.empty()) {
+    if (g_view == PanelView::List && !g_settings.profiles.empty()) {
         std::vector<std::wstring> names{L"All"};
         for (const auto& profile : g_settings.profiles) {
             names.push_back(profile);
@@ -2681,6 +3047,10 @@ static void ComputeLayout() {
     g_layout.searchClear =
         gp::Rect(g_layout.search.X + g_layout.search.Width - Scale(28),
                  g_layout.search.Y, Scale(28), searchBoxHeight);
+    if (g_view == PanelView::Form) {
+        g_layout.search = gp::Rect();
+        g_layout.searchClear = gp::Rect();
+    }
     y += searchHeight;
 
     g_layout.list = gp::Rect(shadow, y, width, listHeight);
@@ -2752,6 +3122,14 @@ static int GroupToggleLeftEdge() {
     return g_layout.list.X + g_layout.list.Width - Scale(14) - Scale(52);
 }
 
+static gp::Rect FormControlBox(size_t index) {
+    const gp::Rect& list = g_layout.list;
+    int width = Scale(190);
+    int top = list.Y + g_formRowTops[index] - g_scrollOffset;
+    return gp::Rect(list.X + list.Width - Scale(14) - width, top + Scale(6), width,
+                    FormRowHeight(index) - Scale(14));
+}
+
 static HitResult HitTest(POINT point) {
     HitResult result;
     if (!Contains(g_layout.content, point)) {
@@ -2781,6 +3159,37 @@ static HitResult HitTest(POINT point) {
         result.kind = HitKind::Scrollbar;
         return result;
     }
+    if (Contains(g_layout.list, point) && g_view == PanelView::Form) {
+        int localY = point.y - g_layout.list.Y + g_scrollOffset;
+        for (size_t i = 0; i < g_formRows.size(); i++) {
+            if (g_formRows[i].kind != FormKind::Heading && localY >= g_formRowTops[i] &&
+                localY < g_formRowTops[i] + FormRowHeight(i)) {
+                gp::Rect control = FormControlBox(i);
+                result.kind = g_formRows[i].actionGlyph &&
+                                      point.x >= control.X + control.Width - Scale(26)
+                                  ? HitKind::FormAction
+                                  : HitKind::FormRow;
+                result.index = (int)i;
+                return result;
+            }
+        }
+        return result;
+    }
+    if (Contains(g_layout.list, point) && g_view == PanelView::Add) {
+        int localY = point.y - g_layout.list.Y + g_scrollOffset;
+        for (size_t i = 0; i < g_addRows.size(); i++) {
+            const AddRow& row = g_addRows[i];
+            if (row.action != AddAction::Heading && localY >= row.top &&
+                localY < row.top + row.height) {
+                result.kind = row.action == AddAction::App && point.x >= ToggleLeftEdge()
+                                  ? HitKind::AddCustomize
+                                  : HitKind::AddRow;
+                result.index = (int)i;
+                return result;
+            }
+        }
+        return result;
+    }
     if (Contains(g_layout.list, point)) {
         int localY = point.y - g_layout.list.Y + g_scrollOffset;
         for (size_t i = 0; i < g_rows.size(); i++) {
@@ -2798,6 +3207,14 @@ static HitResult HitTest(POINT point) {
             }
             result.index = (int)i;
             return result;
+        }
+        return result;
+    }
+    if (Contains(g_layout.footer, point) && g_view != PanelView::List) {
+        if (Contains(g_layout.launchButton, point)) {
+            result.kind = g_view == PanelView::Form ? HitKind::PageSave : HitKind::PageCancel;
+        } else if (Contains(g_layout.closeButton, point) && g_view == PanelView::Form) {
+            result.kind = HitKind::PageCancel;
         }
         return result;
     }
@@ -3126,7 +3543,7 @@ static std::vector<int> ProfileIndices(const std::wstring& profile) {
 }
 
 static void OpenContainingFolder(const StackItem& item) {
-    std::wstring target = ExpandTokens(item.target);
+    std::wstring target = ExpandEnvironment(item.target);
     if (target.empty()) {
         return;
     }
@@ -3157,14 +3574,6 @@ static void CopyToClipboard(const std::wstring& text) {
         }
     }
     CloseClipboard();
-}
-
-static void OpenWindhawk() {
-    std::wstring windhawk = FindWindhawk();
-    if (!windhawk.empty()) {
-        ShellExecuteW(nullptr, L"open", windhawk.c_str(), nullptr, nullptr,
-                      SW_SHOWNORMAL);
-    }
 }
 
 static int g_panelBaseX = 0;
@@ -3314,6 +3723,243 @@ static bool RowHit(const HitResult& hit) {
            hit.kind == HitKind::GroupHeader || hit.kind == HitKind::GroupToggleAll;
 }
 
+static void PaintHeadingRow(Surface& surface,
+                            const std::wstring& label,
+                            int top,
+                            int height,
+                            const Palette& palette) {
+    surface.RenderText(label, UiFont(-2, true), palette.textDim,
+                       gp::Rect(g_layout.list.X + Scale(14), top + Scale(8),
+                                g_layout.list.Width - Scale(28), height - Scale(8)),
+                       kTextLeft);
+}
+
+static void PaintFormRows(Surface& surface, const Palette& palette) {
+    gp::Graphics& graphics = *surface.Graphics();
+    const gp::Rect& list = g_layout.list;
+    const int pad = Scale(14);
+    for (size_t i = 0; i < g_formRows.size(); i++) {
+        const FormRow& row = g_formRows[i];
+        int top = list.Y + g_formRowTops[i] - g_scrollOffset;
+        int height = FormRowHeight(i);
+        if (top + height < list.Y || top > list.Y + list.Height) {
+            continue;
+        }
+        if (row.kind == FormKind::Heading) {
+            PaintHeadingRow(surface, row.label, top, height, palette);
+            continue;
+        }
+        bool hovered = (g_hover.kind == HitKind::FormRow ||
+                        g_hover.kind == HitKind::FormAction) &&
+                       g_hover.index == (int)i;
+        if (hovered) {
+            FillRoundRect(graphics,
+                          ToRectF(gp::Rect(list.X + Scale(6), top, list.Width - Scale(12),
+                                           height - Scale(2))),
+                          (gp::REAL)Scale(4), palette.hover);
+        }
+        gp::Rect control = FormControlBox(i);
+        int labelRight = row.kind == FormKind::Toggle ? list.X + list.Width - pad - Scale(44)
+                                                      : control.X - Scale(10);
+        surface.RenderText(row.label, UiFont(-1), palette.text,
+                           gp::Rect(list.X + pad, top, labelRight - list.X - pad,
+                                    height - Scale(2)),
+                           kTextLeft);
+        if (row.kind == FormKind::Toggle) {
+            DrawToggle(surface,
+                       gp::Rect(list.X + list.Width - pad - Scale(34),
+                                top + (height - Scale(20)) / 2, Scale(34), Scale(18)),
+                       row.value() ? 1.0 : 0.0, palette, hovered);
+            continue;
+        }
+
+        bool focused = g_formFocus == (int)i;
+        FillRoundRect(graphics, ToRectF(control), (gp::REAL)Scale(4), palette.surface);
+        StrokeRoundRect(graphics, ToRectF(control), (gp::REAL)Scale(4),
+                        focused ? palette.accent : palette.border, 1.0f);
+        int glyphWidth = row.kind == FormKind::Choice || row.actionGlyph ? Scale(26) : 0;
+        gp::Rect glyphBox(control.X + control.Width - glyphWidth, control.Y, glyphWidth,
+                          control.Height);
+        gp::Rect textBox(control.X + Scale(8), control.Y,
+                         control.Width - Scale(12) - glyphWidth, control.Height);
+
+        if (row.kind == FormKind::Choice) {
+            std::vector<std::wstring> options = row.options();
+            int current = row.current();
+            if (current >= 0 && current < (int)options.size()) {
+                surface.RenderText(options[current], UiFont(-1), palette.text, textBox,
+                                   kTextLeft);
+            }
+            surface.RenderText(L"", IconFont(-4), palette.textDim, glyphBox,
+                               kTextCenter);
+            continue;
+        }
+
+        const std::wstring& text = *row.text;
+        int textWidth = MeasureText(text, UiFont(-1));
+        if (text.empty() && !focused) {
+            surface.RenderText(row.hint, UiFont(-1), palette.textDim, textBox, kTextLeft);
+        } else {
+            UINT format = focused && textWidth > textBox.Width
+                              ? DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX
+                              : kTextLeft;
+            surface.RenderText(text, UiFont(-1), palette.text, textBox, format);
+        }
+        if (focused && g_caretVisible) {
+            gp::REAL caretX = (gp::REAL)(textBox.X + min(textWidth, textBox.Width));
+            gp::Pen caret(palette.text, 1.0f);
+            graphics.DrawLine(&caret, caretX, (gp::REAL)(control.Y + Scale(6)), caretX,
+                              (gp::REAL)(control.Y + control.Height - Scale(6)));
+        }
+        if (row.actionGlyph) {
+            DrawSmallButton(surface, glyphBox, row.actionGlyph, palette,
+                            g_hover.kind == HitKind::FormAction && g_hover.index == (int)i,
+                            false);
+        }
+    }
+}
+
+static ItemType AddActionType(AddAction action) {
+    switch (action) {
+        case AddAction::Folder:
+            return ItemType::Folder;
+        case AddAction::VSCode:
+            return ItemType::VSCode;
+        case AddAction::Url:
+            return ItemType::Url;
+        case AddAction::Terminal:
+            return ItemType::Terminal;
+        case AddAction::Command:
+            return ItemType::Command;
+        default:
+            return ItemType::App;
+    }
+}
+
+static void PaintAddRows(Surface& surface, const Palette& palette) {
+    gp::Graphics& graphics = *surface.Graphics();
+    const gp::Rect& list = g_layout.list;
+    if (g_addRows.empty()) {
+        surface.RenderText(L"No app matches that search.", UiFont(-1), palette.textDim,
+                           list, kTextCenter);
+    }
+    for (size_t i = 0; i < g_addRows.size(); i++) {
+        const AddRow& row = g_addRows[i];
+        int top = list.Y + row.top - g_scrollOffset;
+        if (top + row.height < list.Y || top > list.Y + list.Height) {
+            continue;
+        }
+        if (row.action == AddAction::Heading) {
+            PaintHeadingRow(surface, row.label, top, row.height, palette);
+            continue;
+        }
+        bool hovered = (g_hover.kind == HitKind::AddRow ||
+                        g_hover.kind == HitKind::AddCustomize) &&
+                       g_hover.index == (int)i;
+        gp::Rect rowBox(list.X + Scale(6), top, list.Width - Scale(12),
+                        row.height - Scale(2));
+        if (g_addFocus == (int)i || hovered) {
+            FillRoundRect(graphics, ToRectF(rowBox), (gp::REAL)Scale(4),
+                          g_addFocus == (int)i ? palette.selection : palette.hover);
+        }
+
+        int iconSize = Scale(22);
+        gp::Rect iconBox(rowBox.X + Scale(10), top + (row.height - iconSize) / 2,
+                         iconSize, iconSize);
+        HICON icon = nullptr;
+        if (row.app >= 0) {
+            const std::wstring& key = g_pickerApps[row.app].target;
+            icon = TryGetCachedIcon(key);
+            if (!icon) {
+                RequestIcon(key);
+            }
+        }
+        if (icon) {
+            DrawIconImage(graphics, icon, iconBox);
+        } else {
+            surface.RenderText(TypeGlyph(AddActionType(row.action)), IconFont(),
+                               palette.textDim, iconBox, kTextCenter);
+        }
+
+        bool running = row.app >= 0 && row.app < (int)g_pickerRunningCount;
+        int textLeft = iconBox.X + iconSize + Scale(10);
+        int textWidth = ToggleLeftEdge() - Scale(8) - textLeft;
+        std::wstring detail = row.app < 0 ? row.detail
+                              : running   ? std::wstring(L"Running now")
+                                          : std::wstring(L"Start menu app");
+        surface.RenderText(row.label, UiFont(-1), palette.text,
+                           gp::Rect(textLeft, top + Scale(5), textWidth, Scale(18)),
+                           kTextLeft);
+        surface.RenderText(detail, UiFont(-3), running ? palette.running : palette.textDim,
+                           gp::Rect(textLeft, top + Scale(22), textWidth, Scale(15)),
+                           kTextLeft);
+        if (row.app >= 0) {
+            DrawSmallButton(surface,
+                            gp::Rect(list.X + list.Width - Scale(14) - Scale(30),
+                                     top + (row.height - Scale(28)) / 2, Scale(28),
+                                     Scale(28)),
+                            L"", palette,
+                            g_hover.kind == HitKind::AddCustomize &&
+                                g_hover.index == (int)i,
+                            false);
+        } else {
+            surface.RenderText(L"", IconFont(-4), palette.textDim,
+                               gp::Rect(list.X + list.Width - Scale(14) - Scale(30), top,
+                                        Scale(28), row.height),
+                               kTextCenter);
+        }
+    }
+}
+
+static void PaintMenu(Surface& surface, const Palette& palette) {
+    LayoutMenu();
+    gp::Graphics& graphics = *surface.Graphics();
+    gp::RectF box = ToRectF(g_menuRect);
+    gp::REAL radius = (gp::REAL)Scale(6);
+    DrawShadow(graphics, box, radius, Scale(10), 1.0);
+    FillRoundRect(graphics, box, radius, palette.surface);
+    StrokeRoundRect(graphics, box, radius, palette.border, 1.0f);
+
+    gp::Pen dividerPen(palette.divider, 1.0f);
+    int y = g_menuRect.Y + Scale(4);
+    for (int row = 0; row < MenuRowCount(); row++) {
+        int height = MenuRowHeight(row);
+        const MenuEntry* entry = MenuRowEntry(row);
+        if (entry && entry->label.empty()) {
+            gp::REAL lineY = (gp::REAL)(y + height / 2);
+            graphics.DrawLine(&dividerPen, (gp::REAL)(g_menuRect.X + Scale(10)), lineY,
+                              (gp::REAL)(g_menuRect.X + g_menuRect.Width - Scale(10)),
+                              lineY);
+            y += height;
+            continue;
+        }
+        gp::Rect rowBox(g_menuRect.X + Scale(4), y, g_menuRect.Width - Scale(8), height);
+        if (row == g_menuHover && !(entry && entry->disabled)) {
+            FillRoundRect(graphics, ToRectF(rowBox), (gp::REAL)Scale(4), palette.hover);
+        }
+        gp::Rect glyphBox(rowBox.X, y, Scale(28), height);
+        if (!entry) {
+            surface.RenderText(L"", IconFont(-4), palette.textDim, glyphBox,
+                               kTextCenter);
+        } else if (entry->checked) {
+            surface.RenderText(L"", IconFont(-3), palette.accent, glyphBox,
+                               kTextCenter);
+        }
+        surface.RenderText(entry ? entry->label : MenuBackLabel(), UiFont(-1, !entry),
+                           !entry || entry->disabled ? palette.textDim : palette.text,
+                           gp::Rect(rowBox.X + Scale(28), y, rowBox.Width - Scale(56),
+                                    height),
+                           kTextLeft);
+        if (entry && !entry->children.empty()) {
+            surface.RenderText(L"", IconFont(-4), palette.textDim,
+                               gp::Rect(rowBox.X + rowBox.Width - Scale(28), y, Scale(28),
+                                        height),
+                               kTextCenter);
+        }
+        y += height;
+    }
+}
+
 static void PaintPanel() {
     if (!g_panelWnd) {
         return;
@@ -3360,7 +4006,10 @@ static void PaintPanel() {
         }
     }
 
-    surface.RenderText(title, UiFont(2, true), palette.textStrong,
+    std::wstring headerTitle = g_view == PanelView::Form  ? g_formTitle
+                               : g_view == PanelView::Add ? L"Add to " + title
+                                                          : title;
+    surface.RenderText(headerTitle, UiFont(2, true), palette.textStrong,
                        gp::Rect(g_layout.header.X + pad, g_layout.header.Y + Scale(9),
                                 g_layout.header.Width - pad * 2 - Scale(34), Scale(20)),
                        kTextLeft);
@@ -3368,12 +4017,16 @@ static void PaintPanel() {
     wchar_t subtitle[160];
     swprintf_s(subtitle, L"%d of %d selected  ·  %d running", selected, total,
                runningSelected);
-    surface.RenderText(subtitle, UiFont(-2), palette.textDim,
+    surface.RenderText(g_view == PanelView::Form  ? g_formSubtitle
+                       : g_view == PanelView::Add ? L"Pick an app to add it, or create something"
+                                                  : std::wstring(subtitle),
+                       UiFont(-2), palette.textDim,
                        gp::Rect(g_layout.header.X + pad, g_layout.header.Y + Scale(29),
                                 g_layout.header.Width - pad * 2 - Scale(34), Scale(16)),
                        kTextLeft);
 
-    DrawSmallButton(surface, g_layout.settingsButton, L"\uE713", palette,
+    DrawSmallButton(surface, g_layout.settingsButton,
+                    g_view == PanelView::List ? L"\uE713" : L"\uE711", palette,
                     g_hover.kind == HitKind::Settings,
                     g_pressed.kind == HitKind::Settings);
 
@@ -3406,14 +4059,14 @@ static void PaintPanel() {
     gp::Rect searchTextBox(g_layout.search.X + Scale(28), g_layout.search.Y,
                            g_layout.search.Width - Scale(58), g_layout.search.Height);
     if (g_filter.empty()) {
-        surface.RenderText(L"Type to filter", UiFont(-1), palette.textDim, searchTextBox,
-                           kTextLeft);
+        surface.RenderText(g_view == PanelView::Add ? L"Search apps" : L"Type to filter",
+                           UiFont(-1), palette.textDim, searchTextBox, kTextLeft);
     } else {
         surface.RenderText(g_filter, UiFont(-1), palette.text, searchTextBox, kTextLeft);
         DrawSmallButton(surface, g_layout.searchClear, L"\uE711", palette,
                         g_hover.kind == HitKind::SearchClear, false);
     }
-    if (g_caretVisible) {
+    if (g_caretVisible && g_layout.search.Height > 0) {
         gp::REAL caretX = (gp::REAL)(searchTextBox.X + MeasureText(g_filter, UiFont(-1)));
         caretX = min(caretX, (gp::REAL)(searchTextBox.X + searchTextBox.Width));
         gp::Pen caret(palette.text, 1.0f);
@@ -3431,9 +4084,13 @@ static void PaintPanel() {
 
     surface.SetClip(g_layout.list);
 
-    if (g_rows.empty()) {
+    if (g_view == PanelView::Form) {
+        PaintFormRows(surface, palette);
+    } else if (g_view == PanelView::Add) {
+        PaintAddRows(surface, palette);
+    } else if (g_rows.empty()) {
         surface.RenderText(total == 0
-                               ? L"No items yet. Add them in the mod settings."
+                               ? L"No items yet. Press + to add one."
                                : L"Nothing matches that filter.",
                            UiFont(-1), palette.textDim, g_layout.list, kTextCenter);
     }
@@ -3587,7 +4244,24 @@ static void PaintPanel() {
                       (gp::REAL)(g_layout.footer.X + g_layout.footer.Width - pad),
                       (gp::REAL)g_layout.footer.Y);
 
-    if (g_launching) {
+    if (g_view == PanelView::Form) {
+        DrawTextButton(surface, g_layout.closeButton, L"Cancel", palette, false, true,
+                       g_hover.kind == HitKind::PageCancel,
+                       g_pressed.kind == HitKind::PageCancel);
+        DrawTextButton(surface, g_layout.launchButton, g_formSaveLabel, palette, true, true,
+                       g_hover.kind == HitKind::PageSave,
+                       g_pressed.kind == HitKind::PageSave);
+    } else if (g_view == PanelView::Add) {
+        surface.RenderText(L"Click to add  ·  pencil to customise first", UiFont(-3),
+                           palette.textDim,
+                           gp::Rect(g_layout.footer.X + pad, g_layout.footer.Y,
+                                    g_layout.launchButton.X - g_layout.footer.X - pad * 2,
+                                    g_layout.footer.Height),
+                           kTextLeft);
+        DrawTextButton(surface, g_layout.launchButton, L"Done", palette, false, true,
+                       g_hover.kind == HitKind::PageCancel,
+                       g_pressed.kind == HitKind::PageCancel);
+    } else if (g_launching) {
         surface.RenderText(StatusText(), UiFont(-2), palette.text,
                            gp::Rect(g_layout.footer.X + pad, g_layout.footer.Y + Scale(9),
                                     g_layout.footer.Width - pad * 2 - Scale(72),
@@ -3642,13 +4316,17 @@ static void PaintPanel() {
                        g_pressed.kind == HitKind::Launch);
     }
 
+    if (g_menuOpen) {
+        PaintMenu(surface, palette);
+    }
+
     int slide = (int)((1.0 - reveal) * Scale(12));
     int top = g_panelGrowsUp ? g_panelAnchorBottom - g_layout.window.Height
                              : g_panelBaseY;
-    SetWindowPos(g_panelWnd, HWND_TOPMOST, g_panelBaseX,
+    SetWindowPos(g_panelWnd, nullptr, g_panelBaseX,
                  top + (g_panelGrowsUp ? slide : -slide),
                  g_layout.window.Width, g_layout.window.Height,
-                 SWP_NOACTIVATE | SWP_NOREDRAW);
+                 SWP_NOACTIVATE | SWP_NOREDRAW | SWP_NOZORDER);
     g_panelSurface.Present(g_panelWnd, (BYTE)(255 * reveal));
 }
 
@@ -3769,6 +4447,8 @@ static void OpenPanel() {
     RefreshPalette();
     LoadCollapsedGroups();
     NormalizeItemOrder();
+    CloseMenu();
+    g_view = PanelView::List;
     g_filter.clear();
     g_focusRow = -1;
     g_scrollOffset = 0;
@@ -3807,6 +4487,7 @@ static void ClosePanel() {
         return;
     }
     g_panelOpen = false;
+    CloseMenu();
     g_panelHiddenTick = GetTickCount64();
     g_revealTarget = 0.0;
     EnsureAnimationTimer();
@@ -3898,19 +4579,17 @@ static void CloseSelected() {
         std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
         confirm = g_settings.confirmBeforeClose;
     }
-    if (confirm) {
-        wchar_t message[128];
-        swprintf_s(message, L"Close %d items?", (int)indices.size());
-        g_suppressDeactivate = true;
-        int answer = MessageBoxW(g_panelWnd, message, L"StackSwitch",
-                                 MB_OKCANCEL | MB_ICONWARNING);
-        g_suppressDeactivate = false;
-        if (answer != IDOK) {
-            return;
-        }
+    auto close = [indices] {
+        StartSequence(RunShutdownSequence, indices);
+        ClosePanel();
+    };
+    if (!confirm) {
+        close();
+        return;
     }
-    StartSequence(RunShutdownSequence, std::move(indices));
-    ClosePanel();
+    ConfirmInMenu(L"Close " + std::to_wstring(indices.size()) + L" running items?",
+                  L"Close them", POINT{g_layout.closeButton.X, g_layout.closeButton.Y},
+                  close);
 }
 
 static void FocusItemRow(int itemIndex) {
@@ -3923,59 +4602,47 @@ static void FocusItemRow(int itemIndex) {
     }
 }
 
-static int TrackPanelMenu(HMENU menu, POINT screenPoint) {
-    g_suppressDeactivate = true;
-    SetForegroundWindow(g_panelWnd);
-    int command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screenPoint.x,
-                                 screenPoint.y, 0, g_panelWnd, nullptr);
-    DestroyMenu(menu);
-    g_suppressDeactivate = false;
-    return command;
-}
-
-static void ShowGroupMenu(int rowIndex, POINT screenPoint) {
+static void ShowGroupMenu(int rowIndex, POINT clientPoint) {
     if (rowIndex < 0 || rowIndex >= (int)g_rows.size() || !g_rows[rowIndex].isGroup) {
         return;
     }
     std::wstring group = g_rows[rowIndex].text;
-
-    HMENU menu = CreatePopupMenu();
-    if (!menu) {
-        return;
-    }
-    AppendMenuW(menu, MF_STRING, kGroupMenuCollapse,
-                IsGroupCollapsed(group) ? L"Expand" : L"Collapse");
-    AppendMenuW(menu, MF_STRING, kGroupMenuToggleAll, L"Toggle every item");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kGroupMenuMoveUp, L"Move group up");
-    AppendMenuW(menu, MF_STRING, kGroupMenuMoveDown, L"Move group down");
-    AppendMenuW(menu, MF_STRING, kGroupMenuResetOrder, L"Reset order to settings");
-
-    switch (TrackPanelMenu(menu, screenPoint)) {
-        case kGroupMenuCollapse:
-            SetGroupCollapsed(group, !IsGroupCollapsed(group));
-            EnsureAnimationTimer();
-            break;
-        case kGroupMenuToggleAll:
-            ToggleGroupEnabled(group);
-            EnsureAnimationTimer();
-            break;
-        case kGroupMenuMoveUp:
-            if (MoveGroupBlock(group, -1)) {
-                SaveItemOrder();
+    ShowMenu(
+        {
+            {IsGroupCollapsed(group) ? L"Expand" : L"Collapse", kGroupMenuCollapse},
+            {L"Toggle every item", kGroupMenuToggleAll},
+            {},
+            {L"Move group up", kGroupMenuMoveUp},
+            {L"Move group down", kGroupMenuMoveDown},
+            {L"Reset order", kGroupMenuResetOrder},
+        },
+        clientPoint, [group](UINT command) {
+            switch (command) {
+                case kGroupMenuCollapse:
+                    SetGroupCollapsed(group, !IsGroupCollapsed(group));
+                    EnsureAnimationTimer();
+                    break;
+                case kGroupMenuToggleAll:
+                    ToggleGroupEnabled(group);
+                    EnsureAnimationTimer();
+                    break;
+                case kGroupMenuMoveUp:
+                    if (MoveGroupBlock(group, -1)) {
+                        SaveItemOrder();
+                    }
+                    break;
+                case kGroupMenuMoveDown:
+                    if (MoveGroupBlock(group, 1)) {
+                        SaveItemOrder();
+                    }
+                    break;
+                case kGroupMenuResetOrder:
+                    ResetItemOrder();
+                    break;
+                default:
+                    break;
             }
-            break;
-        case kGroupMenuMoveDown:
-            if (MoveGroupBlock(group, 1)) {
-                SaveItemOrder();
-            }
-            break;
-        case kGroupMenuResetOrder:
-            ResetItemOrder();
-            break;
-        default:
-            break;
-    }
+        });
 }
 
 constexpr PCWSTR kItemTypeNames[] = {L"app", L"vscode", L"folder",
@@ -3997,203 +4664,42 @@ constexpr PROPERTYKEY kFileDescriptionKey = {
 constexpr PROPERTYKEY kProductNameKey = {
     {0x0CEF7D53, 0xFA64, 0x11D1, {0xA2, 0x03, 0x00, 0x00, 0xF8, 0x1F, 0xED, 0xEE}},
     7};
+constexpr PROPERTYKEY kLinkTargetKey = {
+    {0xB9B4B3FC, 0x2B51, 0x4A42, {0xB5, 0xD8, 0x32, 0x41, 0x46, 0xAF, 0xCF, 0x25}},
+    2};
+constexpr GUID kEnumItemsHandler = {
+    0x94F60519, 0x2850, 0x4924, {0xAA, 0x5A, 0xD1, 0x5E, 0x84, 0x86, 0x80, 0x39}};
 
-enum EditorField {
-    kFieldName,
-    kFieldTarget,
-    kFieldArgs,
-    kFieldWorkingDir,
-    kFieldGroup,
-    kFieldProfiles,
-    kFieldOptions,
-    kEditorFieldCount,
-};
-
-static HWND g_editorWnd = nullptr;
-static HWND g_editorEdits[kEditorFieldCount] = {};
-static HWND g_editorType = nullptr;
-static HWND g_editorEnabled = nullptr;
-static HFONT g_editorFont = nullptr;
-static int g_editorPanelIndex = -1;
-
-static void StorePanelItems(const std::vector<ItemFields>& items) {
-    SavePanelItems(items);
+static void ApplyStoredSettings() {
     LoadSettings();
     PostMessageW(g_messageWnd, kMsgReloadSettings, 0, 0);
 }
 
-static std::wstring WindowTextOf(HWND window) {
-    int length = GetWindowTextLengthW(window);
-    std::wstring text(length + 1, L'\0');
-    GetWindowTextW(window, text.data(), length + 1);
-    text.resize(length);
-    return text;
+static void StorePanelItems(const std::vector<ItemFields>& items) {
+    SavePanelItems(items);
+    ApplyStoredSettings();
 }
 
-static void SaveItemEditor() {
-    ItemFields fields;
-    fields.name = Trim(WindowTextOf(g_editorEdits[kFieldName]));
-    if (fields.name.empty()) {
-        MessageBoxW(g_editorWnd, L"Give the item a name.", L"StackSwitch",
-                    MB_OK | MB_ICONINFORMATION);
-        SetFocus(g_editorEdits[kFieldName]);
+static std::vector<ItemFields> CopyPanelItems() {
+    std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
+    return g_panelItems;
+}
+
+static void ReplacePanelItem(int panelIndex, const ItemFields& fields) {
+    std::vector<ItemFields> items = CopyPanelItems();
+    if (panelIndex < 0 || panelIndex >= (int)items.size()) {
         return;
     }
-    int typeIndex = (int)SendMessageW(g_editorType, CB_GETCURSEL, 0, 0);
-    fields.type = kItemTypeNames[typeIndex >= 0 && typeIndex < (int)ARRAYSIZE(kItemTypeNames)
-                                     ? typeIndex
-                                     : 0];
-    fields.target = Trim(WindowTextOf(g_editorEdits[kFieldTarget]));
-    fields.args = Trim(WindowTextOf(g_editorEdits[kFieldArgs]));
-    fields.workingDir = Trim(WindowTextOf(g_editorEdits[kFieldWorkingDir]));
-    fields.group = Trim(WindowTextOf(g_editorEdits[kFieldGroup]));
-    fields.profiles = Trim(WindowTextOf(g_editorEdits[kFieldProfiles]));
-    fields.options = Trim(WindowTextOf(g_editorEdits[kFieldOptions]));
-    fields.enabled = SendMessageW(g_editorEnabled, BM_GETCHECK, 0, 0) == BST_CHECKED;
-
-    std::vector<ItemFields> items;
-    {
-        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        items = g_panelItems;
+    std::wstring oldKey = ItemStorageKey(items[panelIndex]);
+    std::wstring newKey = ItemStorageKey(fields);
+    if (oldKey != newKey) {
+        Wh_SetIntValue(newKey.c_str(),
+                       Wh_GetIntValue(oldKey.c_str(), items[panelIndex].enabled ? 1 : 0));
+        std::replace(g_itemOrder.begin(), g_itemOrder.end(), oldKey, newKey);
+        SaveItemOrder();
     }
-    if (g_editorPanelIndex >= 0 && g_editorPanelIndex < (int)items.size()) {
-        items[g_editorPanelIndex] = std::move(fields);
-    } else {
-        items.push_back(std::move(fields));
-    }
-    DestroyWindow(g_editorWnd);
+    items[panelIndex] = fields;
     StorePanelItems(items);
-}
-
-static LRESULT CALLBACK EditorWndProc(HWND window,
-                                      UINT message,
-                                      WPARAM wParam,
-                                      LPARAM lParam) {
-    switch (message) {
-        case WM_COMMAND:
-            if (LOWORD(wParam) == IDOK) {
-                SaveItemEditor();
-                return 0;
-            }
-            if (LOWORD(wParam) == IDCANCEL) {
-                DestroyWindow(window);
-                return 0;
-            }
-            break;
-        case WM_CLOSE:
-            DestroyWindow(window);
-            return 0;
-        case WM_NCDESTROY:
-            g_editorWnd = nullptr;
-            if (g_editorFont) {
-                DeleteObject(g_editorFont);
-                g_editorFont = nullptr;
-            }
-            break;
-    }
-    return DefWindowProcW(window, message, wParam, lParam);
-}
-
-static void OpenItemEditor(const ItemFields& fields, int panelIndex) {
-    if (g_editorWnd) {
-        DestroyWindow(g_editorWnd);
-    }
-    ClosePanel();
-    g_editorPanelIndex = panelIndex;
-
-    const int pad = Scale(16);
-    const int labelWidth = Scale(110);
-    const int fieldWidth = Scale(360);
-    const int rowHeight = Scale(32);
-    const int editHeight = Scale(24);
-    const int hintHeight = Scale(64);
-    const int clientWidth = pad * 3 + labelWidth + fieldWidth;
-    const int clientHeight =
-        pad + rowHeight * 8 + hintHeight + rowHeight + Scale(40) + pad;
-
-    DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU;
-    RECT frame{0, 0, clientWidth, clientHeight};
-    AdjustWindowRectEx(&frame, style, FALSE, WS_EX_DLGMODALFRAME);
-    RECT work{};
-    SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
-    int width = frame.right - frame.left;
-    int height = frame.bottom - frame.top;
-
-    HINSTANCE instance = GetModuleHandleW(nullptr);
-    g_editorWnd = CreateWindowExW(
-        WS_EX_DLGMODALFRAME, kEditorClass,
-        panelIndex < 0 ? L"Add to StackSwitch" : L"Edit StackSwitch item", style,
-        work.left + (work.right - work.left - width) / 2,
-        work.top + (work.bottom - work.top - height) / 2, width, height, nullptr,
-        nullptr, instance, nullptr);
-    if (!g_editorWnd) {
-        return;
-    }
-    g_editorFont = CreateFontW(-Scale(12), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                               CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-
-    auto addControl = [&](DWORD exStyle, PCWSTR className, PCWSTR text, DWORD controlStyle,
-                          int x, int y, int w, int h, int id) {
-        HWND control = CreateWindowExW(exStyle, className, text,
-                                       WS_CHILD | WS_VISIBLE | controlStyle, x, y, w, h,
-                                       g_editorWnd, (HMENU)(INT_PTR)id, instance, nullptr);
-        SendMessageW(control, WM_SETFONT, (WPARAM)g_editorFont, FALSE);
-        return control;
-    };
-    const int fieldX = pad * 2 + labelWidth;
-    int y = pad;
-    auto addRow = [&](PCWSTR label) {
-        addControl(0, L"STATIC", label, SS_LEFT, pad, y + Scale(4), labelWidth, Scale(20),
-                   0);
-        int top = y;
-        y += rowHeight;
-        return top;
-    };
-    auto addEdit = [&](PCWSTR label, const std::wstring& text) {
-        return addControl(WS_EX_CLIENTEDGE, L"EDIT", text.c_str(),
-                          WS_TABSTOP | ES_AUTOHSCROLL, fieldX, addRow(label), fieldWidth,
-                          editHeight, 0);
-    };
-
-    g_editorEdits[kFieldName] = addEdit(L"Name", fields.name);
-    g_editorType = addControl(0, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST,
-                              fieldX, addRow(L"Type"), fieldWidth, Scale(200), 0);
-    for (PCWSTR label : kItemTypeLabels) {
-        SendMessageW(g_editorType, CB_ADDSTRING, 0, (LPARAM)label);
-    }
-    SendMessageW(g_editorType, CB_SETCURSEL, (WPARAM)ParseItemType(fields.type.c_str()),
-                 0);
-    g_editorEdits[kFieldTarget] = addEdit(L"Target", fields.target);
-    g_editorEdits[kFieldArgs] = addEdit(L"Arguments", fields.args);
-    g_editorEdits[kFieldWorkingDir] = addEdit(L"Working folder", fields.workingDir);
-    g_editorEdits[kFieldGroup] = addEdit(L"Group", fields.group);
-    g_editorEdits[kFieldProfiles] = addEdit(L"Profiles", fields.profiles);
-    g_editorEdits[kFieldOptions] = addEdit(L"Options", fields.options);
-    addControl(0, L"STATIC",
-               L"Comma separated, in any order: admin, minimized, maximized, hidden, "
-               L"wait, duplicate, delay=2s, process=node.exe, shell=pwsh, "
-               L"subtitle=text, icon=E768.\nExample: minimized, delay=2s, "
-               L"process=node.exe",
-               SS_LEFT, fieldX, y - Scale(4), fieldWidth, hintHeight, 0);
-    y += hintHeight;
-    g_editorEnabled = addControl(0, L"BUTTON", L"On by default",
-                                 WS_TABSTOP | BS_AUTOCHECKBOX, fieldX, y, fieldWidth,
-                                 editHeight, 0);
-    SendMessageW(g_editorEnabled, BM_SETCHECK, fields.enabled ? BST_CHECKED : BST_UNCHECKED,
-                 0);
-    y += rowHeight + Scale(8);
-
-    int buttonWidth = Scale(88);
-    addControl(0, L"BUTTON", L"Cancel", WS_TABSTOP | BS_PUSHBUTTON,
-               clientWidth - pad - buttonWidth, y, buttonWidth, Scale(28), IDCANCEL);
-    addControl(0, L"BUTTON", L"Save", WS_TABSTOP | BS_DEFPUSHBUTTON,
-               clientWidth - pad * 2 - buttonWidth * 2 + Scale(8), y, buttonWidth,
-               Scale(28), IDOK);
-
-    ShowWindow(g_editorWnd, SW_SHOWNORMAL);
-    ForceForeground(g_editorWnd);
-    SetFocus(g_editorEdits[fields.name.empty() ? kFieldName : kFieldTarget]);
 }
 
 static bool PickPath(bool folder, std::wstring& path) {
@@ -4217,7 +4723,11 @@ static bool PickPath(bool folder, std::wstring& path) {
                             : L"Add an app or file to StackSwitch");
     bool picked = false;
     IShellItem* result = nullptr;
-    if (SUCCEEDED(dialog->Show(nullptr)) && SUCCEEDED(dialog->GetResult(&result))) {
+    g_suppressDeactivate = true;
+    HRESULT shown = dialog->Show(g_panelWnd);
+    g_suppressDeactivate = false;
+    ForceForeground(g_panelWnd);
+    if (SUCCEEDED(shown) && SUCCEEDED(dialog->GetResult(&result))) {
         PWSTR name = nullptr;
         if (SUCCEEDED(result->GetDisplayName(SIGDN_FILESYSPATH, &name))) {
             path = name;
@@ -4277,21 +4787,25 @@ static std::wstring WindowAppUserModelId(HWND window) {
     return id;
 }
 
+static std::unordered_set<std::wstring> AddedItemKeys() {
+    std::unordered_set<std::wstring> keys;
+    std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
+    for (const auto& item : g_settings.items) {
+        std::wstring process = ResolveProcessName(item);
+        if (!process.empty()) {
+            keys.insert(process);
+        }
+        keys.insert(ToLower(ExpandEnvironment(item.target)));
+    }
+    return keys;
+}
+
 static std::vector<ItemFields> ListRunningApps() {
-    std::unordered_set<std::wstring> known = {
+    std::unordered_set<std::wstring> known = AddedItemKeys();
+    known.insert({
         L"explorer.exe",           L"shellexperiencehost.exe", L"textinputhost.exe",
         L"startmenuexperiencehost.exe", L"searchhost.exe",     L"lockapp.exe",
-    };
-    {
-        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        for (const auto& item : g_settings.items) {
-            std::wstring process = ResolveProcessName(item);
-            if (!process.empty()) {
-                known.insert(process);
-            }
-            known.insert(ToLower(ExpandTokens(item.target)));
-        }
-    }
+    });
 
     std::vector<HWND> windows;
     EnumWindows(
@@ -4366,63 +4880,561 @@ static std::vector<ItemFields> ListRunningApps() {
     return apps;
 }
 
-static void ShowAddMenu(POINT screenPoint) {
-    std::vector<ItemFields> running = ListRunningApps();
-    HMENU menu = CreatePopupMenu();
-    HMENU runningMenu = CreatePopupMenu();
-    if (!menu || !runningMenu) {
-        return;
+static std::vector<ItemFields> ListInstalledApps(const std::unordered_set<std::wstring>& known) {
+    std::vector<ItemFields> apps;
+    IShellItem* folder = nullptr;
+    if (FAILED(SHCreateItemFromParsingName(L"shell:AppsFolder", nullptr,
+                                           IID_PPV_ARGS(&folder)))) {
+        return apps;
     }
-    for (size_t i = 0; i < running.size(); i++) {
-        AppendMenuW(runningMenu, MF_STRING, kAddMenuRunningFirst + i,
-                    running[i].name.c_str());
-    }
-    if (running.empty()) {
-        AppendMenuW(runningMenu, MF_STRING | MF_GRAYED, 0, L"Everything running is listed");
-    }
-    AppendMenuW(menu, MF_POPUP, (UINT_PTR)runningMenu, L"Running app");
-    AppendMenuW(menu, MF_STRING, kAddMenuFile, L"App or file...");
-    AppendMenuW(menu, MF_STRING, kAddMenuFolder, L"Folder...");
-    AppendMenuW(menu, MF_STRING, kAddMenuOther, L"URL or command...");
-
-    int command = TrackPanelMenu(menu, screenPoint);
-    ItemFields fields;
-    if (command >= kAddMenuRunningFirst &&
-        command < kAddMenuRunningFirst + (int)running.size()) {
-        fields = running[command - kAddMenuRunningFirst];
-    } else if (command == kAddMenuFile || command == kAddMenuFolder) {
-        ClosePanel();
-        bool folder = command == kAddMenuFolder;
-        if (!PickPath(folder, fields.target)) {
-            return;
+    IEnumShellItems* entries = nullptr;
+    if (SUCCEEDED(folder->BindToHandler(nullptr, kEnumItemsHandler, IID_PPV_ARGS(&entries)))) {
+        IShellItem* entry = nullptr;
+        while (entries->Next(1, &entry, nullptr) == S_OK) {
+            IShellItem2* details = nullptr;
+            PWSTR id = nullptr;
+            if (SUCCEEDED(entry->QueryInterface(IID_PPV_ARGS(&details))) &&
+                SUCCEEDED(entry->GetDisplayName(SIGDN_PARENTRELATIVEPARSING, &id))) {
+                ItemFields app;
+                app.name = ShellItemText(details, nullptr);
+                app.target = L"shell:AppsFolder\\" + std::wstring(id);
+                std::wstring exe = FileNameOf(ShellItemText(details, &kLinkTargetKey));
+                if (ToLower(exe).ends_with(L".exe")) {
+                    app.options = L"process=" + exe;
+                }
+                if (!app.name.empty() && !known.count(ToLower(app.target)) &&
+                    (exe.empty() || !known.count(ToLower(exe)))) {
+                    apps.push_back(std::move(app));
+                }
+            }
+            CoTaskMemFree(id);
+            if (details) {
+                details->Release();
+            }
+            entry->Release();
         }
-        std::wstring file = FileNameOf(fields.target);
-        fields.name = folder ? file : file.substr(0, file.rfind(L'.'));
-        if (folder) {
-            fields.type = L"folder";
-        }
-    } else if (command == kAddMenuOther) {
-        fields.type = L"url";
-    } else {
-        return;
+        entries->Release();
     }
-    OpenItemEditor(fields, -1);
+    folder->Release();
+    return apps;
 }
 
-static void RemovePanelItem(int panelIndex, const std::wstring& name) {
-    std::wstring message = L"Remove " + name + L" from StackSwitch?";
-    g_suppressDeactivate = true;
-    int answer = MessageBoxW(g_panelWnd, message.c_str(), L"StackSwitch",
-                             MB_OKCANCEL | MB_ICONQUESTION);
-    g_suppressDeactivate = false;
-    if (answer != IDOK) {
-        return;
+static std::wstring PickerProcessKey(const ItemFields& app) {
+    return ToLower(app.options.starts_with(L"process=") ? app.options.substr(8)
+                                                         : FileNameOf(app.target));
+}
+
+static void LoadPickerApps() {
+    auto byName = [](const ItemFields& a, const ItemFields& b) {
+        return ToLower(a.name) < ToLower(b.name);
+    };
+    std::vector<ItemFields> installed = ListInstalledApps(AddedItemKeys());
+    std::vector<ItemFields> running = ListRunningApps();
+    for (ItemFields& app : running) {
+        auto match = std::find_if(installed.begin(), installed.end(), [&](const ItemFields& entry) {
+            return ToLower(entry.target) == ToLower(app.target) ||
+                   PickerProcessKey(entry) == PickerProcessKey(app);
+        });
+        if (match == installed.end()) {
+            continue;
+        }
+        if (match->options.empty()) {
+            match->options = app.options;
+        }
+        app = std::move(*match);
+        installed.erase(match);
     }
-    std::vector<ItemFields> items;
+    std::sort(running.begin(), running.end(), byName);
+    std::sort(installed.begin(), installed.end(), byName);
+    g_pickerRunningCount = running.size();
+    g_pickerApps = std::move(running);
+    g_pickerApps.insert(g_pickerApps.end(), std::make_move_iterator(installed.begin()),
+                        std::make_move_iterator(installed.end()));
+}
+
+static std::wstring ToggleListEntry(const std::wstring& list, const std::wstring& entry);
+
+static void ShowPage(PanelView view) {
+    if (!g_panelOpen) {
+        OpenPanel();
+    }
+    CloseMenu();
+    g_view = view;
+    g_filter.clear();
+    g_formFocus = -1;
+    g_addFocus = -1;
+    g_focusRow = -1;
+    g_scrollOffset = 0;
+    g_hover = HitResult{};
+    g_pressed = HitResult{};
+    RefreshPanel();
+}
+
+static void ShowListPage() {
+    g_formRows.clear();
+    g_formBuild = nullptr;
+    g_formSave = nullptr;
+    g_pickerApps.clear();
+    ShowPage(PanelView::List);
+}
+
+static void OpenForm(std::wstring title,
+                     std::wstring subtitle,
+                     std::wstring saveLabel,
+                     std::function<void()> build,
+                     std::function<bool()> save) {
+    g_formTitle = std::move(title);
+    g_formSubtitle = std::move(subtitle);
+    g_formSaveLabel = std::move(saveLabel);
+    g_formBuild = std::move(build);
+    g_formSave = std::move(save);
+    g_formBuild();
+    ShowPage(PanelView::Form);
+}
+
+static void RebuildForm() {
+    g_formBuild();
+    if (g_formFocus >= (int)g_formRows.size()) {
+        g_formFocus = -1;
+    }
+}
+
+static void SaveForm() {
+    if (g_formSave()) {
+        ShowListPage();
+    }
+}
+
+static void BrowseInto(std::wstring* text, bool folder) {
+    std::wstring path;
+    if (PickPath(folder, path)) {
+        *text = path;
+    }
+}
+
+template <size_t N>
+static std::vector<std::wstring> LabelsOf(const PCWSTR (&labels)[N]) {
+    return std::vector<std::wstring>(std::begin(labels), std::end(labels));
+}
+
+static Settings g_settingsDraft;
+static std::wstring g_settingsDraftProfiles;
+
+static std::vector<std::wstring> AutoRunChoices() {
+    std::vector<std::wstring> choices{L"None"};
+    for (auto& profile : SplitList(g_settingsDraftProfiles, L',')) {
+        choices.push_back(std::move(profile));
+    }
+    return choices;
+}
+
+static void BuildSettingsForm() {
+    Settings& draft = g_settingsDraft;
+    g_formRows = {
+        FormHeading(L"Panel"),
+        FormText(L"Title", L"Workspace", &draft.panelTitle),
+        FormText(L"Profiles", L"Comma separated: daily, full", &g_settingsDraftProfiles),
+        FormToggle(L"Compact rows", &draft.compactRows),
+        FormHeading(L"Taskbar button"),
+        FormChoice(
+            L"Position", [] { return LabelsOf(kButtonPositionLabels); },
+            [] { return (int)g_settingsDraft.buttonPosition; },
+            [](int choice) { g_settingsDraft.buttonPosition = (ButtonPosition)choice; }),
+        FormChoice(
+            L"Style", [] { return LabelsOf(kButtonStyleLabels); },
+            [] { return (int)g_settingsDraft.buttonStyle; },
+            [](int choice) { g_settingsDraft.buttonStyle = (ButtonStyle)choice; }),
+        FormText(L"Hotkey", L"None, or e.g. Ctrl+Alt+S", &draft.hotkey),
+        FormToggle(L"Also show a tray icon", &draft.showTrayIcon),
+        FormToggle(L"Show on secondary taskbars", &draft.showOnSecondaryTaskbars),
+        FormHeading(L"Closing"),
+        FormToggle(L"Confirm before closing", &draft.confirmBeforeClose),
+        FormToggle(L"Force close if it will not shut down", &draft.forceCloseAfterGrace),
+        FormHeading(L"Sign-in"),
+        FormChoice(
+            L"Profile to launch", AutoRunChoices,
+            [] {
+                std::vector<std::wstring> choices = AutoRunChoices();
+                for (size_t i = 1; i < choices.size(); i++) {
+                    if (ToLower(choices[i]) == ToLower(g_settingsDraft.autoRunProfile)) {
+                        return (int)i;
+                    }
+                }
+                return 0;
+            },
+            [](int choice) {
+                g_settingsDraft.autoRunProfile =
+                    choice > 0 ? AutoRunChoices()[choice] : std::wstring();
+            }),
+    };
+}
+
+static void OpenSettingsPage() {
     {
         std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-        items = g_panelItems;
+        g_settingsDraft = g_settings;
     }
+    g_settingsDraftProfiles = JoinList(g_settingsDraft.profiles);
+    OpenForm(L"Settings", L"Changes apply when you press Save", L"Save", BuildSettingsForm,
+             [] {
+                 g_settingsDraft.profiles = SplitList(g_settingsDraftProfiles, L',');
+                 SaveConfig(g_settingsDraft);
+                 ApplyStoredSettings();
+                 return true;
+             });
+}
+
+struct ItemDraft {
+    ItemFields fields;
+    int panelIndex = -1;
+    int windowState = 0;
+    int shell = 0;
+    int delayMs = 0;
+    bool admin = false;
+    bool wait = false;
+    bool duplicate = false;
+    std::wstring process;
+    std::wstring subtitle;
+    std::wstring icon;
+};
+
+static ItemDraft g_itemDraft;
+
+constexpr int kDelayChoicesMs[] = {0, 1000, 2000, 3000, 5000, 10000, 20000, 30000, 60000};
+
+static std::vector<int> DelayChoices() {
+    std::vector<int> choices(std::begin(kDelayChoicesMs), std::end(kDelayChoicesMs));
+    if (std::find(choices.begin(), choices.end(), g_itemDraft.delayMs) == choices.end()) {
+        choices.push_back(g_itemDraft.delayMs);
+    }
+    return choices;
+}
+
+static std::wstring DelayLabel(int ms) {
+    if (ms == 0) {
+        return L"No delay";
+    }
+    if (ms % 60000 == 0) {
+        return std::to_wstring(ms / 60000) + (ms == 60000 ? L" minute" : L" minutes");
+    }
+    if (ms % 1000 == 0) {
+        return std::to_wstring(ms / 1000) + (ms == 1000 ? L" second" : L" seconds");
+    }
+    return std::to_wstring(ms) + L" ms";
+}
+
+static std::wstring QuoteOption(std::wstring_view value) {
+    std::wstring clean;
+    for (wchar_t character : Trim(value)) {
+        if (character != L'"') {
+            clean += character;
+        }
+    }
+    return clean.find(L',') == std::wstring::npos ? clean : L"\"" + clean + L"\"";
+}
+
+static std::wstring ComposeOptions(const ItemDraft& draft) {
+    ItemType type = ParseItemType(draft.fields.type.c_str());
+    std::vector<std::wstring> parts;
+    if (draft.admin) {
+        parts.push_back(L"admin");
+    }
+    if (draft.windowState > 0) {
+        parts.push_back(kWindowStateNames[draft.windowState]);
+    }
+    if (draft.wait) {
+        parts.push_back(L"wait");
+    }
+    if (draft.duplicate) {
+        parts.push_back(L"duplicate");
+    }
+    if (draft.delayMs > 0) {
+        parts.push_back(L"delay=" + std::to_wstring(draft.delayMs));
+    }
+    if (!Trim(draft.process).empty()) {
+        parts.push_back(L"process=" + QuoteOption(draft.process));
+    }
+    if ((type == ItemType::Terminal || type == ItemType::Command) && draft.shell > 0) {
+        parts.push_back(std::wstring(L"shell=") + kShellNames[draft.shell]);
+    }
+    if (!Trim(draft.subtitle).empty()) {
+        parts.push_back(L"subtitle=" + QuoteOption(draft.subtitle));
+    }
+    if (!Trim(draft.icon).empty()) {
+        parts.push_back(L"icon=" + QuoteOption(draft.icon));
+    }
+    return JoinList(parts);
+}
+
+static void ShowGroupSuggestions() {
+    std::vector<std::wstring> groups;
+    {
+        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
+        groups = GroupSequence(OrderedIndices());
+    }
+    std::erase(groups, std::wstring());
+    std::vector<MenuEntry> entries;
+    for (size_t i = 0; i < groups.size(); i++) {
+        entries.push_back({groups[i], (UINT)(i + 1), groups[i] == g_itemDraft.fields.group});
+    }
+    if (!entries.empty()) {
+        entries.push_back({});
+    }
+    entries.push_back({L"No group", 0x7FFF, g_itemDraft.fields.group.empty()});
+    gp::Rect control = FormControlBox(FindFormRow(L"Group"));
+    ShowMenu(std::move(entries), POINT{control.X, control.Y + control.Height},
+             [groups](UINT command) {
+                 g_itemDraft.fields.group =
+                     command > 0 && command <= groups.size() ? groups[command - 1]
+                                                             : std::wstring();
+             });
+}
+
+static void BuildItemForm() {
+    ItemDraft& draft = g_itemDraft;
+    ItemType type = ParseItemType(draft.fields.type.c_str());
+    bool shellType = type == ItemType::Terminal || type == ItemType::Command;
+    std::vector<std::wstring> profiles;
+    bool hasGroups = false;
+    {
+        std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
+        profiles = g_settings.profiles;
+        for (const auto& item : g_settings.items) {
+            hasGroups |= !item.group.empty();
+        }
+    }
+
+    std::vector<FormRow> rows;
+    rows.push_back(FormHeading(L"What it opens"));
+    rows.push_back(FormText(L"Name", L"Shown in the panel", &draft.fields.name));
+    rows.push_back(FormChoice(
+        L"Type", [] { return LabelsOf(kItemTypeLabels); },
+        [] { return (int)ParseItemType(g_itemDraft.fields.type.c_str()); },
+        [](int choice) {
+            g_itemDraft.fields.type = kItemTypeNames[choice];
+            RebuildForm();
+        }));
+
+    FormRow target;
+    switch (type) {
+        case ItemType::VSCode:
+            target = FormText(L"Folder", L"C:\\Git\\my-project", &draft.fields.target);
+            target.action = [] { BrowseInto(&g_itemDraft.fields.target, true); };
+            break;
+        case ItemType::Folder:
+            target = FormText(L"Folder", L"%USERPROFILE%\\Downloads", &draft.fields.target);
+            target.action = [] { BrowseInto(&g_itemDraft.fields.target, true); };
+            break;
+        case ItemType::Url:
+            target = FormText(L"Address", L"http://localhost:3000", &draft.fields.target);
+            break;
+        case ItemType::Terminal:
+        case ItemType::Command:
+            target = FormText(L"Command", L"npm run dev", &draft.fields.target);
+            break;
+        default:
+            target = FormText(L"Target", L"An .exe, file or shortcut", &draft.fields.target);
+            target.action = [] { BrowseInto(&g_itemDraft.fields.target, false); };
+            break;
+    }
+    if (target.action) {
+        target.actionGlyph = L"\uE838";
+    }
+    rows.push_back(std::move(target));
+
+    if (type != ItemType::Folder && type != ItemType::Url) {
+        rows.push_back(FormText(L"Arguments", L"Optional", &draft.fields.args));
+        FormRow workingDir = FormText(
+            L"Working folder",
+            shellType ? L"Your user folder" : L"The app's own folder",
+            &draft.fields.workingDir);
+        workingDir.actionGlyph = L"\uE838";
+        workingDir.action = [] { BrowseInto(&g_itemDraft.fields.workingDir, true); };
+        rows.push_back(std::move(workingDir));
+    }
+    if (shellType) {
+        rows.push_back(FormChoice(
+            L"Shell", [] { return LabelsOf(kShellLabels); }, [] { return g_itemDraft.shell; },
+            [](int choice) { g_itemDraft.shell = choice; }));
+    }
+
+    rows.push_back(FormHeading(L"Organise"));
+    FormRow group = FormText(L"Group", L"No group", &draft.fields.group);
+    if (hasGroups) {
+        group.actionGlyph = L"\uE70D";
+        group.action = ShowGroupSuggestions;
+    }
+    rows.push_back(std::move(group));
+    rows.push_back(FormToggle(L"On by default", &draft.fields.enabled));
+    for (const std::wstring& profile : profiles) {
+        rows.push_back(FormToggle(
+            L"In profile " + profile,
+            [profile] { return ListContains(g_itemDraft.fields.profiles, profile); },
+            [profile](bool) {
+                g_itemDraft.fields.profiles =
+                    ToggleListEntry(g_itemDraft.fields.profiles, profile);
+            }));
+    }
+
+    rows.push_back(FormHeading(L"Launch"));
+    rows.push_back(FormChoice(
+        L"Window", [] { return LabelsOf(kWindowStateLabels); },
+        [] { return g_itemDraft.windowState; },
+        [](int choice) { g_itemDraft.windowState = choice; }));
+    rows.push_back(FormChoice(
+        L"Wait before starting",
+        [] {
+            std::vector<std::wstring> labels;
+            for (int ms : DelayChoices()) {
+                labels.push_back(DelayLabel(ms));
+            }
+            return labels;
+        },
+        [] {
+            std::vector<int> choices = DelayChoices();
+            return (int)(std::find(choices.begin(), choices.end(), g_itemDraft.delayMs) -
+                         choices.begin());
+        },
+        [](int choice) { g_itemDraft.delayMs = DelayChoices()[choice]; }));
+    rows.push_back(FormToggle(L"Hold the launch until it exits", &draft.wait));
+    rows.push_back(FormToggle(L"Launch even when already running", &draft.duplicate));
+    rows.push_back(FormToggle(L"Run as administrator", &draft.admin));
+
+    rows.push_back(FormHeading(L"Display and tracking"));
+    rows.push_back(FormText(L"Subtitle", L"Shows the target", &draft.subtitle));
+    FormRow icon = FormText(L"Icon", L"E768, an emoji or a file", &draft.icon);
+    icon.actionGlyph = L"\uE838";
+    icon.action = [] { BrowseInto(&g_itemDraft.icon, false); };
+    rows.push_back(std::move(icon));
+    rows.push_back(FormText(L"Process to track", L"For the dot and Close: node.exe",
+                            &draft.process));
+    g_formRows = std::move(rows);
+}
+
+static bool SaveItemDraft() {
+    ItemDraft& draft = g_itemDraft;
+    draft.fields.name = Trim(draft.fields.name);
+    if (draft.fields.name.empty()) {
+        g_formFocus = FindFormRow(L"Name");
+        return false;
+    }
+    for (std::wstring* field : {&draft.fields.target, &draft.fields.args,
+                                &draft.fields.workingDir, &draft.fields.group}) {
+        *field = Trim(*field);
+    }
+    draft.fields.options = ComposeOptions(draft);
+    if (draft.panelIndex >= 0) {
+        ReplacePanelItem(draft.panelIndex, draft.fields);
+        return true;
+    }
+    std::vector<ItemFields> items = CopyPanelItems();
+    items.push_back(draft.fields);
+    StorePanelItems(items);
+    return true;
+}
+
+static void OpenItemPage(const ItemFields& fields, int panelIndex) {
+    StackItem parsed;
+    ApplyItemOptions(fields.options, parsed);
+    g_itemDraft = ItemDraft{};
+    g_itemDraft.fields = fields;
+    g_itemDraft.panelIndex = panelIndex;
+    g_itemDraft.windowState = (int)parsed.windowState;
+    g_itemDraft.shell = (int)parsed.shell;
+    g_itemDraft.delayMs = parsed.delayMs;
+    g_itemDraft.admin = parsed.elevated;
+    g_itemDraft.wait = parsed.waitForExit;
+    g_itemDraft.duplicate = !parsed.singleInstance;
+    g_itemDraft.process = parsed.processName;
+    g_itemDraft.subtitle = parsed.description;
+    g_itemDraft.icon = parsed.icon;
+    bool adding = panelIndex < 0;
+    OpenForm(adding ? L"New item" : L"Edit item",
+             adding ? L"Only the name is required" : L"Changes apply when you press Save",
+             adding ? L"Add" : L"Save", BuildItemForm, SaveItemDraft);
+}
+
+static void OpenAddPage() {
+    ShowPage(PanelView::Add);
+    LoadPickerApps();
+    RefreshPanel();
+}
+
+static void ActivateAddRow(int index, bool customize) {
+    if (index < 0 || index >= (int)g_addRows.size()) {
+        return;
+    }
+    AddAction action = g_addRows[index].action;
+    int app = g_addRows[index].app;
+    ItemFields fields;
+    fields.type = kItemTypeNames[(int)AddActionType(action)];
+    switch (action) {
+        case AddAction::App:
+            fields = g_pickerApps[app];
+            if (!customize) {
+                std::vector<ItemFields> items = CopyPanelItems();
+                items.push_back(fields);
+                StorePanelItems(items);
+                ShowListPage();
+                return;
+            }
+            break;
+        case AddAction::File:
+        case AddAction::Folder:
+        case AddAction::VSCode: {
+            bool folder = action != AddAction::File;
+            if (!PickPath(folder, fields.target)) {
+                return;
+            }
+            std::wstring file = FileNameOf(fields.target);
+            fields.name = folder ? file : file.substr(0, file.rfind(L'.'));
+            break;
+        }
+        default:
+            break;
+    }
+    OpenItemPage(fields, -1);
+}
+
+static void ActivateFormRow(int index, bool action) {
+    if (index < 0 || index >= (int)g_formRows.size()) {
+        return;
+    }
+    FormRow& row = g_formRows[index];
+    if (action && row.action) {
+        g_formFocus = -1;
+        std::function<void()> run = row.action;
+        run();
+        return;
+    }
+    switch (row.kind) {
+        case FormKind::Text:
+            g_formFocus = index;
+            break;
+        case FormKind::Toggle:
+            g_formFocus = -1;
+            row.toggle(!row.value());
+            break;
+        case FormKind::Choice: {
+            g_formFocus = -1;
+            std::vector<std::wstring> options = row.options();
+            int current = row.current();
+            std::vector<MenuEntry> entries;
+            for (size_t i = 0; i < options.size(); i++) {
+                entries.push_back({options[i], (UINT)i, (int)i == current});
+            }
+            gp::Rect control = FormControlBox(index);
+            ShowMenu(std::move(entries), POINT{control.X, control.Y + control.Height},
+                     [select = row.select](UINT command) { select((int)command); });
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+static void RemovePanelItem(int panelIndex) {
+    std::vector<ItemFields> items = CopyPanelItems();
     if (panelIndex < 0 || panelIndex >= (int)items.size()) {
         return;
     }
@@ -4430,100 +5442,179 @@ static void RemovePanelItem(int panelIndex, const std::wstring& name) {
     StorePanelItems(items);
 }
 
-static void ShowItemMenu(int rowIndex, POINT screenPoint) {
+static void DuplicatePanelItem(int panelIndex) {
+    std::vector<ItemFields> items = CopyPanelItems();
+    if (panelIndex < 0 || panelIndex >= (int)items.size()) {
+        return;
+    }
+    ItemFields copy = items[panelIndex];
+    copy.name += L" (copy)";
+    items.insert(items.begin() + panelIndex + 1, std::move(copy));
+    StorePanelItems(items);
+}
+
+static std::wstring ToggleListEntry(const std::wstring& list, const std::wstring& entry) {
+    std::vector<std::wstring> entries = SplitList(list, L',');
+    auto found = std::find_if(entries.begin(), entries.end(), [&](const std::wstring& item) {
+        return ToLower(item) == ToLower(entry);
+    });
+    if (found == entries.end()) {
+        entries.push_back(entry);
+    } else {
+        entries.erase(found);
+    }
+    return JoinList(entries);
+}
+
+static void ShowItemMenu(int rowIndex, POINT clientPoint) {
     if (rowIndex < 0 || rowIndex >= (int)g_rows.size() || g_rows[rowIndex].isGroup) {
         return;
     }
     int itemIndex = g_rows[rowIndex].itemIndex;
     StackItem item;
+    ItemFields fields;
+    std::vector<std::wstring> groups;
+    std::vector<std::wstring> profiles;
     {
         std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
         if (itemIndex < 0 || itemIndex >= (int)g_settings.items.size()) {
             return;
         }
         item = g_settings.items[itemIndex];
+        if (item.panelIndex < 0 || item.panelIndex >= (int)g_panelItems.size()) {
+            return;
+        }
+        fields = g_panelItems[item.panelIndex];
+        groups = GroupSequence(OrderedIndices());
+        profiles = g_settings.profiles;
+    }
+    std::erase(groups, std::wstring());
+
+    MenuEntry typeMenu{L"Type"};
+    for (size_t i = 0; i < ARRAYSIZE(kItemTypeLabels); i++) {
+        typeMenu.children.push_back(
+            {kItemTypeLabels[i], (UINT)(kItemMenuTypeFirst + i), (size_t)item.type == i});
+    }
+    MenuEntry groupMenu{L"Group"};
+    for (size_t i = 0; i < groups.size(); i++) {
+        groupMenu.children.push_back(
+            {groups[i], (UINT)(kItemMenuGroupFirst + i), groups[i] == item.group});
+    }
+    if (!groups.empty()) {
+        groupMenu.children.push_back({});
+    }
+    groupMenu.children.push_back({L"No group", kItemMenuGroupNone, item.group.empty()});
+    groupMenu.children.push_back({L"New group...", kItemMenuGroupNew});
+    MenuEntry profileMenu{L"Profiles"};
+    for (size_t i = 0; i < profiles.size(); i++) {
+        profileMenu.children.push_back({profiles[i], (UINT)(kItemMenuProfileFirst + i),
+                                        ListContains(item.profiles, profiles[i])});
+    }
+    if (profiles.empty()) {
+        profileMenu.children.push_back(
+            {L"No profiles yet - add them in Settings", 0, false, true});
     }
 
-    HMENU menu = CreatePopupMenu();
-    if (!menu) {
-        return;
-    }
-    AppendMenuW(menu, MF_STRING, kItemMenuLaunch, L"Launch now");
+    std::vector<MenuEntry> entries;
+    entries.push_back({L"Launch now", kItemMenuLaunch});
     if (item.running) {
-        AppendMenuW(menu, MF_STRING, kItemMenuClose, L"Close now");
+        entries.push_back({L"Close now", kItemMenuClose});
     }
-    AppendMenuW(menu, MF_STRING, kItemMenuToggle,
-                item.enabled ? L"Turn off" : L"Turn on");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kItemMenuMoveUp, L"Move up");
-    AppendMenuW(menu, MF_STRING, kItemMenuMoveDown, L"Move down");
-    AppendMenuW(menu, MF_STRING, kItemMenuResetOrder, L"Reset order to settings");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    entries.push_back({item.enabled ? L"Turn off" : L"Turn on", kItemMenuToggle});
+    entries.push_back({});
+    entries.push_back(std::move(typeMenu));
+    entries.push_back(std::move(groupMenu));
+    entries.push_back(std::move(profileMenu));
+    entries.push_back({});
+    entries.push_back({L"Move up", kItemMenuMoveUp});
+    entries.push_back({L"Move down", kItemMenuMoveDown});
+    entries.push_back({L"Reset order", kItemMenuResetOrder});
+    entries.push_back({});
     if (item.type == ItemType::App || item.type == ItemType::VSCode ||
         item.type == ItemType::Folder) {
-        AppendMenuW(menu, MF_STRING, kItemMenuShowInExplorer, L"Show in File Explorer");
+        entries.push_back({L"Show in File Explorer", kItemMenuShowInExplorer});
     }
-    AppendMenuW(menu, MF_STRING, kItemMenuCopyTarget, L"Copy target");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    if (item.panelIndex >= 0) {
-        AppendMenuW(menu, MF_STRING, kItemMenuEdit, L"Edit...");
-        AppendMenuW(menu, MF_STRING, kItemMenuRemove, L"Remove");
-    } else {
-        AppendMenuW(menu, MF_STRING, kItemMenuEdit, L"Edit in Windhawk");
-    }
+    entries.push_back({L"Copy target", kItemMenuCopyTarget});
+    entries.push_back({});
+    entries.push_back({L"Edit...", kItemMenuEdit});
+    entries.push_back({L"Duplicate", kItemMenuDuplicate});
+    entries.push_back({L"Remove", kItemMenuRemove});
 
-    switch (TrackPanelMenu(menu, screenPoint)) {
-        case kItemMenuLaunch:
-            StartSequence(RunLaunchSequence, {itemIndex});
-            break;
-        case kItemMenuToggle:
-            SetItemEnabled(itemIndex, !item.enabled);
-            EnsureAnimationTimer();
-            break;
-        case kItemMenuShowInExplorer:
-            OpenContainingFolder(item);
-            break;
-        case kItemMenuCopyTarget:
-            CopyToClipboard(ExpandTokens(item.target));
-            break;
-        case kItemMenuClose:
-            StartSequence(RunShutdownSequence, {itemIndex});
-            break;
-        case kItemMenuMoveUp:
-            if (MoveItemWithinGroup(itemIndex, -1)) {
-                SaveItemOrder();
-            }
-            break;
-        case kItemMenuMoveDown:
-            if (MoveItemWithinGroup(itemIndex, 1)) {
-                SaveItemOrder();
-            }
-            break;
-        case kItemMenuResetOrder:
-            ResetItemOrder();
-            break;
-        case kItemMenuEdit:
-            if (item.panelIndex < 0) {
-                OpenWindhawk();
-                ClosePanel();
-            } else {
-                ItemFields fields;
-                {
-                    std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
-                    if (item.panelIndex >= (int)g_panelItems.size()) {
-                        break;
-                    }
-                    fields = g_panelItems[item.panelIndex];
+    ShowMenu(std::move(entries), clientPoint,
+             [item, fields, groups, profiles, itemIndex, clientPoint](UINT command) mutable {
+        if (command >= kItemMenuTypeFirst &&
+            command < kItemMenuTypeFirst + ARRAYSIZE(kItemTypeNames)) {
+            fields.type = kItemTypeNames[command - kItemMenuTypeFirst];
+            ReplacePanelItem(item.panelIndex, fields);
+            return;
+        }
+        if (command >= kItemMenuGroupFirst && command < kItemMenuGroupFirst + groups.size()) {
+            fields.group = groups[command - kItemMenuGroupFirst];
+            ReplacePanelItem(item.panelIndex, fields);
+            return;
+        }
+        if (command >= kItemMenuProfileFirst &&
+            command < kItemMenuProfileFirst + profiles.size()) {
+            fields.profiles =
+                ToggleListEntry(fields.profiles, profiles[command - kItemMenuProfileFirst]);
+            ReplacePanelItem(item.panelIndex, fields);
+            return;
+        }
+
+        switch (command) {
+            case kItemMenuLaunch:
+                StartSequence(RunLaunchSequence, {itemIndex});
+                break;
+            case kItemMenuToggle:
+                SetItemEnabled(itemIndex, !item.enabled);
+                EnsureAnimationTimer();
+                break;
+            case kItemMenuShowInExplorer:
+                OpenContainingFolder(item);
+                break;
+            case kItemMenuCopyTarget:
+                CopyToClipboard(ExpandEnvironment(item.target));
+                break;
+            case kItemMenuClose:
+                StartSequence(RunShutdownSequence, {itemIndex});
+                break;
+            case kItemMenuMoveUp:
+                if (MoveItemWithinGroup(itemIndex, -1)) {
+                    SaveItemOrder();
                 }
-                OpenItemEditor(fields, item.panelIndex);
+                break;
+            case kItemMenuMoveDown:
+                if (MoveItemWithinGroup(itemIndex, 1)) {
+                    SaveItemOrder();
+                }
+                break;
+            case kItemMenuResetOrder:
+                ResetItemOrder();
+                break;
+            case kItemMenuEdit:
+                OpenItemPage(fields, item.panelIndex);
+                break;
+            case kItemMenuGroupNew:
+                OpenItemPage(fields, item.panelIndex);
+                g_formFocus = FindFormRow(L"Group");
+                break;
+            case kItemMenuGroupNone:
+                fields.group.clear();
+                ReplacePanelItem(item.panelIndex, fields);
+                break;
+            case kItemMenuDuplicate:
+                DuplicatePanelItem(item.panelIndex);
+                break;
+            case kItemMenuRemove: {
+                int panelIndex = item.panelIndex;
+                ConfirmInMenu(L"Remove " + item.name + L"?", L"Remove", clientPoint,
+                              [panelIndex] { RemovePanelItem(panelIndex); });
+                break;
             }
-            break;
-        case kItemMenuRemove:
-            RemovePanelItem(item.panelIndex, item.name);
-            break;
-        default:
-            break;
-    }
+            default:
+                break;
+        }
+    });
 }
 
 static void HandleClick(const HitResult& hit) {
@@ -4532,8 +5623,25 @@ static void HandleClick(const HitResult& hit) {
             ClosePanel();
             break;
         case HitKind::Settings:
-            OpenWindhawk();
-            ClosePanel();
+            if (g_view == PanelView::List) {
+                OpenSettingsPage();
+            } else {
+                ShowListPage();
+            }
+            break;
+        case HitKind::FormRow:
+        case HitKind::FormAction:
+            ActivateFormRow(hit.index, hit.kind == HitKind::FormAction);
+            break;
+        case HitKind::AddRow:
+        case HitKind::AddCustomize:
+            ActivateAddRow(hit.index, hit.kind == HitKind::AddCustomize);
+            break;
+        case HitKind::PageSave:
+            SaveForm();
+            break;
+        case HitKind::PageCancel:
+            ShowListPage();
             break;
         case HitKind::Chip:
             if (hit.index >= 0 && hit.index < (int)g_layout.chipNames.size()) {
@@ -4600,13 +5708,9 @@ static void HandleClick(const HitResult& hit) {
         case HitKind::Refresh:
             RefreshRunningStatus();
             break;
-        case HitKind::Add: {
-            POINT screenPoint{g_layout.addButton.X,
-                              g_layout.addButton.Y + g_layout.addButton.Height};
-            ClientToScreen(g_panelWnd, &screenPoint);
-            ShowAddMenu(screenPoint);
+        case HitKind::Add:
+            OpenAddPage();
             break;
-        }
         case HitKind::Cancel:
             g_cancelLaunch = true;
             break;
@@ -4615,10 +5719,158 @@ static void HandleClick(const HitResult& hit) {
     }
 }
 
+static bool HandleMenuMessage(UINT message, WPARAM wParam, LPARAM lParam) {
+    POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+    switch (message) {
+        case WM_MOUSEMOVE:
+            g_menuHover = max(-1, MenuRowAt(point));
+            PaintPanel();
+            return true;
+        case WM_LBUTTONDOWN:
+        case WM_RBUTTONDOWN:
+        case WM_MOUSEWHEEL:
+        case WM_CHAR:
+        case WM_SYSKEYDOWN:
+            return true;
+        case WM_LBUTTONUP: {
+            int row = MenuRowAt(point);
+            if (row >= 0) {
+                ActivateMenuRow(row);
+            } else if (row == -2) {
+                CloseMenu();
+            }
+            RefreshPanel();
+            return true;
+        }
+        case WM_RBUTTONUP:
+            if (MenuRowAt(point) != -2) {
+                return true;
+            }
+            CloseMenu();
+            return false;
+        case WM_KEYDOWN:
+            switch (wParam) {
+                case VK_ESCAPE:
+                case VK_LEFT:
+                    if (!g_menuPath.empty()) {
+                        g_menuPath.pop_back();
+                        g_menuHover = -1;
+                    } else if (wParam == VK_ESCAPE) {
+                        CloseMenu();
+                    }
+                    break;
+                case VK_UP:
+                case VK_DOWN:
+                    MoveMenuHover(wParam == VK_UP ? -1 : 1);
+                    break;
+                case VK_RIGHT:
+                case VK_RETURN:
+                case VK_SPACE:
+                    ActivateMenuRow(g_menuHover);
+                    break;
+            }
+            RefreshPanel();
+            return true;
+    }
+    return false;
+}
+
+static std::wstring ClipboardText() {
+    std::wstring text;
+    if (!OpenClipboard(g_panelWnd)) {
+        return text;
+    }
+    if (HANDLE data = GetClipboardData(CF_UNICODETEXT)) {
+        if (auto* chars = (const wchar_t*)GlobalLock(data)) {
+            text = chars;
+            GlobalUnlock(data);
+        }
+    }
+    CloseClipboard();
+    std::erase_if(text, [](wchar_t c) { return c == L'\r' || c == L'\n'; });
+    return text;
+}
+
+static std::wstring* FocusedFormText() {
+    return g_view == PanelView::Form && g_formFocus >= 0 &&
+                   g_formFocus < (int)g_formRows.size()
+               ? g_formRows[g_formFocus].text
+               : nullptr;
+}
+
+static void TypeIntoPage(const std::wstring& typed) {
+    if (std::wstring* text = FocusedFormText()) {
+        *text += typed;
+    } else if (g_view == PanelView::Add) {
+        g_filter += typed;
+        g_addFocus = -1;
+        g_scrollOffset = 0;
+    }
+}
+
+static bool HandlePageKey(WPARAM key) {
+    bool control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    if (control && key == 'V') {
+        TypeIntoPage(ClipboardText());
+        return true;
+    }
+    switch (key) {
+        case VK_ESCAPE:
+            if (g_formFocus >= 0) {
+                g_formFocus = -1;
+            } else if (g_view == PanelView::Add && !g_filter.empty()) {
+                g_filter.clear();
+                g_addFocus = -1;
+            } else {
+                ShowListPage();
+            }
+            return true;
+        case VK_TAB:
+            if (g_view == PanelView::Form) {
+                FocusNextFormText();
+            }
+            return true;
+        case VK_RETURN:
+            if (g_view == PanelView::Form) {
+                SaveForm();
+            } else {
+                if (g_addFocus < 0) {
+                    MoveAddFocus(1);
+                }
+                ActivateAddRow(g_addFocus, control);
+            }
+            return true;
+        case VK_UP:
+        case VK_DOWN:
+            if (g_view == PanelView::Add) {
+                MoveAddFocus(key == VK_UP ? -1 : 1);
+                if (g_addFocus >= 0) {
+                    const AddRow& row = g_addRows[g_addFocus];
+                    g_scrollOffset = min(g_scrollOffset, row.top);
+                    g_scrollOffset =
+                        max(g_scrollOffset, row.top + row.height - g_layout.list.Height);
+                }
+            } else {
+                g_scrollOffset += (key == VK_UP ? -1 : 1) * Scale(40);
+            }
+            ClampScroll();
+            return true;
+        case VK_PRIOR:
+        case VK_NEXT:
+            g_scrollOffset += (key == VK_PRIOR ? -1 : 1) * g_layout.list.Height;
+            ClampScroll();
+            return true;
+    }
+    return false;
+}
+
 static LRESULT CALLBACK PanelWndProc(HWND window,
                                      UINT message,
                                      WPARAM wParam,
                                      LPARAM lParam) {
+    if (g_menuOpen && HandleMenuMessage(message, wParam, lParam)) {
+        return 0;
+    }
     switch (message) {
         case WM_MOUSEMOVE: {
             POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
@@ -4717,6 +5969,9 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
             HitResult hit = HitTest(point);
             HitResult pressed = g_pressed;
             g_pressed = HitResult{};
+            if (hit.kind != HitKind::FormRow) {
+                g_formFocus = -1;
+            }
             if (hit == pressed) {
                 HandleClick(hit);
             }
@@ -4727,16 +5982,13 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
         case WM_RBUTTONUP: {
             POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
             HitResult hit = HitTest(point);
-            POINT screenPoint = point;
-            ClientToScreen(window, &screenPoint);
             if (hit.kind == HitKind::Item || hit.kind == HitKind::ItemToggle) {
-                ShowItemMenu(hit.index, screenPoint);
-                RefreshPanel();
+                ShowItemMenu(hit.index, point);
             } else if (hit.kind == HitKind::GroupHeader ||
                        hit.kind == HitKind::GroupToggleAll) {
-                ShowGroupMenu(hit.index, screenPoint);
-                RefreshPanel();
+                ShowGroupMenu(hit.index, point);
             }
+            RefreshPanel();
             return 0;
         }
 
@@ -4749,6 +6001,19 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
 
         case WM_CHAR: {
             wchar_t character = (wchar_t)wParam;
+            if (g_view != PanelView::List) {
+                std::wstring* text =
+                    FocusedFormText() ? FocusedFormText()
+                                      : g_view == PanelView::Add ? &g_filter : nullptr;
+                if (character == VK_BACK && text && !text->empty()) {
+                    text->pop_back();
+                    g_addFocus = -1;
+                } else if (character >= L' ') {
+                    TypeIntoPage(std::wstring(1, character));
+                }
+                PaintPanel();
+                return 0;
+            }
             if (character == VK_BACK) {
                 if (!g_filter.empty()) {
                     g_filter.pop_back();
@@ -4791,6 +6056,13 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
             return 0;
 
         case WM_KEYDOWN: {
+            if (g_view != PanelView::List) {
+                if (HandlePageKey(wParam)) {
+                    RefreshPanel();
+                    return 0;
+                }
+                break;
+            }
             bool control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
             switch (wParam) {
                 case VK_ESCAPE:
@@ -5469,7 +6741,7 @@ static void ShowTrayMenu() {
     if (command == 1) {
         TogglePanel();
     } else if (command == 2) {
-        OpenWindhawk();
+        OpenSettingsPage();
     } else if (command >= 100 && command - 100 < (int)profiles.size()) {
         StartSequence(RunLaunchSequence, ProfileIndices(profiles[command - 100]));
     }
@@ -5612,15 +6884,6 @@ static void RegisterWindowClasses() {
     messageClass.hInstance = GetModuleHandleW(nullptr);
     messageClass.lpszClassName = kMessageClass;
     RegisterClassExW(&messageClass);
-
-    WNDCLASSEXW editorClass{};
-    editorClass.cbSize = sizeof(editorClass);
-    editorClass.lpfnWndProc = EditorWndProc;
-    editorClass.hInstance = GetModuleHandleW(nullptr);
-    editorClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    editorClass.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
-    editorClass.lpszClassName = kEditorClass;
-    RegisterClassExW(&editorClass);
 }
 
 static void UnregisterWindowClasses() {
@@ -5628,7 +6891,6 @@ static void UnregisterWindowClasses() {
     UnregisterClassW(kButtonClass, instance);
     UnregisterClassW(kPanelClass, instance);
     UnregisterClassW(kMessageClass, instance);
-    UnregisterClassW(kEditorClass, instance);
 }
 
 static HWND WaitForTaskbar() {
@@ -5689,15 +6951,8 @@ static void UiThreadMain() {
 
     MSG message;
     while (!g_unloading && GetMessageW(&message, nullptr, 0, 0) > 0) {
-        if (g_editorWnd && IsDialogMessageW(g_editorWnd, &message)) {
-            continue;
-        }
         TranslateMessage(&message);
         DispatchMessageW(&message);
-    }
-
-    if (g_editorWnd) {
-        DestroyWindow(g_editorWnd);
     }
 
     UnregisterHotKey(g_messageWnd, kHotkeyId);
@@ -5721,6 +6976,7 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
+    ImportWindhawkSettings();
     LoadSettings();
     RegisterWindowClasses();
 
@@ -5732,14 +6988,6 @@ BOOL Wh_ModInit() {
         CoUninitialize();
     });
     return TRUE;
-}
-
-void Wh_ModSettingsChanged() {
-    Wh_Log(L"Settings changed");
-    LoadSettings();
-    if (g_messageWnd) {
-        PostMessageW(g_messageWnd, kMsgReloadSettings, 0, 0);
-    }
 }
 
 void Wh_ModBeforeUninit() {
