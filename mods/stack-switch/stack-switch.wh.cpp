@@ -9,7 +9,7 @@
 // @homepage        https://github.com/Project-Graphite/windhawk-mods
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lgdi32 -lgdiplus -lole32 -lshell32 -lshlwapi -luser32 -ladvapi32
+// @compilerOptions -ldwmapi -lgdi32 -lgdiplus -lole32 -lshell32 -lshlwapi -luser32 -ladvapi32
 // ==/WindhawkMod==
 
 // ==WindhawkModReadme==
@@ -73,7 +73,10 @@ for a Store app only when it was running at the time.
 ## The item editor
 
 Opened from **Create**, from the pencil, or with **Edit...** on an item's right
-click menu. Only **Name** is required.
+click menu. Fill in only what you need: an empty **Name** is taken from the target
+(the site for a URL, the file or folder name, or the command), a URL typed without
+`https://` gets it added, and new terminal commands use PowerShell 7 when it is
+installed.
 
 | Section | Field | What it is |
 | --- | --- | --- |
@@ -362,6 +365,7 @@ using std::min;
 #include <gdiplus.h>
 
 #include <appmodel.h>
+#include <dwmapi.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <shlwapi.h>
@@ -388,6 +392,7 @@ namespace gp = Gdiplus;
 constexpr PCWSTR kButtonClass = L"WhStackSwitchButton";
 constexpr PCWSTR kPanelClass = L"WhStackSwitchPanel";
 constexpr PCWSTR kMessageClass = L"WhStackSwitchMessages";
+constexpr PCWSTR kMenuClass = L"WhStackSwitchMenu";
 
 constexpr UINT kMsgTogglePanel = WM_APP + 1;
 constexpr UINT kMsgLaunchProgress = WM_APP + 2;
@@ -398,6 +403,7 @@ constexpr UINT kMsgTrayCallback = WM_APP + 6;
 constexpr UINT kMsgReloadSettings = WM_APP + 7;
 constexpr UINT kMsgButtonRefresh = WM_APP + 9;
 constexpr UINT kMsgButtonClose = WM_APP + 10;
+constexpr UINT kMsgAnimationFrame = WM_APP + 11;
 
 constexpr UINT_PTR kTimerButtonLayout = 1;
 constexpr UINT_PTR kTimerCaret = 2;
@@ -634,8 +640,10 @@ static void UseDpiOf(HWND window) {
     }
 }
 
+static thread_local double g_frameSeconds = kFrameMs / 1000.0;
+
 static bool Approach(double& value, double target, double tau) {
-    value += (target - value) * (1.0 - exp(-(kFrameMs / 1000.0) / tau));
+    value += (target - value) * (1.0 - exp(-g_frameSeconds / tau));
     if (fabs(target - value) < 0.002) {
         value = target;
         return false;
@@ -1667,7 +1675,9 @@ class Surface {
         if (width <= 0 || height <= 0) {
             return false;
         }
-        if (m_width == width && m_height == height) {
+        if (m_width == width && height <= m_capacityHeight) {
+            m_height = height;
+            m_clip = gp::Rect(0, 0, width, height);
             Clear();
             return true;
         }
@@ -1695,6 +1705,7 @@ class Surface {
         m_previousBitmap = (HBITMAP)SelectObject(m_dc, m_bitmap);
         m_width = width;
         m_height = height;
+        m_capacityHeight = height;
         m_clip = gp::Rect(0, 0, width, height);
         m_bitmapWrapper = std::make_unique<gp::Bitmap>(
             width, height, width * 4, PixelFormat32bppPARGB, (BYTE*)m_bits);
@@ -1731,6 +1742,7 @@ class Surface {
         m_bits = nullptr;
         m_width = 0;
         m_height = 0;
+        m_capacityHeight = 0;
     }
 
     gp::Graphics* Graphics() const { return m_graphics.get(); }
@@ -1795,6 +1807,47 @@ class Surface {
                 target[1] = (BYTE)((color.GetG() * alpha + target[1] * inverse) / 255);
                 target[2] = (BYTE)((color.GetR() * alpha + target[2] * inverse) / 255);
                 target[3] = (BYTE)((255 * alpha + target[3] * inverse) / 255);
+            }
+        }
+    }
+
+    int Width() const { return m_width; }
+    int Height() const { return m_height; }
+
+    std::vector<BYTE> Snapshot() const {
+        const BYTE* bits = (const BYTE*)m_bits;
+        return bits ? std::vector<BYTE>(bits, bits + (size_t)m_width * m_height * 4)
+                    : std::vector<BYTE>();
+    }
+
+    bool Restore(const std::vector<BYTE>& frame) {
+        if (!m_bits || frame.size() != (size_t)m_width * m_height * 4) {
+            return false;
+        }
+        memcpy(m_bits, frame.data(), frame.size());
+        return true;
+    }
+
+    void BlendOver(const std::vector<BYTE>& frame,
+                   int frameHeight,
+                   double weight,
+                   bool alignBottom) {
+        if (!m_bits || frameHeight <= 0 || weight <= 0.0 ||
+            frame.size() != (size_t)m_width * frameHeight * 4) {
+            return;
+        }
+        int keep = (int)(min(1.0, weight) * 256);
+        int shift = alignBottom ? m_height - frameHeight : 0;
+        size_t stride = (size_t)m_width * 4;
+        for (int y = 0; y < m_height; y++) {
+            int source = y - shift;
+            if (source < 0 || source >= frameHeight) {
+                continue;
+            }
+            BYTE* target = (BYTE*)m_bits + y * stride;
+            const BYTE* old = frame.data() + source * stride;
+            for (size_t i = 0; i < stride; i++) {
+                target[i] = (BYTE)((target[i] * (256 - keep) + old[i] * keep) >> 8);
             }
         }
     }
@@ -1868,6 +1921,7 @@ class Surface {
     void* m_bits = nullptr;
     int m_width = 0;
     int m_height = 0;
+    int m_capacityHeight = 0;
     gp::Rect m_clip;
     std::unique_ptr<gp::Bitmap> m_bitmapWrapper;
     std::unique_ptr<gp::Graphics> m_graphics;
@@ -2337,6 +2391,16 @@ static double g_hoverAmount = 0.0;
 static double g_hoverFadeAmount = 0.0;
 static HitResult g_hoverFading;
 static double g_progressAmount = 0.0;
+static double g_contentHeightShown = -1.0;
+static double g_contentHeightTarget = 0.0;
+static double g_scrollShown = 0.0;
+static double g_scrollTarget = -1.0;
+static double g_transitionAmount = 1.0;
+static std::vector<BYTE> g_transitionFrame;
+static int g_transitionHeight = 0;
+static std::vector<double> g_formToggleAmount;
+static std::vector<BYTE> g_chromeFrame;
+static gp::ARGB g_chromeKey = 0;
 static std::vector<double> g_toggleAmount;
 static std::unordered_map<std::wstring, double> g_groupOpenAmount;
 static std::unordered_set<std::wstring> g_collapsedGroups;
@@ -2740,6 +2804,17 @@ static std::function<void(UINT)> g_menuHandler;
 static POINT g_menuAnchor{};
 static int g_menuHover = -1;
 static gp::Rect g_menuRect;
+static HWND g_menuWnd = nullptr;
+static Surface g_menuSurface;
+static double g_menuReveal = 0.0;
+
+static void EnsureAnimationTimer();
+
+static void HideMenuWindow() {
+    if (g_menuWnd && IsWindowVisible(g_menuWnd)) {
+        ShowWindow(g_menuWnd, SW_HIDE);
+    }
+}
 
 static const std::vector<MenuEntry>& MenuPage() {
     const std::vector<MenuEntry>* page = &g_menuEntries;
@@ -2787,6 +2862,7 @@ static void CloseMenu() {
     g_menuPath.clear();
     g_menuHandler = nullptr;
     g_menuHover = -1;
+    HideMenuWindow();
 }
 
 static void ShowMenu(std::vector<MenuEntry> entries,
@@ -2797,7 +2873,9 @@ static void ShowMenu(std::vector<MenuEntry> entries,
     g_menuHandler = std::move(handler);
     g_menuAnchor = clientPoint;
     g_menuHover = -1;
+    g_menuReveal = 0.0;
     g_menuOpen = true;
+    EnsureAnimationTimer();
 }
 
 static void ConfirmInMenu(std::wstring question,
@@ -2824,14 +2902,21 @@ static void LayoutMenu() {
     for (int row = 0; row < MenuRowCount(); row++) {
         height += MenuRowHeight(row);
     }
-    const gp::Rect& bounds = g_layout.content;
-    width = min(width, bounds.Width - Scale(16));
-    int x = min((int)g_menuAnchor.x, bounds.X + bounds.Width - Scale(8) - width);
+    RECT panel{};
+    GetWindowRect(g_panelWnd, &panel);
+    MONITORINFO monitor{sizeof(monitor)};
+    GetMonitorInfoW(MonitorFromWindow(g_panelWnd, MONITOR_DEFAULTTONEAREST), &monitor);
+    RECT work = monitor.rcWork;
+    OffsetRect(&work, -panel.left, -panel.top);
+    const int margin = Scale(8);
+    width = min(width, (int)(work.right - work.left) - margin * 2);
+    int x = max((int)work.left + margin,
+                min((int)g_menuAnchor.x, (int)work.right - margin - width));
     int y = g_menuAnchor.y;
-    if (y + height > bounds.Y + bounds.Height - Scale(8)) {
-        y = max(bounds.Y + Scale(8), (int)g_menuAnchor.y - height);
+    if (y + height > work.bottom - margin) {
+        y = max((int)work.top + margin, (int)g_menuAnchor.y - height);
     }
-    g_menuRect = gp::Rect(max(bounds.X + Scale(8), x), y, width, height);
+    g_menuRect = gp::Rect(x, y, width, height);
 }
 
 static int MenuRowAt(POINT point) {
@@ -2856,6 +2941,8 @@ static void ActivateMenuRow(int row) {
     if (MenuHasBackRow() && row == 0) {
         g_menuPath.pop_back();
         g_menuHover = -1;
+        g_menuReveal = min(g_menuReveal, 0.5);
+        EnsureAnimationTimer();
         return;
     }
     const MenuEntry* entry = MenuRowEntry(row);
@@ -2865,6 +2952,8 @@ static void ActivateMenuRow(int row) {
     if (!entry->children.empty()) {
         g_menuPath.push_back(row - (MenuHasBackRow() ? 1 : 0));
         g_menuHover = MenuHasBackRow() ? 1 : 0;
+        g_menuReveal = min(g_menuReveal, 0.5);
+        EnsureAnimationTimer();
         return;
     }
     UINT command = entry->command;
@@ -3023,10 +3112,17 @@ static void ComputeLayout() {
     }
 
     int listHeight =
-        Scale(640) - headerHeight - chipsHeight - searchHeight - footerHeight;
-    listHeight = max(Scale(72), min(listHeight, g_layout.rowsHeight));
-    int contentHeight =
-        headerHeight + chipsHeight + searchHeight + listHeight + footerHeight;
+        Scale(680) - headerHeight - chipsHeight - searchHeight - footerHeight;
+    listHeight = max(Scale(320), min(listHeight, g_layout.rowsHeight));
+    int fixedHeight = headerHeight + chipsHeight + searchHeight + footerHeight;
+    g_contentHeightTarget = fixedHeight + listHeight;
+    if (g_contentHeightShown < 0) {
+        g_contentHeightShown = g_contentHeightTarget;
+    } else if (fabs(g_contentHeightShown - g_contentHeightTarget) >= 0.5) {
+        EnsureAnimationTimer();
+    }
+    listHeight = max(Scale(40), (int)lround(g_contentHeightShown) - fixedHeight);
+    int contentHeight = fixedHeight + listHeight;
 
     g_layout.shadow = shadow;
     g_layout.window = gp::Rect(0, 0, width + shadow * 2, contentHeight + shadow * 2);
@@ -3700,6 +3796,40 @@ static bool StepAnimations() {
         g_progressTotal > 0 ? (double)g_progressCurrent / g_progressTotal : 0.0;
     animating |= Approach(g_progressAmount, progressTarget, 0.09);
 
+    if (g_contentHeightShown >= 0) {
+        animating |= Approach(g_contentHeightShown, g_contentHeightTarget, 0.055);
+    }
+    if (g_scrollTarget >= 0) {
+        bool scrolling = Approach(g_scrollShown, g_scrollTarget, 0.045);
+        g_scrollOffset = (int)lround(g_scrollShown);
+        if (!scrolling) {
+            g_scrollTarget = -1.0;
+        }
+        animating |= scrolling;
+    }
+    if (g_transitionAmount < 1.0) {
+        animating |= Approach(g_transitionAmount, 1.0, 0.06);
+        if (g_transitionAmount >= 1.0) {
+            g_transitionFrame.clear();
+        }
+    }
+    if (g_menuOpen) {
+        animating |= Approach(g_menuReveal, 1.0, 0.04);
+    }
+    if (g_view == PanelView::Form) {
+        g_formToggleAmount.resize(g_formRows.size(), -1.0);
+        for (size_t i = 0; i < g_formRows.size(); i++) {
+            if (g_formRows[i].kind != FormKind::Toggle) {
+                continue;
+            }
+            double target = g_formRows[i].value() ? 1.0 : 0.0;
+            if (g_formToggleAmount[i] < 0) {
+                g_formToggleAmount[i] = target;
+            }
+            animating |= Approach(g_formToggleAmount[i], target, 0.06);
+        }
+    }
+
     {
         std::lock_guard<std::recursive_mutex> lock(g_settingsMutex);
         for (size_t i = 0; i < g_toggleAmount.size() && i < g_settings.items.size();
@@ -3734,6 +3864,13 @@ static void PaintHeadingRow(Surface& surface,
                        kTextLeft);
 }
 
+static double HoverWeight(HitKind first, HitKind second, int index) {
+    auto matches = [&](const HitResult& hit) {
+        return (hit.kind == first || hit.kind == second) && hit.index == index;
+    };
+    return matches(g_hover) ? g_hoverAmount : matches(g_hoverFading) ? g_hoverFadeAmount : 0.0;
+}
+
 static void PaintFormRows(Surface& surface, const Palette& palette) {
     gp::Graphics& graphics = *surface.Graphics();
     const gp::Rect& list = g_layout.list;
@@ -3752,11 +3889,12 @@ static void PaintFormRows(Surface& surface, const Palette& palette) {
         bool hovered = (g_hover.kind == HitKind::FormRow ||
                         g_hover.kind == HitKind::FormAction) &&
                        g_hover.index == (int)i;
-        if (hovered) {
+        double hoverWeight = HoverWeight(HitKind::FormRow, HitKind::FormAction, (int)i);
+        if (hoverWeight > 0.01) {
             FillRoundRect(graphics,
                           ToRectF(gp::Rect(list.X + Scale(6), top, list.Width - Scale(12),
                                            height - Scale(2))),
-                          (gp::REAL)Scale(4), palette.hover);
+                          (gp::REAL)Scale(4), Fade(palette.hover, hoverWeight));
         }
         gp::Rect control = FormControlBox(i);
         int labelRight = row.kind == FormKind::Toggle ? list.X + list.Width - pad - Scale(44)
@@ -3769,7 +3907,10 @@ static void PaintFormRows(Surface& surface, const Palette& palette) {
             DrawToggle(surface,
                        gp::Rect(list.X + list.Width - pad - Scale(34),
                                 top + (height - Scale(20)) / 2, Scale(34), Scale(18)),
-                       row.value() ? 1.0 : 0.0, palette, hovered);
+                       i < g_formToggleAmount.size() && g_formToggleAmount[i] >= 0
+                           ? g_formToggleAmount[i]
+                           : (row.value() ? 1.0 : 0.0),
+                       palette, hovered);
             continue;
         }
 
@@ -3790,7 +3931,7 @@ static void PaintFormRows(Surface& surface, const Palette& palette) {
                 surface.RenderText(options[current], UiFont(-1), palette.text, textBox,
                                    kTextLeft);
             }
-            surface.RenderText(L"", IconFont(-4), palette.textDim, glyphBox,
+            surface.RenderText(L"\uE70D", IconFont(-4), palette.textDim, glyphBox,
                                kTextCenter);
             continue;
         }
@@ -3853,14 +3994,14 @@ static void PaintAddRows(Surface& surface, const Palette& palette) {
             PaintHeadingRow(surface, row.label, top, row.height, palette);
             continue;
         }
-        bool hovered = (g_hover.kind == HitKind::AddRow ||
-                        g_hover.kind == HitKind::AddCustomize) &&
-                       g_hover.index == (int)i;
+        double hoverWeight = HoverWeight(HitKind::AddRow, HitKind::AddCustomize, (int)i);
         gp::Rect rowBox(list.X + Scale(6), top, list.Width - Scale(12),
                         row.height - Scale(2));
-        if (g_addFocus == (int)i || hovered) {
+        if (g_addFocus == (int)i) {
+            FillRoundRect(graphics, ToRectF(rowBox), (gp::REAL)Scale(4), palette.selection);
+        } else if (hoverWeight > 0.01) {
             FillRoundRect(graphics, ToRectF(rowBox), (gp::REAL)Scale(4),
-                          g_addFocus == (int)i ? palette.selection : palette.hover);
+                          Fade(palette.hover, hoverWeight));
         }
 
         int iconSize = Scale(22);
@@ -3898,12 +4039,12 @@ static void PaintAddRows(Surface& surface, const Palette& palette) {
                             gp::Rect(list.X + list.Width - Scale(14) - Scale(30),
                                      top + (row.height - Scale(28)) / 2, Scale(28),
                                      Scale(28)),
-                            L"", palette,
+                            L"\uE70F", palette,
                             g_hover.kind == HitKind::AddCustomize &&
                                 g_hover.index == (int)i,
                             false);
         } else {
-            surface.RenderText(L"", IconFont(-4), palette.textDim,
+            surface.RenderText(L"\uE76C", IconFont(-4), palette.textDim,
                                gp::Rect(list.X + list.Width - Scale(14) - Scale(30), top,
                                         Scale(28), row.height),
                                kTextCenter);
@@ -3911,38 +4052,46 @@ static void PaintAddRows(Surface& surface, const Palette& palette) {
     }
 }
 
-static void PaintMenu(Surface& surface, const Palette& palette) {
+static void PaintMenu(const Palette& palette) {
     LayoutMenu();
+    const int shadow = Scale(14);
+    if (!g_menuWnd || !g_menuSurface.Resize(g_menuRect.Width + shadow * 2,
+                                            g_menuRect.Height + shadow * 2)) {
+        return;
+    }
+    Surface& surface = g_menuSurface;
     gp::Graphics& graphics = *surface.Graphics();
-    gp::RectF box = ToRectF(g_menuRect);
+    const int left = shadow;
+    const int width = g_menuRect.Width;
+    gp::RectF box((gp::REAL)left, (gp::REAL)shadow, (gp::REAL)width,
+                  (gp::REAL)g_menuRect.Height);
     gp::REAL radius = (gp::REAL)Scale(6);
     DrawShadow(graphics, box, radius, Scale(10), 1.0);
     FillRoundRect(graphics, box, radius, palette.surface);
     StrokeRoundRect(graphics, box, radius, palette.border, 1.0f);
 
     gp::Pen dividerPen(palette.divider, 1.0f);
-    int y = g_menuRect.Y + Scale(4);
+    int y = shadow + Scale(4);
     for (int row = 0; row < MenuRowCount(); row++) {
         int height = MenuRowHeight(row);
         const MenuEntry* entry = MenuRowEntry(row);
         if (entry && entry->label.empty()) {
             gp::REAL lineY = (gp::REAL)(y + height / 2);
-            graphics.DrawLine(&dividerPen, (gp::REAL)(g_menuRect.X + Scale(10)), lineY,
-                              (gp::REAL)(g_menuRect.X + g_menuRect.Width - Scale(10)),
-                              lineY);
+            graphics.DrawLine(&dividerPen, (gp::REAL)(left + Scale(10)), lineY,
+                              (gp::REAL)(left + width - Scale(10)), lineY);
             y += height;
             continue;
         }
-        gp::Rect rowBox(g_menuRect.X + Scale(4), y, g_menuRect.Width - Scale(8), height);
+        gp::Rect rowBox(left + Scale(4), y, width - Scale(8), height);
         if (row == g_menuHover && !(entry && entry->disabled)) {
             FillRoundRect(graphics, ToRectF(rowBox), (gp::REAL)Scale(4), palette.hover);
         }
         gp::Rect glyphBox(rowBox.X, y, Scale(28), height);
         if (!entry) {
-            surface.RenderText(L"", IconFont(-4), palette.textDim, glyphBox,
+            surface.RenderText(L"\uE76B", IconFont(-4), palette.textDim, glyphBox,
                                kTextCenter);
         } else if (entry->checked) {
-            surface.RenderText(L"", IconFont(-3), palette.accent, glyphBox,
+            surface.RenderText(L"\uE73E", IconFont(-3), palette.accent, glyphBox,
                                kTextCenter);
         }
         surface.RenderText(entry ? entry->label : MenuBackLabel(), UiFont(-1, !entry),
@@ -3951,13 +4100,23 @@ static void PaintMenu(Surface& surface, const Palette& palette) {
                                     height),
                            kTextLeft);
         if (entry && !entry->children.empty()) {
-            surface.RenderText(L"", IconFont(-4), palette.textDim,
+            surface.RenderText(L"\uE76C", IconFont(-4), palette.textDim,
                                gp::Rect(rowBox.X + rowBox.Width - Scale(28), y, Scale(28),
                                         height),
                                kTextCenter);
         }
         y += height;
     }
+
+    RECT panel{};
+    GetWindowRect(g_panelWnd, &panel);
+    double reveal = Ease(g_menuReveal);
+    int slide = (int)((1.0 - reveal) * Scale(6));
+    bool opensUp = g_menuRect.Y < g_menuAnchor.y;
+    SetWindowPos(g_menuWnd, HWND_TOPMOST, panel.left + g_menuRect.X - shadow,
+                 panel.top + g_menuRect.Y - shadow + (opensUp ? slide : -slide),
+                 surface.Width(), surface.Height(), SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    surface.Present(g_menuWnd, (BYTE)(255 * reveal));
 }
 
 static void PaintPanel() {
@@ -3980,16 +4139,21 @@ static void PaintPanel() {
     gp::RectF content = ToRectF(g_layout.content);
     gp::REAL radius = (gp::REAL)Scale(8);
 
-    gp::Region shadowRegion(gp::RectF(0, 0, (gp::REAL)g_layout.window.Width,
-                                      (gp::REAL)g_layout.window.Height));
-    shadowRegion.Exclude(
-        gp::RectF(content.X + 2, content.Y + 2, content.Width - 4, content.Height - 4));
-    graphics.SetClip(&shadowRegion);
-    DrawShadow(graphics, content, radius, Scale(16), reveal);
-    graphics.ResetClip();
+    gp::ARGB chromeKey = palette.background.GetValue() ^ palette.border.GetValue();
+    if (g_chromeKey != chromeKey || !surface.Restore(g_chromeFrame)) {
+        gp::Region shadowRegion(gp::RectF(0, 0, (gp::REAL)g_layout.window.Width,
+                                          (gp::REAL)g_layout.window.Height));
+        shadowRegion.Exclude(gp::RectF(content.X + 2, content.Y + 2, content.Width - 4,
+                                       content.Height - 4));
+        graphics.SetClip(&shadowRegion);
+        DrawShadow(graphics, content, radius, Scale(16), 1.0);
+        graphics.ResetClip();
 
-    FillRoundRect(graphics, content, radius, palette.background);
-    StrokeRoundRect(graphics, content, radius, palette.border, 1.0f);
+        FillRoundRect(graphics, content, radius, palette.background);
+        StrokeRoundRect(graphics, content, radius, palette.border, 1.0f);
+        g_chromeFrame = surface.Snapshot();
+        g_chromeKey = chromeKey;
+    }
 
     const std::wstring& title = g_settings.panelTitle;
     bool compact = g_settings.compactRows;
@@ -4316,8 +4480,14 @@ static void PaintPanel() {
                        g_pressed.kind == HitKind::Launch);
     }
 
+    if (g_transitionAmount < 1.0) {
+        surface.BlendOver(g_transitionFrame, g_transitionHeight, 1.0 - Ease(g_transitionAmount),
+                          g_panelGrowsUp);
+    }
     if (g_menuOpen) {
-        PaintMenu(surface, palette);
+        PaintMenu(palette);
+    } else {
+        HideMenuWindow();
     }
 
     int slide = (int)((1.0 - reveal) * Scale(12));
@@ -4361,10 +4531,57 @@ static void RefreshPanel() {
     }
 }
 
-static void EnsureAnimationTimer() {
-    if (g_panelWnd) {
-        SetTimer(g_panelWnd, kTimerAnimate, kFrameMs, nullptr);
+static std::thread g_frameThread;
+static HANDLE g_frameEvent = nullptr;
+static std::atomic<bool> g_frameWanted{false};
+static std::atomic<bool> g_framePending{false};
+static LONGLONG g_lastFrameCount = 0;
+
+static void RunFramePacer() {
+    while (!g_unloading) {
+        if (!g_frameWanted) {
+            WaitForSingleObject(g_frameEvent, INFINITE);
+            continue;
+        }
+        if (FAILED(DwmFlush())) {
+            Sleep(kFrameMs);
+        }
+        if (g_frameWanted && !g_framePending.exchange(true) && g_panelWnd) {
+            PostMessageW(g_panelWnd, kMsgAnimationFrame, 0, 0);
+        }
     }
+}
+
+static void StopFramePacer() {
+    g_frameWanted = false;
+    if (g_frameEvent) {
+        SetEvent(g_frameEvent);
+    }
+    if (g_frameThread.joinable()) {
+        g_frameThread.join();
+    }
+    if (g_frameEvent) {
+        CloseHandle(g_frameEvent);
+        g_frameEvent = nullptr;
+    }
+}
+
+static void EnsureAnimationTimer() {
+    if (!g_frameWanted.exchange(true)) {
+        SetEvent(g_frameEvent);
+    }
+}
+
+static void BeginAnimationFrame() {
+    LARGE_INTEGER now{};
+    LARGE_INTEGER frequency{};
+    QueryPerformanceCounter(&now);
+    QueryPerformanceFrequency(&frequency);
+    double elapsed = g_lastFrameCount
+                         ? (double)(now.QuadPart - g_lastFrameCount) / frequency.QuadPart
+                         : 1.0 / 60.0;
+    g_lastFrameCount = now.QuadPart;
+    g_frameSeconds = elapsed > 0.1 ? 1.0 / 60.0 : max(1.0 / 480.0, elapsed);
 }
 
 static HWND AnchorWindow() {
@@ -4449,6 +4666,10 @@ static void OpenPanel() {
     NormalizeItemOrder();
     CloseMenu();
     g_view = PanelView::List;
+    g_contentHeightShown = -1.0;
+    g_scrollTarget = -1.0;
+    g_transitionAmount = 1.0;
+    g_transitionFrame.clear();
     g_filter.clear();
     g_focusRow = -1;
     g_scrollOffset = 0;
@@ -4475,9 +4696,10 @@ static void OpenPanel() {
 }
 
 static void FinishClosingPanel() {
+    HideMenuWindow();
     KillTimer(g_panelWnd, kTimerCaret);
     KillTimer(g_panelWnd, kTimerStatus);
-    KillTimer(g_panelWnd, kTimerAnimate);
+    g_frameWanted = false;
     ShowWindow(g_panelWnd, SW_HIDE);
     RefreshTaskbarButtons();
 }
@@ -4957,8 +5179,15 @@ static std::wstring ToggleListEntry(const std::wstring& list, const std::wstring
 static void ShowPage(PanelView view) {
     if (!g_panelOpen) {
         OpenPanel();
+    } else if (g_panelSurface.Height() > 0) {
+        g_transitionFrame = g_panelSurface.Snapshot();
+        g_transitionHeight = g_panelSurface.Height();
+        g_transitionAmount = 0.0;
+        EnsureAnimationTimer();
     }
     CloseMenu();
+    g_scrollTarget = -1.0;
+    g_formToggleAmount.clear();
     g_view = view;
     g_filter.clear();
     g_formFocus = -1;
@@ -4994,6 +5223,7 @@ static void OpenForm(std::wstring title,
 
 static void RebuildForm() {
     g_formBuild();
+    g_formToggleAmount.clear();
     if (g_formFocus >= (int)g_formRows.size()) {
         g_formFocus = -1;
     }
@@ -5311,16 +5541,46 @@ static void BuildItemForm() {
     g_formRows = std::move(rows);
 }
 
+static std::wstring DefaultItemName(ItemType type, const std::wstring& target) {
+    std::wstring name = target;
+    if (type == ItemType::Url) {
+        size_t scheme = name.find(L"://");
+        name = name.substr(scheme == std::wstring::npos ? 0 : scheme + 3);
+        name = name.substr(0, name.find_first_of(L"/?#"));
+        if (name.starts_with(L"www.")) {
+            name = name.substr(4);
+        }
+    } else if (type != ItemType::Terminal && type != ItemType::Command) {
+        while (!name.empty() && (name.back() == L'\\' || name.back() == L'/')) {
+            name.pop_back();
+        }
+        name = FileNameOf(name);
+        if (type == ItemType::App && name.rfind(L'.') != std::wstring::npos) {
+            name = name.substr(0, name.rfind(L'.'));
+        }
+    }
+    return name.size() > 40 ? name.substr(0, 40) : name;
+}
+
 static bool SaveItemDraft() {
     ItemDraft& draft = g_itemDraft;
-    draft.fields.name = Trim(draft.fields.name);
+    for (std::wstring* field : {&draft.fields.name, &draft.fields.target, &draft.fields.args,
+                                &draft.fields.workingDir, &draft.fields.group}) {
+        *field = Trim(*field);
+    }
+    ItemType type = ParseItemType(draft.fields.type.c_str());
+    if (type == ItemType::Url && !draft.fields.target.empty() &&
+        draft.fields.target.find(L"://") == std::wstring::npos) {
+        bool local = draft.fields.target.starts_with(L"localhost") ||
+                     draft.fields.target.starts_with(L"127.0.0.1");
+        draft.fields.target = (local ? L"http://" : L"https://") + draft.fields.target;
+    }
+    if (draft.fields.name.empty()) {
+        draft.fields.name = DefaultItemName(type, draft.fields.target);
+    }
     if (draft.fields.name.empty()) {
         g_formFocus = FindFormRow(L"Name");
         return false;
-    }
-    for (std::wstring* field : {&draft.fields.target, &draft.fields.args,
-                                &draft.fields.workingDir, &draft.fields.group}) {
-        *field = Trim(*field);
     }
     draft.fields.options = ComposeOptions(draft);
     if (draft.panelIndex >= 0) {
@@ -5350,7 +5610,8 @@ static void OpenItemPage(const ItemFields& fields, int panelIndex) {
     g_itemDraft.icon = parsed.icon;
     bool adding = panelIndex < 0;
     OpenForm(adding ? L"New item" : L"Edit item",
-             adding ? L"Only the name is required" : L"Changes apply when you press Save",
+             adding ? L"An empty name is taken from the target"
+                    : L"Changes apply when you press Save",
              adding ? L"Add" : L"Save", BuildItemForm, SaveItemDraft);
 }
 
@@ -5381,15 +5642,20 @@ static void ActivateAddRow(int index, bool customize) {
             break;
         case AddAction::File:
         case AddAction::Folder:
-        case AddAction::VSCode: {
-            bool folder = action != AddAction::File;
-            if (!PickPath(folder, fields.target)) {
+        case AddAction::VSCode:
+            if (!PickPath(action != AddAction::File, fields.target)) {
                 return;
             }
-            std::wstring file = FileNameOf(fields.target);
-            fields.name = folder ? file : file.substr(0, file.rfind(L'.'));
+            fields.name = DefaultItemName(AddActionType(action), fields.target);
             break;
-        }
+        case AddAction::Terminal:
+        case AddAction::Command:
+            if (!FindFirstExisting({L"%ProgramFiles%\\PowerShell\\7\\pwsh.exe",
+                                    L"%LOCALAPPDATA%\\Microsoft\\WindowsApps\\pwsh.exe"})
+                     .empty()) {
+                fields.options = L"shell=pwsh";
+            }
+            break;
         default:
             break;
     }
@@ -5414,6 +5680,7 @@ static void ActivateFormRow(int index, bool action) {
         case FormKind::Toggle:
             g_formFocus = -1;
             row.toggle(!row.value());
+            EnsureAnimationTimer();
             break;
         case FormKind::Choice: {
             g_formFocus = -1;
@@ -5864,6 +6131,31 @@ static bool HandlePageKey(WPARAM key) {
     return false;
 }
 
+static LRESULT CALLBACK MenuWndProc(HWND window,
+                                    UINT message,
+                                    WPARAM wParam,
+                                    LPARAM lParam) {
+    switch (message) {
+        case WM_MOUSEACTIVATE:
+            return MA_NOACTIVATE;
+        case WM_MOUSEMOVE:
+        case WM_LBUTTONDOWN:
+        case WM_LBUTTONUP:
+        case WM_RBUTTONDOWN:
+        case WM_RBUTTONUP: {
+            POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            ClientToScreen(window, &point);
+            ScreenToClient(g_panelWnd, &point);
+            if (g_menuOpen) {
+                HandleMenuMessage(message, wParam, MAKELPARAM(point.x, point.y));
+            }
+            RefreshPanel();
+            return 0;
+        }
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
 static LRESULT CALLBACK PanelWndProc(HWND window,
                                      UINT message,
                                      WPARAM wParam,
@@ -5993,10 +6285,14 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
         }
 
         case WM_MOUSEWHEEL:
-            g_scrollOffset -=
-                GET_WHEEL_DELTA_WPARAM(wParam) * RowHeight() / WHEEL_DELTA;
-            ClampScroll();
-            PaintPanel();
+            if (g_scrollTarget < 0) {
+                g_scrollShown = g_scrollTarget = g_scrollOffset;
+            }
+            g_scrollTarget = max(0.0, min((double)MaxScroll(),
+                                          g_scrollTarget - GET_WHEEL_DELTA_WPARAM(wParam) *
+                                                               RowHeight() * 1.5 /
+                                                               WHEEL_DELTA));
+            EnsureAnimationTimer();
             return 0;
 
         case WM_CHAR: {
@@ -6131,19 +6427,23 @@ static LRESULT CALLBACK PanelWndProc(HWND window,
             }
             return 0;
 
-        case WM_TIMER:
-            if (wParam == kTimerAnimate) {
-                bool stillAnimating = StepAnimations();
-                if (!g_panelOpen && g_revealAmount <= 0.0) {
-                    FinishClosingPanel();
-                    return 0;
-                }
-                PaintPanel();
-                if (!stillAnimating) {
-                    KillTimer(window, kTimerAnimate);
-                }
+        case kMsgAnimationFrame: {
+            g_framePending = false;
+            g_frameWanted = false;
+            BeginAnimationFrame();
+            bool stillAnimating = StepAnimations();
+            if (!g_panelOpen && g_revealAmount <= 0.0) {
+                FinishClosingPanel();
                 return 0;
             }
+            if (stillAnimating) {
+                EnsureAnimationTimer();
+            }
+            PaintPanel();
+            return 0;
+        }
+
+        case WM_TIMER:
             if (wParam == kTimerCaret) {
                 g_caretVisible = !g_caretVisible;
                 RefreshPanel();
@@ -6884,6 +7184,14 @@ static void RegisterWindowClasses() {
     messageClass.hInstance = GetModuleHandleW(nullptr);
     messageClass.lpszClassName = kMessageClass;
     RegisterClassExW(&messageClass);
+
+    WNDCLASSEXW menuClass{};
+    menuClass.cbSize = sizeof(menuClass);
+    menuClass.lpfnWndProc = MenuWndProc;
+    menuClass.hInstance = GetModuleHandleW(nullptr);
+    menuClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    menuClass.lpszClassName = kMenuClass;
+    RegisterClassExW(&menuClass);
 }
 
 static void UnregisterWindowClasses() {
@@ -6891,6 +7199,7 @@ static void UnregisterWindowClasses() {
     UnregisterClassW(kButtonClass, instance);
     UnregisterClassW(kPanelClass, instance);
     UnregisterClassW(kMessageClass, instance);
+    UnregisterClassW(kMenuClass, instance);
 }
 
 static HWND WaitForTaskbar() {
@@ -6924,6 +7233,9 @@ static void UiThreadMain() {
         g_messageWnd = nullptr;
         return;
     }
+    g_menuWnd = CreateWindowExW(
+        WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE, kMenuClass,
+        L"", WS_POPUP, 0, 0, 0, 0, g_panelWnd, nullptr, GetModuleHandleW(nullptr), nullptr);
 
     RefreshPalette();
     LoadCollapsedGroups();
@@ -6960,9 +7272,11 @@ static void UiThreadMain() {
 
     RemoveTrayIcon();
 
+    g_menuSurface.Release();
     g_panelSurface.Release();
     DestroyWindow(g_panelWnd);
     g_panelWnd = nullptr;
+    g_menuWnd = nullptr;
     DestroyWindow(g_messageWnd);
     g_messageWnd = nullptr;
 }
@@ -6982,6 +7296,8 @@ BOOL Wh_ModInit() {
 
     g_backgroundQueue.Start();
     g_launchQueue.Start();
+    g_frameEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    g_frameThread = std::thread(RunFramePacer);
     g_uiThread = std::thread([] {
         CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
         UiThreadMain();
@@ -7006,6 +7322,7 @@ void Wh_ModUninit() {
 
     g_launchQueue.Stop();
     g_backgroundQueue.Stop();
+    StopFramePacer();
 
     if (g_uiThread.joinable()) {
         g_uiThread.join();
